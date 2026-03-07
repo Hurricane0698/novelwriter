@@ -1,0 +1,32 @@
+entity_id	canonical_name	entity_type	aliases
+S001	叶文洁	Character
+S002	汪淼	Character
+S003	史强	Character	大史
+S004	杨冬	Character
+S005	丁仪	Character
+S006	常伟思	Character
+S007	申玉菲	Character
+S008	魏成	Character
+S009	伊文斯	Character	迈克·伊文斯
+S010	潘寒	Character
+S011	叶哲泰	Character
+S012	杨卫宁	Character
+S013	雷志成	Character
+S014	白沐霖	Character
+S015	叶文雪	Character
+S016	邵琳	Character
+S017	李瑶	Character
+S018	沙瑞山	Character
+S019	地球三体组织	Faction	ETO|三体组织
+S020	红岸基地	Faction
+S021	科学边界	Faction
+S022	降临派	Faction
+S023	拯救派	Faction
+S024	幸存派	Faction
+S025	三体文明	Faction	三体人|三体世界
+S026	红岸	Location
+S027	三体星系	Location	半人马座α星系
+S028	智子	Item	质子
+S029	古筝行动	Event
+S030	审判日号	Item	审判日
+S031	巴拿马运河	Location

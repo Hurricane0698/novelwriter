@@ -1,0 +1,15 @@
+services:
+  scngs:
+    build: .
+    ports:
+      - "80:8000"
+    volumes:
+      - scngs-data:/data
+    env_file: .env
+    environment:
+      - DEPLOY_MODE=hosted
+      - ENVIRONMENT=production
+      - DATABASE_URL=sqlite:////data/scngs.db
+      - SCNGS_DATA_DIR=/data
+volumes:
+  scngs-data:

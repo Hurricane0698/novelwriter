@@ -1,0 +1,21 @@
+fastapi>=0.109.0
+uvicorn>=0.24.0
+sqlalchemy>=2.0.36
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+openai>=1.50.0
+python-multipart==0.0.6
+slowapi>=0.1.9
+pyahocorasick>=2.0.0
+jieba>=0.42.1
+msgpack>=1.0.8
+
+# Authentication
+PyJWT>=2.8.0
+passlib[bcrypt]>=1.7.4
+
+# Database
+psycopg2-binary>=2.9.9
+
+# Observability
+structlog>=24.1.0

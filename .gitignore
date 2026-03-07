@@ -1,0 +1,118 @@
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+!web/src/lib/
+!web/src/lib/**
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Frontend
+node_modules/
+web/dist/
+*.tsbuildinfo
+web/vite.config.d.ts
+
+# Data
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+data/chromadb/
+data/raptor/
+data/benchmark/
+data/uploads/
+data_base/
+data_runs/
+docs/functional_logs/
+uploads/*
+!uploads/.gitkeep
+
+# Benchmark runs (keep gold truth and protocol, ignore run outputs and novel text)
+benchmarks/*/runs/
+benchmarks/*/snapshots/
+benchmarks/*/history_minimal/
+benchmarks/*/baseline_current.json
+benchmarks/*/champion_current.json
+benchmarks/bootstrap_v1/codex_sessions/
+
+# Logs
+*.log
+uvicorn.log
+logs/
+
+# Reports/Drafts
+reports/
+drafts/
+
+# Testing
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+.ruff_cache/
+web/playwright-report/
+web/test-results/
+
+# OS
+.DS_Store
+Thumbs.db
+
+#User-specific files
+run_phase3_demo.py
+test_api.py
+view_database.py
+exports/
+Github.instructions.md
+大陆开发者出海SaaS合规指南.md
+.ace-tool/
+.agents/
+worldpack.*.json
+续写.txt
+续写_rewrite*.txt
+
+# Trellis framework (local tooling, changes on every upgrade)
+.trellis/tasks
+.trellis/scripts/
+.trellis/workspace/
+.trellis/.version
+.trellis/.template-hashes.json
+.trellis/.gitignore
+.trellis/.developer
+.trellis/.backup-*
+
+# Claude Code local config (hooks, agents, commands change on trellis upgrade)
+.claude/
+AGENTS.md
+test-results/
+.agent/
+test-results/
+.agent/

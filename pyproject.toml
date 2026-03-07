@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+markers = [
+    "contract: tests for deferred/unimplemented modules (update_detector, explorations)",
+]
+addopts = "-m 'not contract'"

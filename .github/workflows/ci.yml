@@ -1,0 +1,180 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend-tests:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    env:
+      SCNGS_DATA_DIR: /tmp/scngs_data
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+          cache: pip
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Install backend dev tools
+        run: pip install -r requirements-dev.txt
+
+      - name: Ruff
+        run: ruff check app tests
+
+      - name: Bootstrap invariant gate (backend)
+        run: pytest tests/test_bootstrap_invariants.py -q
+
+      - name: Run pytest
+        run: pytest tests/
+
+  frontend-checks:
+    name: Frontend (lint/build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Vitest
+        run: npm run test:run
+
+      - name: Bootstrap invariant gate (frontend)
+        run: npm run test:run -- src/__tests__/BootstrapPanel.invariants.test.tsx
+
+      - name: Build
+        run: npm run build
+
+  frontend-e2e-mock:
+    name: Frontend (e2e mock)
+    runs-on: ubuntu-latest
+    env:
+      # Make E2E deterministic: avoid hosted UI invite-code flow in CI.
+      VITE_DEPLOY_MODE: selfhost
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright (mock)
+        run: npm run test:e2e:mock
+
+      - name: Upload Playwright report (mock)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-mock
+          path: web/playwright-report/mock
+          retention-days: 7
+
+  e2e-integration-smoke:
+    name: Frontend (e2e integration)
+    # PR gate + post-merge signal on master.
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    env:
+      SCNGS_DATA_DIR: /tmp/scngs_data
+      E2E_SKIP_LLM: "1"
+      # Make E2E deterministic: avoid hosted UI invite-code flow in CI.
+      VITE_DEPLOY_MODE: selfhost
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+          cache: pip
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: web
+
+      - name: Playwright (integration)
+        # Gate on the full integration suite (real backend), while skipping paid LLM tests.
+        run: npm run test:e2e:integration -- --workers=1
+        working-directory: web
+
+      - name: Upload Playwright report (integration)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-integration
+          path: web/playwright-report/integration
+          retention-days: 7
+
+  cleanup-artifacts:
+    # Branch protection expects this check name. Keep it fast and deterministic.
+    name: Cleanup artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: No-op
+        run: echo "ok"
+
+  docker-build:
+    name: Docker (build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build app image
+        run: docker build -t scngs-app:ci .

@@ -1,0 +1,245 @@
+entity_id	canonical_name	entity_type	aliases
+Y001	云澈	Character	萧澈|梦见渊|雾皇
+Y002	茉莉	Character	星瞳|天杀星神
+Y003	夏倾月	Character	神无忆|新月神帝
+Y004	萧泠汐	Character
+Y005	沐玄音	Character	雪歌界王
+Y006	彩脂	Character	星舞|天狼星神
+Y007	苍月	Character	蓝雪若|苍风公主
+Y008	苏苓儿	Character
+Y009	楚月婵	Character	小仙女
+Y010	凤雪儿	Character	雪公主
+Y011	幻彩衣	Character	小妖后
+Y012	红儿	Character	灵菀瑚
+Y013	千叶影儿	Character	梵天神女
+Y014	水媚音	Character
+Y015	禾菱	Character
+Y016	池妩影	Character
+Y017	萧烈	Character	五长老
+Y018	夏元霸	Character
+Y019	凌杰	Character
+Y020	焚绝尘	Character
+Y021	凤横空	Character
+Y022	云无心	Character
+Y023	云沧海	Character	妖帝
+Y024	云轻鸿	Character
+Y025	慕雨柔	Character
+Y026	萧云	Character
+Y027	千叶梵天	Character	千叶无天
+Y028	沐冰云	Character	冰凰宫主
+Y029	沐小蓝	Character
+Y030	洛长生	Character	长生少主
+Y031	水千珩	Character	琉光界王
+Y032	火如烈	Character	金乌宗主
+Y033	火破云	Character
+Y034	星绝空	Character	星神帝
+Y035	月无涯	Character	月神帝
+Y036	龙白	Character	龙皇
+Y037	焚道钧	Character	焚月帝
+Y038	阎天枭	Character	阎魔帝
+Y039	阎舞	Character
+Y040	逆玄	Character	元素创世神|魔神
+Y041	劫渊	Character	劫天魔帝
+Y042	黎娑	Character	生命创世神
+Y043	夕柯	Character	秩序创世神
+Y044	君惜泪	Character
+Y045	君无名	Character	剑君
+Y046	凤仙儿	Character
+Y047	南万生	Character	南溟帝
+Y048	苍释天	Character	万涌界王
+Y049	洛上尘	Character	圣宇界王
+Y050	洛孤邪	Character
+Y051	陆昼	Character	覆天界王
+Y052	陆冷川	Character
+Y053	水映月	Character
+Y054	慕飞烟	Character	慕家家主
+Y055	沐焕之	Character	大长老
+Y056	沐凤姝	Character	寒雪宫主
+Y057	荼靡	Character	天源星神|帝师
+Y058	狱萝	Character	天毒星神
+Y059	千叶无生	Character
+Y060	萧门	Faction
+Y061	冰云仙宫	Faction
+Y062	焚天门	Faction	焚天宗
+Y063	天剑山庄	Faction
+Y064	凤凰神宗	Faction
+Y065	神凰帝国	Faction
+Y066	苍风帝国	Faction
+Y067	太苏门	Faction
+Y068	幻妖皇族	Faction
+Y069	十二守护家族	Faction
+Y070	梵天神界	Faction
+Y071	吟雪界	Faction	雪歌界
+Y072	圣宇界	Faction
+Y073	琉光界	Faction
+Y074	炎神界	Faction
+Y075	覆天界	Faction
+Y076	星神界	Faction
+Y077	月神界	Faction
+Y078	龙神界	Faction
+Y079	焚月界	Faction	焚月神界
+Y080	阎魔界	Faction
+Y081	劫魂界	Faction
+Y082	南溟神界	Faction
+Y083	天玄大陆	Location
+Y084	流云城	Location
+Y085	蓝极星	Location
+Y086	万兽山脉	Location
+Y087	幻妖界	Location	幻妖领域
+Y088	天毒珠	Item
+Y089	邪婴万劫轮	Item
+Y090	宙天珠	Item
+Y091	鸿蒙生死印	Item
+Y092	诛天始祖剑	Item
+Y093	轮回镜	Item
+Y094	乾坤刺	Item
+Y095	霸王巨剑	Item
+Y096	劫天诛魔剑	Item
+Y097	饮血魔剑	Item
+Y098	凤凰魂灵	Item	凤凰魂源
+Y099	太古龙魂	Item	龙神魂源
+Y100	金乌魂灵	Item	金乌魂源
+Y101	邪神诀	Technique
+Y102	大道浮屠诀	Technique
+Y103	天狼狱神典	Technique	天狼斩
+Y104	凤凰颂世典	Technique
+Y105	冰凰封神典	Technique
+Y106	金乌焚世录	Technique
+Y107	星神碎影	Technique
+Y108	凤凰破	Technique
+Y109	霸王怒	Technique
+Y110	冰云诀	Technique
+Y111	生命神迹	Technique	光明神诀
+Y112	逆世天书	Technique
+Y113	邪神传承	Inheritance
+Y114	凤凰传承	Inheritance	凤凰源血
+Y115	冰凰传承	Inheritance	冰凰源血
+Y116	龙神传承	Inheritance	龙神之血
+Y117	金乌传承	Inheritance	金乌源血
+Y118	荒神传承	Inheritance
+Y119	天杀星神传承	Inheritance
+Y120	凤凰血脉	Bloodline
+Y121	龙神血脉	Bloodline
+Y122	金乌血脉	Bloodline
+Y123	邪神玄脉	Bloodline	邪神脉
+Y124	四大圣地	Faction
+Y125	黑琊界	Faction
+Y126	宙天神界	Faction
+Y127	千荒界	Faction
+Y128	皇天界	Faction
+Y129	太古神舟	Location
+Y130	弑月魔窟	Location
+Y131	神曦	Character	龙后
+Y132	沐妃雪	Character
+Y133	凤祖儿	Character
+Y134	花洺海	Character	盗神族传人
+Y135	轩辕问天	Character	剑主
+Y136	曲封忆	Character	海皇
+Y137	皇极无欲	Character	圣帝
+Y138	夜魅邪	Character	天君
+Y139	幽儿	Character
+Y140	弑月魔君	Character	永夜之魔
+Y141	云外天	Character
+Y142	末厄	Character	诛天神帝
+Y143	九煞魔帝	Character
+Y144	涅轮魔帝	Character
+Y145	槃冥魔帝	Character
+Y146	宙虚子	Character	宙天神帝
+Y147	冰凰少女	Character	冰凰真身
+Y148	月无垢	Character
+Y149	溪苏	Character	前天狼星神
+Y150	炎绝海	Character	凤凰宗主
+Y151	焱万苍	Character	朱雀宗主
+Y152	沐寒逸	Character
+Y153	焚道启	Character	第七蚀月者
+Y154	绯灭龙神	Character
+Y155	青雀	Character	青龙帝
+Y156	麒麟帝	Character
+Y157	螭龙帝	Character
+Y158	虺龙帝	Character
+Y159	万象神帝	Character
+Y160	武三尊	Character	神武界王
+Y161	纪如颜	Character
+Y162	雷千峰	Character	黑琊界王
+Y163	南归终	Character
+Y164	苍姝姀	Character
+Y165	南千秋	Character	南溟太子
+Y166	南飞虹	Character	北狱溟王
+Y167	禾霖	Character	木灵族少族长
+Y168	太初龙帝	Character
+Y169	末苏	Character	渊皇
+Y170	殿罗睺	Character	绝罗
+Y171	殿九知	Character	森罗神子
+Y172	画浮沉	Character	画心
+Y173	画清影	Character	剑仙
+Y174	画彩璃	Character	折天神女
+Y175	神无厌夜	Character	无明
+Y176	神无幽鸾	Character
+Y177	神无冥雀	Character
+Y178	梦空蝉	Character	无梦
+Y179	梦璇珏	Character	织梦神后
+Y180	梦奈河	Character	沉梦谷主
+Y181	梦藏机	Character	梦殿总殿主
+Y182	梦见溪	Character
+Y183	巫神星	Character	天星
+Y184	巫神月	Character	穹月
+Y185	刹星	Character
+Y186	弦月	Character
+Y187	槃余生	Character	祈恒
+Y188	槃不妄	Character
+Y189	槃不卓	Character
+Y190	龙知命	Character	龙主|始祖
+Y191	龙赤心	Character	左侍太长老
+Y192	龙虔心	Character	右侍太长老
+Y193	龙忘初	Character	少龙主
+Y194	始祖麟神	Character	麟神
+Y195	神虎	Character	天罡星神
+Y196	紫菀	Character	天璇星神
+Y197	蔷薇	Character	天罡星神
+Y198	劫心	Character	第一魔女
+Y199	劫灵	Character	第一魔女
+Y200	婳锦	Character	第二魔女
+Y201	夜璃	Character	第三魔女
+Y202	妖蝶	Character	第四魔女
+Y203	青萤	Character	第五魔女
+Y204	蓝蜒	Character	第六魔女
+Y205	玉舞	Character	第八魔女
+Y206	南凰蝉衣	Character	第九魔女
+Y207	盛世颜	Character	二十七魂殿总殿主
+Y208	阎劫	Character	阎魔太子
+Y209	云霆	Character	天罡云族族长
+Y210	天牧一	Character	皇天界王
+Y211	天孤鸿	Character
+Y212	祸天星	Character	祸荒界王
+Y213	东雪辞	Character	东墟太子
+Y214	东雪雁	Character
+Y215	东方寒薇	Character
+Y216	梦空渡	Character	第一梦殿之主
+Y217	净土	Faction	深渊净土
+Y218	森罗神国	Faction
+Y219	折天神国	Faction
+Y220	永夜神国	Faction
+Y221	织梦神国	Faction
+Y222	星月神国	Faction
+Y223	枭蝶神国	Faction
+Y224	祖龙一脉	Faction
+Y225	麒麟一脉	Faction
+Y226	雾海	Faction
+Y227	深渊骑士	Faction	三十六统领
+Y228	净土神卫	Faction
+Y229	九魔女	Faction
+Y230	九龙神	Faction
+Y231	凤凰宗	Faction
+Y232	金乌宗	Faction
+Y233	朱雀宗	Faction
+Y234	神武界	Faction
+Y235	天威剑域	Faction
+Y236	至尊海殿	Faction
+Y237	皇极圣域	Faction
+Y238	日月神宫	Faction
+Y239	十二星神	Faction
+Y240	沧云大陆	Location
+Y241	绝云崖	Location
+Y242	天池	Location
+Y243	轮回禁地	Location	龙神界轮回禁地
+Y244	深渊	Location

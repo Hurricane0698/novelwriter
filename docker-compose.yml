@@ -1,0 +1,14 @@
+services:
+  scngs:
+    build: .
+    ports:
+      # Default to localhost-only to keep selfhost mode private-by-default.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - scngs-data:/data
+    environment:
+      - DEPLOY_MODE=selfhost
+      - DATABASE_URL=sqlite:////data/scngs.db
+      - SCNGS_DATA_DIR=/data
+volumes:
+  scngs-data:

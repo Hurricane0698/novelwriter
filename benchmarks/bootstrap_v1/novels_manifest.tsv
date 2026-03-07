@@ -1,0 +1,7 @@
+# Bootstrap benchmark books manifest (TSV)
+# - chapters_glob: glob to chapter text files for one book
+# - gold_dir: directory containing entities.tsv + relations.tsv
+book_id	book_name	chapters_glob	gold_dir
+yxs	AgainstTheGods	../../data/benchmark/yxs/chapters/*.txt	gold/yxs
+gmzz	LordOfTheMysteries	../../data/benchmark/gmzz/chapters/*.txt	gold/gmzz
+santi	ThreeBody1	../../data/benchmark/santi/chapters/*.txt	gold/santi

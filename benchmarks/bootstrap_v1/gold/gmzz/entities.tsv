@@ -1,0 +1,83 @@
+entity_id	canonical_name	entity_type	aliases
+G001	克莱恩·莫雷蒂	Character	克莱恩|周明瑞|夏洛克·莫里亚蒂|格尔曼·斯帕罗|梅林|多恩·唐纳特|愚者|世界
+G002	奥黛丽·霍尔	Character	奥黛丽|正义
+G003	阿尔杰·威尔逊	Character	阿尔杰|倒吊人
+G004	戴里克·伯格	Character	戴里克|太阳
+G005	佛尔思·沃尔	Character	佛尔思|玛格丽特.泰勒
+G006	埃姆林·怀特	Character	埃姆林|月亮
+G007	嘉德丽雅	Character
+G008	伦纳德·米切尔	Character	伦纳德
+G009	休·迪尔查	Character	休
+G010	阿兹克·艾格斯	Character	阿兹克
+G011	蕾妮特·缇尼科尔	Character	蕾妮特
+G012	邓恩·史密斯	Character	邓恩|队长
+G013	老尼尔	Character	尼尔
+G014	达菲尔·科波特	Character	达菲尔
+G015	莎伦	Character
+G016	亚当	Character
+G017	安贝德·艾克斯特	Character	安贝德
+G018	梅迪奇	Character
+G019	帕尔马斯	Character
+G020	威尔·昂赛汀·克瑞斯	Character	威尔
+G021	加尔文	Character	真实造物主
+G022	罗塞尔	Character	罗塞尔大帝
+G023	亚恩·考特曼	Character	海王
+G024	杰纳斯	Character
+G025	卡尔德隆	Character
+G026	伊斯·帕姆利	Character
+G027	弗洛里斯	Character
+G028	塔罗会	Faction
+G029	值夜者	Faction
+G030	代罚者	Faction
+G031	心理炼金会	Faction
+G032	极光会	Faction
+G033	黑夜女神教会	Faction	黑夜教会
+G034	风暴教会	Faction	风暴之主教会
+G035	永恒烈阳教会	Faction	烈阳教会
+G036	蒸汽与机械之神教会	Faction	蒸汽教会
+G037	知识与智慧之神教会	Faction	知识教会
+G038	大地母神教会	Faction
+G039	战神教会	Faction
+G040	血族	Faction
+G041	铁血十字会	Faction
+G042	密修会	Faction
+G043	摩斯苦修会	Faction
+G044	玫瑰学派	Faction
+G045	生命学派	Faction
+G046	救赎蔷薇	Faction
+G047	黄昏隐士会	Faction
+G048	魔女教派	Faction
+G049	贝克兰德	Location
+G050	廷根	Location	廷根市
+G051	源堡	Location
+G052	白银城	Location
+G053	鲁恩王国	Location	鲁恩
+G054	因蒂斯共和国	Location	因蒂斯
+G055	拜朗王国	Location	拜朗
+G056	费内波特王国	Location	费内波特
+G057	弗萨克帝国	Location	弗萨克
+G058	神弃之地	Location
+G059	灵界	Location
+G060	许愿神灯	Item	0-05
+G061	苍白的死亡	Item
+G062	星之杖	Item	0-62
+G063	阿兹克铜哨	Item	铜哨
+G064	蠕动的饥饿	Item
+G065	海神权杖	Item
+G066	太阳胸针	Item
+G067	特伦索斯特黄铜书	Item	0-02|黄铜书
+G068	阿罗德斯	Item	占卜镜
+G069	秘密之书	Item
+G070	全黑之眼	Item
+G071	无暗十字	Item
+G072	莱曼诺的旅行笔记	Item	旅行笔记
+G073	所罗门面具	Item
+G074	阿勒苏霍德之笔	Item	0-08
+G075	隐秘之天使	Item	0-17
+G076	大地的恩赐	Item
+G077	神之画卷	Item
+G078	旧日之盒	Item	0-61
+G079	窃运者	Item
+G080	火种手套	Item
+G081	心魇蜡烛	Item
+G082	概率之骰	Item

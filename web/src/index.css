@@ -1,0 +1,217 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Dark mode is DEFAULT — :root values are dark */
+  :root {
+    --background: 230 15% 7%;
+    --foreground: 0 0% 98%;
+
+    --card: 230 15% 8%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 230 15% 9%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+
+    --accent: 217 91% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.75rem;
+
+    /* Semantic aliases: keep app-specific tokens aligned with shadcn theme vars. */
+    --color-accent: var(--accent);
+    --nw-accent-hover: 217 91% 55%;
+    --color-vis-active: 142 71% 45%;
+    --color-vis-reference: 213 94% 68%;
+    --color-vis-hidden: 220 9% 46%;
+    --color-mystery: 38 92% 50%;
+    --color-status-confirmed: 142 71% 45%;
+    --color-status-draft: 38 92% 50%;
+    --color-danger: 0 84% 60%;
+    --color-warning: 38 92% 50%;
+
+    --nw-glass-bg: #ffffff0D;
+    --nw-glass-bg-hover: #ffffff1A;
+    --nw-glass-border: #ffffff1A;
+    --nw-glass-border-hover: #ffffff33;
+    --nw-backdrop: #00000066;
+    --nw-modal-bg: 230 14% 16%;
+  }
+
+  /* Light mode — activated by .light class on <html> */
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+
+    --accent: 217 91% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 217 91% 60%;
+
+    --color-accent: var(--accent);
+    --nw-accent-hover: 217 91% 55%;
+    --color-vis-active: 142 71% 45%;
+    --color-vis-reference: 213 94% 68%;
+    --color-vis-hidden: 220 9% 76%;
+    --color-mystery: 38 92% 50%;
+    --color-status-confirmed: 142 71% 45%;
+    --color-status-draft: 38 92% 50%;
+    --color-danger: 0 84% 60%;
+    --color-warning: 38 92% 50%;
+
+    --nw-glass-bg: #ffffff70;
+    --nw-glass-bg-hover: #ffffff90;
+    --nw-glass-border: #00000015;
+    --nw-glass-border-hover: #00000025;
+    --nw-backdrop: #00000033;
+    --nw-modal-bg: 0 0% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* Tailwind line-clamp plugin is not enabled; keep this utility local and explicit. */
+  .nw-line-clamp-2 {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+
+  /* Token-driven thin scrollbar that adapts to theme via CSS vars. */
+  .nw-scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--nw-glass-border-hover) transparent;
+  }
+  .nw-scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .nw-scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--nw-glass-border-hover);
+    border-radius: 999px;
+  }
+  .nw-scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* ── Animated Background Gradient Blobs ── */
+
+.animated-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  will-change: transform;
+}
+
+/* Violet blob — top-left */
+.blob-1 {
+  width: 700px;
+  height: 560px;
+  background: hsl(239 84% 67% / 0.22);
+  top: 5%;
+  left: 8%;
+  animation: drift-1 10s ease-in-out infinite;
+}
+
+/* Blue blob — right-center */
+.blob-2 {
+  width: 600px;
+  height: 480px;
+  background: hsl(217 91% 60% / 0.20);
+  top: 30%;
+  right: 0%;
+  animation: drift-2 12s ease-in-out infinite;
+}
+
+/* Indigo blob — bottom-left */
+.blob-3 {
+  width: 650px;
+  height: 450px;
+  background: hsl(243 76% 53% / 0.17);
+  bottom: 0%;
+  left: 3%;
+  animation: drift-3 14s ease-in-out infinite;
+}
+
+/* Light mode: lower opacity so blobs don't overpower white backgrounds */
+.light .blob-1 { background: hsl(239 84% 67% / 0.10); }
+.light .blob-2 { background: hsl(217 91% 60% / 0.08); }
+.light .blob-3 { background: hsl(243 76% 53% / 0.07); }
+
+@keyframes drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(180px, 120px) scale(1.15); }
+  66%      { transform: translate(-90px, 200px) scale(0.9); }
+}
+
+@keyframes drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(-150px, -100px) scale(1.12); }
+  66%      { transform: translate(120px, -180px) scale(0.88); }
+}
+
+@keyframes drift-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(130px, -150px) scale(1.18); }
+  66%      { transform: translate(-180px, 100px) scale(0.85); }
+}
+
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(150px, 100px) scale(1.12); }
+  66%      { transform: translate(-100px, 150px) scale(0.9); }
+}
+
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .animated-blob {
+    animation: none !important;
+  }
+}

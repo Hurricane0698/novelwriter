@@ -1,0 +1,18 @@
+web/node_modules/
+web/.vite/
+.venv/
+__pycache__/
+*.pyc
+.git/
+# Ignore runtime data (local sqlite DB etc), but keep bootstrap assets.
+data/*
+!data/common_words/
+!data/common_words/**
+.env
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+.trellis/
+tests/
+uploads/
+Sync/

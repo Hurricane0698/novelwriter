@@ -1,0 +1,676 @@
+{
+  "schema_version": "worldpack.v1",
+  "pack_id": "journey-to-the-west-demo",
+  "pack_name": "西游记（前二十七回）",
+  "language": "zh",
+  "license": "public-domain",
+  "source": {
+    "wiki_base_url": "https://zh.wikisource.org/wiki/%E8%A5%BF%E9%81%8A%E8%A8%98"
+  },
+  "generated_at": "2026-03-05T00:00:00Z",
+
+  "entities": [
+    {
+      "key": "tang-seng",
+      "name": "唐僧",
+      "entity_type": "人物",
+      "description": "大唐高僧，奉旨西行取经。前世为如来座下金蝉子，因轻慢佛法被贬下凡。",
+      "aliases": ["三藏", "玄奘", "唐三藏", "长老", "师父", "圣僧", "御弟", "金蝉子", "江流儿", "法师"],
+      "attributes": [
+        {
+          "key": "身份",
+          "surface": "大唐御弟，奉唐太宗之命前往西天取经",
+          "truth": "如来佛祖座下金蝉子转世，十世修行的好人，吃其肉可长生不老",
+          "visibility": "active"
+        },
+        {
+          "key": "性格",
+          "surface": "心地善良，意志坚定，恪守戒律，慈悲为怀",
+          "truth": "过于执着戒律，有时善恶不分，听信谗言逐走悟空",
+          "visibility": "active"
+        },
+        {
+          "key": "口吻",
+          "surface": "常称「贫僧」，遇事先念佛号与经偈；对「杀生」极敏感",
+          "truth": null,
+          "visibility": "active"
+        },
+        {
+          "key": "弱点",
+          "surface": "肉眼凡胎，不辨妖魔，易受蒙蔽",
+          "truth": "当戒律与保命冲突时，他会本能地选择戒律，从而被妖魔与人心利用",
+          "visibility": "active"
+        }
+      ]
+    },
+    {
+      "key": "sun-wukong",
+      "name": "孙悟空",
+      "entity_type": "人物",
+      "description": "花果山天生石猴，拜菩提祖师学得七十二变与筋斗云，曾大闹天宫，被如来压于五行山下五百年，后随唐僧西行。",
+      "aliases": ["行者", "大圣", "美猴王", "猴王", "心猿", "齐天大圣", "孙行者", "泼猴", "猴头", "石猴", "悟空"],
+      "attributes": [
+        {
+          "key": "能力",
+          "surface": "七十二般变化，筋斗云一翻十万八千里，火眼金睛可辨妖魔",
+          "truth": "实际战力受紧箍咒制约；遇到佛道高层仍有力不从心之时",
+          "visibility": "active"
+        },
+        {
+          "key": "性格",
+          "surface": "桀骜不驯，嫉恶如仇，重情重义，机智果断",
+          "truth": null,
+          "visibility": "active"
+        },
+        {
+          "key": "口吻",
+          "surface": "自称「老孙」；叫唐僧「师父」；骂妖常用「泼怪」「妖精」；嘴硬心软",
+          "truth": null,
+          "visibility": "active"
+        },
+        {
+          "key": "处事方式",
+          "surface": "先保师父再讲道理：遇妖多先动手，事后解释；宁肯背骂名也要斩断祸根",
+          "truth": "这种「先动手」正是唐僧最怕的点，也是八戒最会借题发挥的点",
+          "visibility": "active"
+        },
+        {
+          "key": "武器",
+          "surface": "如意金箍棒，重一万三千五百斤，可大可小",
+          "truth": null,
+          "visibility": "reference"
+        }
+      ]
+    },
+    {
+      "key": "zhu-bajie",
+      "name": "猪八戒",
+      "entity_type": "人物",
+      "description": "原为天蓬元帅，因调戏嫦娥被贬下界，误投猪胎。在高老庄被悟空降服后随唐僧取经。",
+      "aliases": ["八戒", "呆子", "悟能", "天蓬元帅", "老猪", "猪悟能", "夯货"],
+      "attributes": [
+        {
+          "key": "身份",
+          "surface": "唐僧二徒弟，前天蓬元帅",
+          "truth": null,
+          "visibility": "active"
+        },
+        {
+          "key": "性格",
+          "surface": "贪吃好色，偷懒耍滑，但关键时刻也能出力",
+          "truth": "常在师父面前搬弄是非，是悟空被逐的主要推手",
+          "visibility": "active"
+        },
+        {
+          "key": "口吻",
+          "surface": "自称「老猪」；爱抱怨、叫散伙；喊悟空「猴哥」或「师兄」",
+          "truth": null,
+          "visibility": "active"
+        },
+        {
+          "key": "武器",
+          "surface": "九齿钉耙，上宝沁金耙，重五千零四十八斤",
+          "truth": null,
+          "visibility": "reference"
+        }
+      ]
+    },
+    {
+      "key": "sha-seng",
+      "name": "沙僧",
+      "entity_type": "人物",
+      "description": "原为卷帘大将，因失手打碎琉璃盏被贬下界，在流沙河为妖。经观音点化后随唐僧取经。",
+      "aliases": ["沙悟净", "沙和尚", "卷帘大将", "悟净"],
+      "attributes": [
+        {
+          "key": "身份",
+          "surface": "唐僧三徒弟，前卷帘大将，负责挑担",
+          "truth": null,
+          "visibility": "active"
+        },
+        {
+          "key": "性格",
+          "surface": "忠厚老实，任劳任怨，不争不抢",
+          "truth": null,
+          "visibility": "active"
+        },
+        {
+          "key": "口吻",
+          "surface": "沉稳少言，常劝和；称悟空「大师兄」，称八戒「二师兄」",
+          "truth": null,
+          "visibility": "active"
+        }
+      ]
+    },
+    {
+      "key": "bai-longma",
+      "name": "白龙马",
+      "entity_type": "人物",
+      "description": "西海龙王三太子，因纵火烧毁明珠被判死罪，经观音求情化为白马，做唐僧坐骑。",
+      "aliases": ["小白龙", "玉龙三太子", "龙马", "白马"],
+      "attributes": [
+        {
+          "key": "身份",
+          "surface": "唐僧坐骑，原为西海龙王三太子",
+          "truth": "虽化为马形，仍保有龙族战力，危急时可恢复龙身作战",
+          "visibility": "active"
+        }
+      ]
+    },
+    {
+      "key": "guanyin",
+      "name": "观世音菩萨",
+      "entity_type": "人物",
+      "description": "南海普陀落伽山菩萨，奉如来之命安排取经事宜，一路暗中护佑取经人。",
+      "aliases": ["观音", "菩萨", "观音菩萨", "南海菩萨", "大慈大悲救苦救难灵感观世音菩萨"],
+      "attributes": [
+        {
+          "key": "职能",
+          "surface": "奉佛旨安排取经团队，赐予三个紧箍儿和锦斓袈裟",
+          "truth": "取经大业的真正策划者和幕后推手，每个徒弟的加入都经她安排",
+          "visibility": "active"
+        },
+        {
+          "key": "未明之局",
+          "surface": "多次在师徒危难时出手相助",
+          "truth": "西行路上的部分劫难并非天定——而是她暗中引导妖怪拦路，以凑齐八十一难之数",
+          "visibility": "hidden"
+        }
+      ]
+    },
+    {
+      "key": "rulai",
+      "name": "如来佛祖",
+      "entity_type": "人物",
+      "description": "西天灵山大雷音寺之主，以五行山镇压孙悟空，发起西天取经大业。",
+      "aliases": ["如来", "佛祖", "我佛", "大日如来", "释迦牟尼"],
+      "attributes": [
+        {
+          "key": "地位",
+          "surface": "西天灵山之主，三界最高佛法修为",
+          "truth": null,
+          "visibility": "active"
+        }
+      ]
+    },
+    {
+      "key": "puti",
+      "name": "菩提祖师",
+      "entity_type": "人物",
+      "description": "灵台方寸山斜月三星洞祖师，教授孙悟空七十二变和筋斗云，此后再未出现。",
+      "aliases": ["祖师", "须菩提祖师"],
+      "attributes": [
+        {
+          "key": "身份",
+          "surface": "悟空的授业恩师，隐居灵台方寸山",
+          "truth": "身份成谜——教出悟空这等本事却从此消失，可能与佛道两界有更深关联",
+          "visibility": "active"
+        }
+      ]
+    },
+    {
+      "key": "baigujing",
+      "name": "白骨夫人",
+      "entity_type": "人物",
+      "description": "白虎岭上白骨成精的尸魔，三次变化企图捉拿唐僧，均被悟空识破打杀。回目称'尸魔'，脊梁上刻有'白骨夫人'四字。",
+      "aliases": ["尸魔", "白骨精"],
+      "attributes": [
+        {
+          "key": "手段",
+          "surface": "善于变化，先后化作村姑、老妇、老翁，利用唐僧的慈悲心离间师徒",
+          "truth": "三次送死是计中计——她早知悟空火眼金睛能识破变化，故意以身犯险，利用唐僧的慈悲逼他亲手逐走悟空",
+          "visibility": "active"
+        },
+        {
+          "key": "结局",
+          "surface": "第三次变化时被悟空识破并打杀，现出白骨原形",
+          "truth": "虽被打杀，却成功离间了师徒——唐僧逐走悟空，这才是她最大的'胜利'",
+          "visibility": "active"
+        }
+      ]
+    },
+    {
+      "key": "huangfengguai",
+      "name": "黄风怪",
+      "entity_type": "人物",
+      "description": "黄风岭黄风洞妖王，原为灵山脚下得道黄毛貂鼠，善使三昧神风，最终被灵吉菩萨收服。",
+      "aliases": ["黄风大王", "黄毛貂鼠"],
+      "attributes": [
+        {
+          "key": "能力",
+          "surface": "三昧神风，可吹瞎人眼",
+          "truth": null,
+          "visibility": "reference"
+        }
+      ]
+    },
+    {
+      "key": "heixiongjing",
+      "name": "黑熊精",
+      "entity_type": "人物",
+      "description": "黑风山黑风洞熊罴怪，偷走唐僧锦斓袈裟，后被观音收为落伽山守山大神。",
+      "aliases": ["熊罴怪", "黑风怪", "黑大王"],
+      "attributes": [
+        {
+          "key": "结局",
+          "surface": "被观音收服，做了落伽山守山大神",
+          "truth": null,
+          "visibility": "reference"
+        }
+      ]
+    },
+    {
+      "key": "zhenyuanzi",
+      "name": "镇元子",
+      "entity_type": "人物",
+      "description": "万寿山五庄观观主，地仙之祖，与唐僧前世金蝉子有旧交。",
+      "aliases": ["镇元大仙", "地仙之祖"],
+      "attributes": [
+        {
+          "key": "身份",
+          "surface": "地仙之祖，五庄观主人，种有人参果树",
+          "truth": "与悟空结拜为兄弟，是取经路上少数不与师徒为敌的大能",
+          "visibility": "active"
+        }
+      ]
+    },
+    {
+      "key": "taibai-jinxing",
+      "name": "太白金星",
+      "entity_type": "人物",
+      "description": "天庭文曲星官，多次奉玉帝旨意招安孙悟空，性格温和善谋。",
+      "aliases": ["金星", "太白", "李长庚"],
+      "attributes": [
+        {
+          "key": "职能",
+          "surface": "天庭使者，负责招安和调停",
+          "truth": null,
+          "visibility": "reference"
+        }
+      ]
+    },
+    {
+      "key": "huaguoshan",
+      "name": "花果山",
+      "entity_type": "地点",
+      "description": "东胜神洲傲来国境内仙山，孙悟空出生地与根据地，水帘洞为其洞府。",
+      "aliases": ["水帘洞", "花果山水帘洞"],
+      "attributes": [
+        {
+          "key": "地位",
+          "surface": "悟空的故乡，群猴聚居之地",
+          "truth": "悟空被逐后回归此处，是他情感的最终归宿",
+          "visibility": "active"
+        }
+      ]
+    },
+    {
+      "key": "wuxingshan",
+      "name": "五行山",
+      "entity_type": "地点",
+      "description": "如来以五指化为五行山，将孙悟空镇压其下五百年。唐太宗时改名两界山。",
+      "aliases": ["两界山", "五指山"],
+      "attributes": [
+        {
+          "key": "意义",
+          "surface": "悟空被压之处，也是师徒相遇之地",
+          "truth": null,
+          "visibility": "reference"
+        }
+      ]
+    },
+    {
+      "key": "gaolaozhuang",
+      "name": "高老庄",
+      "entity_type": "地点",
+      "description": "乌斯藏国境内村庄，猪八戒入赘高太公家为婿之处，悟空在此收服八戒。",
+      "aliases": ["高家庄"],
+      "attributes": []
+    },
+    {
+      "key": "liushahe",
+      "name": "流沙河",
+      "entity_type": "地点",
+      "description": "八百里弱水，沙僧被贬后在此为妖。经木叉引导收服归入取经队伍。",
+      "aliases": [],
+      "attributes": []
+    },
+    {
+      "key": "wuzhuangguan",
+      "name": "五庄观",
+      "entity_type": "地点",
+      "description": "万寿山上镇元大仙道观，有天下独一份的人参果树。",
+      "aliases": ["万寿山"],
+      "attributes": []
+    },
+    {
+      "key": "jingubang",
+      "name": "如意金箍棒",
+      "entity_type": "物品",
+      "description": "原为大禹治水时的定海神针铁，重一万三千五百斤，可随心意变化大小。",
+      "aliases": ["金箍棒", "铁棒", "定海神针铁", "定海神针"],
+      "attributes": [
+        {
+          "key": "来历",
+          "surface": "东海龙宫定海神针，被悟空取走",
+          "truth": null,
+          "visibility": "reference"
+        }
+      ]
+    },
+    {
+      "key": "jingugu",
+      "name": "紧箍咒",
+      "entity_type": "物品",
+      "description": "观音赐予唐僧用以制约悟空的法器与咒语。金箍戴上即不可取，念咒则头痛欲裂。",
+      "aliases": ["紧箍儿", "金箍", "紧箍"],
+      "attributes": [
+        {
+          "key": "作用",
+          "surface": "唐僧控制悟空的手段，念咒则悟空头痛难忍",
+          "truth": "本质上是一种不对等的权力工具——师父可以随时惩罚徒弟，却没有反向约束",
+          "visibility": "active"
+        }
+      ]
+    },
+    {
+      "key": "jiasa",
+      "name": "锦斓袈裟",
+      "entity_type": "物品",
+      "description": "如来命观音带往东土的宝贝之一，赐予取经人，水火不侵。曾被黑熊精偷走。",
+      "aliases": ["袈裟", "锦袈裟"],
+      "attributes": []
+    },
+    {
+      "key": "tianting",
+      "name": "天庭",
+      "entity_type": "势力",
+      "description": "玉皇大帝统治的神仙体系，管辖三界日常运行。曾封悟空为弼马温、齐天大圣。",
+      "aliases": ["天宫", "凌霄宝殿"],
+      "attributes": [
+        {
+          "key": "与取经关系",
+          "surface": "名义上支持取经大业，沿途有天庭神将暗中保护",
+          "truth": "天庭对取经的态度暧昧——既要配合佛门，又不愿佛门势力过度扩张",
+          "visibility": "active"
+        }
+      ]
+    },
+    {
+      "key": "fomen",
+      "name": "佛门",
+      "entity_type": "势力",
+      "description": "以如来为首的西天灵山佛教体系，取经大业的发起方。",
+      "aliases": ["灵山", "西天", "大雷音寺"],
+      "attributes": [
+        {
+          "key": "目的",
+          "surface": "传经东土，普度众生",
+          "truth": "取经本质是佛门向东土扩张影响力的战略行动——经不可轻传，需有人历劫来取",
+          "visibility": "active"
+        }
+      ]
+    }
+  ],
+
+  "relationships": [
+    {
+      "source_key": "tang-seng",
+      "target_key": "sun-wukong",
+      "label": "师徒",
+      "description": "五行山下收悟空为大徒弟。第二十七回因三打白骨精，唐僧逐走悟空，师徒关系断裂。",
+      "visibility": "active"
+    },
+    {
+      "source_key": "tang-seng",
+      "target_key": "zhu-bajie",
+      "label": "师徒",
+      "description": "高老庄收八戒为二徒弟",
+      "visibility": "active"
+    },
+    {
+      "source_key": "tang-seng",
+      "target_key": "sha-seng",
+      "label": "师徒",
+      "description": "流沙河收沙僧为三徒弟",
+      "visibility": "active"
+    },
+    {
+      "source_key": "tang-seng",
+      "target_key": "bai-longma",
+      "label": "骑乘",
+      "description": "白龙马化为坐骑供唐僧骑乘",
+      "visibility": "active"
+    },
+    {
+      "source_key": "sun-wukong",
+      "target_key": "zhu-bajie",
+      "label": "师兄弟",
+      "description": "悟空为大师兄，八戒为二师兄。二人常有口角，八戒多次在师父前搬弄是非。",
+      "visibility": "active"
+    },
+    {
+      "source_key": "sun-wukong",
+      "target_key": "sha-seng",
+      "label": "师兄弟",
+      "description": "悟空临走时嘱咐沙僧照顾师父，二人关系较为融洽",
+      "visibility": "active"
+    },
+    {
+      "source_key": "sun-wukong",
+      "target_key": "puti",
+      "label": "师徒",
+      "description": "菩提祖师授悟空七十二变与筋斗云，后令其不得提师门之名",
+      "visibility": "active"
+    },
+    {
+      "source_key": "guanyin",
+      "target_key": "tang-seng",
+      "label": "指引",
+      "description": "观音选定唐僧为取经人，赐袈裟与锡杖，安排沿途徒弟",
+      "visibility": "active"
+    },
+    {
+      "source_key": "guanyin",
+      "target_key": "sun-wukong",
+      "label": "约束",
+      "description": "赐紧箍咒于唐僧以约束悟空，同时也是悟空求助的对象",
+      "visibility": "active"
+    },
+    {
+      "source_key": "rulai",
+      "target_key": "sun-wukong",
+      "label": "镇压",
+      "description": "以五行山压悟空五百年，后借取经给予赎罪之路",
+      "visibility": "active"
+    },
+    {
+      "source_key": "rulai",
+      "target_key": "guanyin",
+      "label": "委派",
+      "description": "命观音前往东土寻找取经人并安排护法",
+      "visibility": "active"
+    },
+    {
+      "source_key": "sun-wukong",
+      "target_key": "baigujing",
+      "label": "敌对",
+      "description": "三打白骨精，悟空火眼金睛识破其变化并将其打杀",
+      "visibility": "active"
+    },
+    {
+      "source_key": "baigujing",
+      "target_key": "tang-seng",
+      "label": "觊觎",
+      "description": "欲食唐僧肉以求长生，三次变化接近唐僧",
+      "visibility": "active"
+    },
+    {
+      "source_key": "zhu-bajie",
+      "target_key": "sun-wukong",
+      "label": "挑拨",
+      "description": "在白骨精事件中反复进谗言，推动唐僧逐走悟空",
+      "visibility": "active"
+    },
+    {
+      "source_key": "sun-wukong",
+      "target_key": "zhenyuanzi",
+      "label": "结拜兄弟",
+      "description": "推倒人参果树后求观音救活，二人结为兄弟",
+      "visibility": "active"
+    },
+    {
+      "source_key": "sun-wukong",
+      "target_key": "huangfengguai",
+      "label": "敌对",
+      "description": "黄风岭交战，悟空被三昧神风所伤，后请灵吉菩萨助战",
+      "visibility": "reference"
+    },
+    {
+      "source_key": "guanyin",
+      "target_key": "heixiongjing",
+      "label": "收服",
+      "description": "收黑熊精为落伽山守山大神",
+      "visibility": "reference"
+    },
+    {
+      "source_key": "tianting",
+      "target_key": "sun-wukong",
+      "label": "招安-叛逆",
+      "description": "天庭两次招安悟空（弼马温、齐天大圣），均以悟空反叛告终",
+      "visibility": "active"
+    },
+    {
+      "source_key": "fomen",
+      "target_key": "tang-seng",
+      "label": "使命委托",
+      "description": "如来发起取经，选定金蝉子转世的唐僧为执行者",
+      "visibility": "active"
+    },
+    {
+      "source_key": "tianting",
+      "target_key": "fomen",
+      "label": "合作-博弈",
+      "description": "在取经事上合作，但天庭与佛门各有势力版图考量",
+      "visibility": "active"
+    }
+  ],
+
+  "systems": [
+    {
+      "name": "取经团队层级",
+      "display_type": "hierarchy",
+      "description": "取经大业中各角色的权力层级关系。唐僧对徒弟有绝对的驱逐权（紧箍咒为执行手段），观音可越级干预师徒关系，而悟空实际战力最强，权力层级却最低——力量与权力的倒挂。",
+      "data": {
+        "nodes": [
+          {
+            "id": "rulai",
+            "label": "如来佛祖",
+            "children": [
+              {
+                "id": "guanyin",
+                "label": "观世音菩萨",
+                "children": [
+                  {
+                    "id": "tang-seng",
+                    "label": "唐僧",
+                    "children": [
+                      { "id": "sun-wukong", "label": "孙悟空（大徒弟）", "children": [] },
+                      { "id": "zhu-bajie", "label": "猪八戒（二徒弟）", "children": [] },
+                      { "id": "sha-seng", "label": "沙僧（三徒弟）", "children": [] },
+                      { "id": "bai-longma", "label": "白龙马（坐骑）", "children": [] }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "constraints": [],
+      "visibility": "active"
+    },
+    {
+      "name": "三界势力格局",
+      "display_type": "graph",
+      "description": "天庭、佛门、妖族三方势力的关系网络",
+      "data": {
+        "nodes": [
+          { "id": "tianting-node", "label": "天庭", "position": { "x": 0, "y": 0 } },
+          { "id": "fomen-node", "label": "佛门", "position": { "x": 300, "y": 0 } },
+          { "id": "yaozu-node", "label": "妖族", "position": { "x": 150, "y": 250 } },
+          { "id": "renjian-node", "label": "人间（大唐）", "position": { "x": 150, "y": -200 } }
+        ],
+        "edges": [
+          { "from": "tianting-node", "to": "fomen-node", "label": "合作但暗中博弈" },
+          { "from": "tianting-node", "to": "yaozu-node", "label": "镇压" },
+          { "from": "fomen-node", "to": "yaozu-node", "label": "收服/渡化" },
+          { "from": "tianting-node", "to": "renjian-node", "label": "统治" },
+          { "from": "fomen-node", "to": "renjian-node", "label": "传经扩张" }
+        ]
+      },
+      "constraints": [],
+      "visibility": "active"
+    },
+    {
+      "name": "西行大事记",
+      "display_type": "timeline",
+      "description": "取经队伍从长安出发至白虎岭的关键事件",
+      "data": {
+        "events": [
+          { "time": "第一回", "label": "石猴出世", "description": "花果山仙石迸裂，石猴出世，被群猴拥为美猴王" },
+          { "time": "第二回", "label": "拜师学艺", "description": "悟空拜菩提祖师，学得七十二变与筋斗云" },
+          { "time": "第三回", "label": "龙宫取宝", "description": "悟空入东海龙宫取得定海神针铁（金箍棒）" },
+          { "time": "第四回", "label": "大闹天宫", "description": "不满弼马温之职，自封齐天大圣，与天庭开战" },
+          { "time": "第七回", "label": "被压五行山", "description": "如来以五指化山镇压悟空五百年" },
+          { "time": "第八回", "label": "观音东行", "description": "如来命观音前往东土寻取经人，沿途安排护法" },
+          { "time": "第十三回", "label": "唐僧出发", "description": "唐太宗选玄奘西行取经，出长安入荒野" },
+          { "time": "第十四回", "label": "收孙悟空", "description": "五行山下揭去如来金帖，悟空脱困拜唐僧为师" },
+          { "time": "第十五回", "label": "收白龙马", "description": "鹰愁涧白龙吞马，经观音点化化为坐骑" },
+          { "time": "第十九回", "label": "收猪八戒", "description": "高老庄降服猪妖，八戒加入取经队伍" },
+          { "time": "第二十二回", "label": "收沙僧", "description": "流沙河经木叉调停，沙悟净归队，师徒四人齐" },
+          { "time": "第二十四回", "label": "人参果事件", "description": "五庄观偷吃人参果，悟空推倒果树，后求观音医活" },
+          { "time": "第二十七回", "label": "三打白骨精", "description": "白骨精三次变化，悟空三次识破打杀，唐僧怒逐悟空" }
+        ]
+      },
+      "constraints": [],
+      "visibility": "active"
+    },
+    {
+      "name": "取经戒律与约束",
+      "display_type": "list",
+      "description": "取经路上师徒必须遵守的规矩和限制",
+      "data": {
+        "items": [
+          { "id": "rule-1", "label": "不可杀生", "description": "唐僧坚持的核心戒律。悟空打杀妖怪与强盗常因此与唐僧冲突，是三打白骨精矛盾的根源。" },
+          { "id": "rule-2", "label": "不可动凡心", "description": "四圣试禅心，八戒动了凡心被吊树上。此戒对八戒是最大考验。" },
+          { "id": "rule-3", "label": "不可偏离西行之路", "description": "取经有固定路线，不可走捷径。悟空的筋斗云不能直接飞到西天——凡人肉体必须脚踏实地历劫。" },
+          { "id": "rule-4", "label": "紧箍咒约束", "description": "悟空必须服从唐僧指令，违逆则唐僧念咒使其头痛。这是维系师徒权力结构的最后手段。" },
+          { "id": "rule-5", "label": "九九八十一难", "description": "取经人必须历经八十一难方可成功。每一难都是预设的考验，不可逃避。" },
+          { "id": "tension-1", "label": "核心矛盾", "description": "这些规则之间存在内在矛盾：不杀生与降妖除魔的现实需求冲突" },
+          { "id": "tension-2", "label": "悟空困境", "description": "悟空常在'守规矩'与'保师父'之间被迫选择" }
+        ]
+      },
+      "constraints": [],
+      "visibility": "active"
+    },
+    {
+      "name": "叙事风格",
+      "display_type": "list",
+      "description": "本书的叙事风格特征与写作要求",
+      "data": {
+        "items": [
+          { "id": "style-1", "label": "语体", "description": "章回体轻文言文，介于古白话与现代白话之间" },
+          { "id": "style-2", "label": "叙事视角", "description": "说书人全知口吻，常用'却说''且不表''话说那''正是'等套语" },
+          { "id": "style-3", "label": "心理描写", "description": "以'心中暗想'引出角色内心独白，不用现代第三人称心理描写" },
+          { "id": "style-4", "label": "对话风格", "description": "角色对话直接用冒号引出，口语化但不脱离文言底色" }
+        ]
+      },
+      "constraints": [
+        "禁用现代心理描写手法（如'面色凝重''心中翻江倒海''不是滋味'），改用章回体惯用表达",
+        "每段叙事转场使用说书人过渡语（'却说''且不表''话分两头'等）"
+      ],
+      "visibility": "active"
+    }
+  ]
+}
