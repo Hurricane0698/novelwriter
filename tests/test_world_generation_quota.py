@@ -13,7 +13,7 @@ from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base, get_db
-from app.models import Novel, User
+from app.models import Novel, TokenUsage, User
 
 
 engine = create_engine(
@@ -155,3 +155,54 @@ def test_generate_world_charges_quota_on_success(client, db, hosted_user, novel,
 
     db.refresh(hosted_user)
     assert hosted_user.generation_quota == before - 1
+
+
+def test_generate_world_allows_byok_when_ai_budget_hard_stop_is_reached(client, db, hosted_user, novel, monkeypatch):
+    import app.config as config_mod
+    from app.api import world
+    from app.config import Settings
+    from app.schemas import WorldGenerateResponse
+
+    prev = config_mod._settings_instance
+    config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
+    try:
+        db.add(
+            TokenUsage(
+                user_id=hosted_user.id,
+                model="gemini-3.0-flash",
+                prompt_tokens=10,
+                completion_tokens=10,
+                total_tokens=20,
+                cost_estimate=1.0,
+                billing_source="hosted",
+                node_name="world_generate",
+            )
+        )
+        db.commit()
+
+        before = hosted_user.generation_quota
+        mock = AsyncMock(
+            return_value=WorldGenerateResponse(
+                entities_created=0,
+                relationships_created=0,
+                systems_created=0,
+                warnings=[],
+            )
+        )
+        monkeypatch.setattr(world, "generate_world_drafts", mock)
+
+        resp = client.post(
+            f"/api/novels/{novel.id}/world/generate",
+            json={"text": "这是一段足够长的世界观设定文本。"},
+            headers={
+                "x-llm-base-url": "https://example.com/v1",
+                "x-llm-api-key": "byok-key",
+                "x-llm-model": "byok-model",
+            },
+        )
+        assert resp.status_code == 200
+
+        db.refresh(hosted_user)
+        assert hosted_user.generation_quota == before - 1
+    finally:
+        config_mod._settings_instance = prev

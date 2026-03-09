@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { getLlmApiErrorMessage } from '@/lib/llmErrorMessages'
 import { ApiError } from '@/services/api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -95,6 +96,11 @@ export function WorldGenerationDialog({
         },
         onError: (err) => {
           if (err instanceof ApiError) {
+            const llmMessage = getLlmApiErrorMessage(err)
+            if (llmMessage) {
+              setGenError(llmMessage)
+              return
+            }
             if (err.status === 422) {
               setGenError(getWorldGenerate422Message(err.detail) ?? '输入不符合要求，请检查长度')
               return

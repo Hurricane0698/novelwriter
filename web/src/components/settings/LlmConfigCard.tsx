@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
-import { api } from "@/services/api"
+import { getLlmApiErrorMessage, getLlmConfigWarning } from "@/lib/llmErrorMessages"
+import { api, ApiError } from "@/services/api"
 import { clearLlmConfig, getLlmConfig, setLlmConfig } from "@/lib/llmConfigStore"
 
 const IS_HOSTED = (import.meta.env.VITE_DEPLOY_MODE || "selfhost") === "hosted"
@@ -25,6 +26,11 @@ export function LlmConfigCard() {
             model: model.trim(),
         })
     }
+    const partialConfigWarning = getLlmConfigWarning({
+        baseUrl: baseUrl.trim(),
+        apiKey: apiKey.trim(),
+        model: model.trim(),
+    })
 
     const testConnection = async () => {
         save()
@@ -33,12 +39,16 @@ export function LlmConfigCard() {
         try {
             const res = await api.testLlmConnection()
             if (res.ok) {
-                setResult({ ok: true, message: `连接成功 (${res.latency_ms}ms)` })
+                setResult({ ok: true, message: res.message ?? `连接与应用兼容性检测通过 (${res.latency_ms}ms)` })
             } else {
                 setResult({ ok: false, message: res.error ?? "连接失败" })
             }
         } catch (e) {
-            setResult({ ok: false, message: e instanceof Error ? e.message : "连接失败" })
+            if (e instanceof ApiError) {
+                setResult({ ok: false, message: getLlmApiErrorMessage(e) ?? `请求失败（HTTP ${e.status}）` })
+            } else {
+                setResult({ ok: false, message: e instanceof Error ? e.message : "连接失败" })
+            }
         } finally {
             setTesting(false)
         }
@@ -58,6 +68,12 @@ export function LlmConfigCard() {
                     如果你想长期使用自己的 Key，推荐改用 Docker / 环境变量自部署。
                 </p>
             )}
+
+            {partialConfigWarning ? (
+                <div className="rounded-lg border border-[hsl(var(--color-warning)/0.35)] bg-[hsl(var(--color-warning)/0.10)] px-3 py-2 text-sm text-[hsl(var(--color-warning))]">
+                    {partialConfigWarning}
+                </div>
+            ) : null}
 
             <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium" htmlFor="llm-base-url">

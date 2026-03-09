@@ -34,6 +34,12 @@ import { getLlmConfig } from '@/lib/llmConfigStore'
 
 // NOTE: use nullish coalescing so `VITE_API_URL=""` stays empty (same-origin in Docker).
 const BASE_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')
+const NON_RETRIABLE_503_CODES = new Set([
+  'ai_manually_disabled',
+  'ai_budget_hard_stop',
+  'ai_budget_meter_disabled',
+  'ai_budget_meter_unavailable',
+])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -94,6 +100,19 @@ async function throwApiError(res: Response): Promise<never> {
   throw new ApiError(res.status, `HTTP ${res.status}`, { detail, code, requestId })
 }
 
+function createApiError(
+  status: number,
+  parsed: { detail: unknown; code?: string; requestId?: string },
+): ApiError {
+  return new ApiError(status, `HTTP ${status}`, parsed)
+}
+
+function parseRetryAfterSeconds(res: Response): number {
+  const raw = parseInt(res.headers.get('Retry-After') ?? '3', 10)
+  if (!Number.isFinite(raw) || raw <= 0) return 3
+  return raw
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const maxRetries = 2
   for (let attempt = 0; ; attempt++) {
@@ -105,7 +124,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers: { 'Content-Type': 'application/json', ...init?.headers },
     })
     if (res.status === 503 && attempt < maxRetries) {
-      const retryAfter = parseInt(res.headers.get('Retry-After') ?? '3', 10)
+      const parsed = await parseErrorDetail(res)
+      if (parsed.code && NON_RETRIABLE_503_CODES.has(parsed.code)) {
+        throw createApiError(res.status, parsed)
+      }
+      const retryAfter = parseRetryAfterSeconds(res)
       await new Promise(r => setTimeout(r, retryAfter * 1000))
       continue
     }
@@ -221,7 +244,7 @@ export const api = {
   },
 
   testLlmConnection: () =>
-    request<{ ok: boolean; model?: string; latency_ms?: number; error?: string }>('/api/llm/test', {
+    request<{ ok: boolean; model?: string; latency_ms?: number; error?: string; message?: string; capabilities?: { basic: boolean; stream: boolean; json_mode: boolean } }>('/api/llm/test', {
       method: 'POST',
       headers: llmHeaders(),
     }),
@@ -246,15 +269,19 @@ export async function* streamContinuation(
       signal: opts?.signal,
     })
     if (resp.status === 503 && attempt < maxRetries) {
-      const retryAfter = parseInt(resp.headers.get('Retry-After') ?? '3', 10)
+      const parsed = await parseErrorDetail(resp)
+      if (parsed.code && NON_RETRIABLE_503_CODES.has(parsed.code)) {
+        throw createApiError(resp.status, parsed)
+      }
+      const retryAfter = parseRetryAfterSeconds(resp)
       await new Promise(r => setTimeout(r, retryAfter * 1000))
       continue
     }
     break
   }
   if (!resp!.ok) {
-    const { detail } = await parseErrorDetail(resp!)
-    throw new ApiError(resp!.status, `HTTP ${resp!.status}`, { detail })
+    const parsed = await parseErrorDetail(resp!)
+    throw createApiError(resp!.status, parsed)
   }
   const reader = resp!.body!.getReader()
   const decoder = new TextDecoder()

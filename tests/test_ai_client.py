@@ -125,6 +125,41 @@ def test_resolve_config_strips_chat_completions_from_per_request(mock_settings):
 
 
 @pytest.mark.asyncio
+@patch("app.core.ai_client.ensure_ai_available_fresh_session")
+@patch("app.core.ai_client.get_settings")
+@patch("app.core.ai_client.AsyncOpenAI")
+async def test_generate_uses_byok_billing_source_for_ai_gate(
+    MockOpenAI, mock_settings, mock_ai_gate
+):
+    s = MagicMock(
+        deploy_mode="hosted",
+        openai_base_url="https://api.openai.com/v1",
+        openai_api_key="sk-test",
+        openai_model="gpt-4o",
+    )
+    mock_settings.return_value = s
+
+    mock_response = MagicMock()
+    mock_response.usage = None
+    mock_response.choices = [MagicMock(message=MagicMock(content="Generated text"))]
+    mock_client_instance = MagicMock()
+    mock_client_instance.chat.completions.create = AsyncMock(return_value=mock_response)
+    MockOpenAI.return_value = mock_client_instance
+
+    c = AIClient()
+    result = await c.generate(
+        "Write something",
+        base_url="https://user.example.com/v1",
+        api_key="user-key",
+        model="user-model",
+        billing_source_hint="byok",
+    )
+
+    assert result == "Generated text"
+    mock_ai_gate.assert_called_once_with(billing_source="byok")
+
+
+@pytest.mark.asyncio
 @patch("app.core.ai_client.get_settings")
 @patch("app.core.ai_client.AsyncOpenAI")
 async def test_generate_openai(MockOpenAI, mock_settings):
@@ -145,6 +180,47 @@ async def test_generate_openai(MockOpenAI, mock_settings):
     result = await c.generate("Write something")
     assert result == "Generated text"
     mock_client_instance.chat.completions.create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("app.core.ai_client.ensure_ai_available_fresh_session")
+@patch("app.core.ai_client.get_settings")
+@patch("app.core.ai_client.AsyncOpenAI")
+async def test_generate_stream_uses_byok_billing_source_for_ai_gate(
+    MockOpenAI, mock_settings, mock_ai_gate
+):
+    s = MagicMock(
+        deploy_mode="hosted",
+        openai_base_url="https://api.openai.com/v1",
+        openai_api_key="sk-test",
+        openai_model="gpt-4o",
+    )
+    mock_settings.return_value = s
+
+    chunk = MagicMock()
+    chunk.usage = None
+    chunk.choices = [MagicMock(delta=MagicMock(content="A"))]
+
+    async def fake_stream():
+        yield chunk
+
+    mock_client_instance = MagicMock()
+    mock_client_instance.chat.completions.create = AsyncMock(return_value=fake_stream())
+    MockOpenAI.return_value = mock_client_instance
+
+    c = AIClient()
+    out = []
+    async for token in c.generate_stream(
+        "Write something",
+        base_url="https://user.example.com/v1",
+        api_key="user-key",
+        model="user-model",
+        billing_source_hint="byok",
+    ):
+        out.append(token)
+
+    assert "".join(out) == "A"
+    mock_ai_gate.assert_called_once_with(billing_source="byok")
 
 
 @pytest.mark.asyncio
@@ -246,6 +322,47 @@ async def test_generate_stream_retries_without_stream_options_on_unsupported_gat
 
 
 # --- Error handling ---
+
+
+@pytest.mark.asyncio
+@patch("app.core.ai_client.ensure_ai_available_fresh_session")
+@patch("app.core.ai_client.get_settings")
+@patch("app.core.ai_client.AsyncOpenAI")
+async def test_generate_structured_uses_byok_billing_source_for_ai_gate(
+    MockOpenAI, mock_settings, mock_ai_gate
+):
+    class ExampleModel(BaseModel):
+        ok: bool
+
+    s = MagicMock(
+        deploy_mode="hosted",
+        openai_base_url="https://api.openai.com/v1",
+        openai_api_key="sk-test",
+        openai_model="gpt-4o",
+    )
+    mock_settings.return_value = s
+
+    mock_response = MagicMock()
+    mock_response.usage = None
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content=json.dumps({"ok": True})), finish_reason="stop")
+    ]
+    mock_client_instance = MagicMock()
+    mock_client_instance.chat.completions.create = AsyncMock(return_value=mock_response)
+    MockOpenAI.return_value = mock_client_instance
+
+    c = AIClient()
+    result = await c.generate_structured(
+        "Write something",
+        ExampleModel,
+        base_url="https://user.example.com/v1",
+        api_key="user-key",
+        model="user-model",
+        billing_source_hint="byok",
+    )
+
+    assert result.ok is True
+    mock_ai_gate.assert_called_once_with(billing_source="byok")
 
 
 @pytest.mark.asyncio

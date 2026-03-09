@@ -273,6 +273,27 @@ def test_generate_world_forwards_byok_headers(client, novel, monkeypatch):
     assert kwargs["model"] == "test-model"
 
 
+def test_generate_world_rejects_partial_byok_headers(client, novel, monkeypatch):
+    from app.core.ai_client import ai_client
+    from app.core.world_gen import WorldGenLLMOutput
+
+    mock = AsyncMock(return_value=WorldGenLLMOutput())
+    monkeypatch.setattr(ai_client, "generate_structured", mock)
+
+    headers = {
+        "x-llm-base-url": "https://example.com/v1",
+        "x-llm-api-key": "test-key",
+    }
+    resp = client.post(
+        f"/api/novels/{novel.id}/world/generate",
+        json={"text": "这是一段足够长的世界观设定文本。"},
+        headers=headers,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "llm_config_incomplete"
+    mock.assert_not_called()
+
+
 def test_generate_world_text_too_short_422(client, novel):
     resp = client.post(f"/api/novels/{novel.id}/world/generate", json={"text": "太短"})
     assert resp.status_code == 422

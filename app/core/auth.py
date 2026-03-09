@@ -171,7 +171,32 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def _resolve_generation_billing_source(request: Request) -> str:
+    settings = get_settings()
+    if settings.deploy_mode != "hosted":
+        return "selfhost"
+
+    base_url = request.headers.get("x-llm-base-url")
+    api_key = request.headers.get("x-llm-api-key")
+    model = request.headers.get("x-llm-model")
+
+    if not base_url and not api_key and not model:
+        return "hosted"
+
+    if not base_url or not api_key or not model:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "llm_config_incomplete",
+                "message": "BYOK requires X-LLM-Base-Url, X-LLM-Api-Key, and X-LLM-Model together.",
+            },
+        )
+
+    return "byok"
+
+
 def check_generation_quota(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ) -> User:
@@ -180,7 +205,7 @@ def check_generation_quota(
     Actual decrement happens via decrement_quota() in the endpoint body,
     where num_versions is known.
     """
-    ensure_ai_available(db)
+    ensure_ai_available(db, billing_source=_resolve_generation_billing_source(request))
 
     settings = get_settings()
     if settings.deploy_mode == "selfhost":

@@ -7,7 +7,7 @@ from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base, get_db
-from app.models import Novel, TokenUsage, User
+from app.models import Chapter, Novel, TokenUsage, User
 
 
 engine = create_engine(
@@ -106,5 +106,60 @@ def test_bootstrap_rejects_when_ai_budget_hard_stop_is_reached(client, monkeypat
 
         db.refresh(user)
         assert user.generation_quota == before
+    finally:
+        config_mod._settings_instance = prev
+
+
+def test_bootstrap_allows_byok_when_ai_budget_hard_stop_is_reached(client, monkeypatch):
+    import app.config as config_mod
+    from app.api import world
+    from app.config import Settings
+
+    c, db, user, novel = client
+
+    prev = config_mod._settings_instance
+    config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
+    try:
+        db.add(
+            TokenUsage(
+                user_id=user.id,
+                model="gemini-3.0-flash",
+                prompt_tokens=10,
+                completion_tokens=10,
+                total_tokens=20,
+                cost_estimate=1.0,
+                billing_source="hosted",
+                node_name="bootstrap",
+            )
+        )
+        db.add(
+            Chapter(
+                novel_id=novel.id,
+                chapter_number=1,
+                title="第一章",
+                content="这里有可以启动 bootstrap 的正文。",
+            )
+        )
+        db.commit()
+
+        async def fake_run_bootstrap_job(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(world, "run_bootstrap_job", fake_run_bootstrap_job)
+
+        before = user.generation_quota
+        resp = c.post(
+            f"/api/novels/{novel.id}/world/bootstrap",
+            json={},
+            headers={
+                "x-llm-base-url": "https://example.com/v1",
+                "x-llm-api-key": "byok-key",
+                "x-llm-model": "byok-model",
+            },
+        )
+        assert resp.status_code == 202
+
+        db.refresh(user)
+        assert user.generation_quota == before - 1
     finally:
         config_mod._settings_instance = prev

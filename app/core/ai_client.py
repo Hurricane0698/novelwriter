@@ -190,11 +190,11 @@ class AIClient:
         billing_source_hint: str | None = None,
         user_id: int | None = None,
     ) -> str:
-        ensure_ai_available_fresh_session()
         usage_billing_source = _resolve_billing_source(
             billing_source_hint,
             using_request_override=bool(base_url and api_key and model),
         )
+        ensure_ai_available_fresh_session(billing_source=usage_billing_source)
         config = self._resolve_config(base_url, api_key, model)
         client = AsyncOpenAI(
             base_url=config["base_url"],
@@ -237,11 +237,11 @@ class AIClient:
         user_id: int | None = None,
     ):
         """Yield content chunks from streaming LLM response."""
-        ensure_ai_available_fresh_session()
         usage_billing_source = _resolve_billing_source(
             billing_source_hint,
             using_request_override=bool(base_url and api_key and model),
         )
+        ensure_ai_available_fresh_session(billing_source=usage_billing_source)
         config = self._resolve_config(base_url, api_key, model)
         client = AsyncOpenAI(
             base_url=config["base_url"],
@@ -326,11 +326,11 @@ class AIClient:
             StructuredOutputParseError: If structured output cannot be parsed after retries
             LLMUnavailableError: If the LLM request fails after retries
         """
-        ensure_ai_available_fresh_session()
         usage_billing_source = _resolve_billing_source(
             billing_source_hint,
             using_request_override=bool(base_url and api_key and model),
         )
+        ensure_ai_available_fresh_session(billing_source=usage_billing_source)
         config = self._resolve_config(base_url, api_key, model)
         client = AsyncOpenAI(
             base_url=config["base_url"],

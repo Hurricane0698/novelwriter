@@ -133,6 +133,15 @@ def get_llm_config(request: Request) -> dict | None:
             }
         return None
 
+    if not base_url or not api_key or not model:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "llm_config_incomplete",
+                "message": "BYOK requires X-LLM-Base-Url, X-LLM-Api-Key, and X-LLM-Model together.",
+            },
+        )
+
     settings = get_settings()
     if settings.deploy_mode == "hosted" and base_url:
         from app.core.url_validator import UnsafeURLError, validate_llm_url

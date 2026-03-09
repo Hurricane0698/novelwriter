@@ -68,6 +68,27 @@ describe('api service', () => {
     }
   })
 
+  it('does not retry structured 503 domain errors for request endpoints', async () => {
+    const payload = { detail: { code: 'ai_manually_disabled', message: 'disabled' } }
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(payload), {
+        status: 503,
+        headers: { 'content-type': 'application/json', 'Retry-After': '300', 'X-Request-ID': 'req_llm_1' },
+      }),
+    )
+
+    expect.assertions(4)
+    try {
+      await api.testLlmConnection()
+    } catch (e) {
+      const err = e as ApiError
+      expect(err).toBeInstanceOf(ApiError)
+      expect(err.code).toBe('ai_manually_disabled')
+      expect(err.requestId).toBe('req_llm_1')
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+    }
+  })
+
   it('getChapters fetches chapters for a novel', async () => {
     const chapters = [{ id: 1, novel_id: 1, chapter_number: 1, title: '第一章', content: '内容', created_at: '2026-01-01' }]
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(chapters), { status: 200 }))
@@ -121,6 +142,29 @@ describe('api service', () => {
       }
     }
     await expect(consume()).rejects.toThrow(/Malformed NDJSON line:/)
+  })
+
+  it('streamContinuation does not retry structured 503 domain errors and preserves error code', async () => {
+    const payload = { detail: { code: 'ai_manually_disabled', message: 'disabled' } }
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(payload), {
+        status: 503,
+        headers: { 'content-type': 'application/json', 'Retry-After': '300', 'X-Request-ID': 'req_stream_1' },
+      }),
+    )
+
+    expect.assertions(4)
+    try {
+      for await (const event of streamContinuation(1, { num_versions: 1 })) {
+        void event
+      }
+    } catch (e) {
+      const err = e as ApiError
+      expect(err).toBeInstanceOf(ApiError)
+      expect(err.code).toBe('ai_manually_disabled')
+      expect(err.requestId).toBe('req_stream_1')
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+    }
   })
 
   it('does not attach BYOK LLM headers to non-LLM endpoints', async () => {

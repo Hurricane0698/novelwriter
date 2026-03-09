@@ -219,6 +219,45 @@ def test_continue_rejects_when_ai_budget_hard_stop_is_reached(client, db, hosted
         config_mod._settings_instance = prev
 
 
+def test_continue_allows_byok_when_ai_budget_hard_stop_is_reached(client, db, hosted_user, novel, monkeypatch):
+    import app.config as config_mod
+    from app.config import Settings
+
+    prev = config_mod._settings_instance
+    config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
+    try:
+        db.add(
+            TokenUsage(
+                user_id=hosted_user.id,
+                model="gemini-3.0-flash",
+                prompt_tokens=10,
+                completion_tokens=10,
+                total_tokens=20,
+                cost_estimate=1.0,
+                billing_source="hosted",
+                node_name="writer",
+            )
+        )
+        db.commit()
+
+        before = hosted_user.generation_quota
+        resp = client.post(
+            f"/api/novels/{novel.id}/continue",
+            json={"num_versions": 1, "context_chapters": 1},
+            headers={
+                "x-llm-base-url": "https://example.com/v1",
+                "x-llm-api-key": "byok-key",
+                "x-llm-model": "byok-model",
+            },
+        )
+        assert resp.status_code == 200
+
+        db.refresh(hosted_user)
+        assert hosted_user.generation_quota == before - 1
+    finally:
+        config_mod._settings_instance = prev
+
+
 def test_continue_refunds_quota_on_generation_failure(client, db, hosted_user, novel, monkeypatch):
     from app.api import novels
 

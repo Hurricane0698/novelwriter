@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useBootstrapStatus, useTriggerBootstrap } from '@/hooks/world/useBootstrap'
 import { worldKeys } from '@/hooks/world/keys'
 import { useToast } from '@/components/world-model/shared/useToast'
+import { getLlmApiErrorMessage } from '@/lib/llmErrorMessages'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { LABELS } from '@/constants/labels'
@@ -70,6 +71,11 @@ export function BootstrapPanel({ novelId, variant = 'sidebar' }: { novelId: numb
     trigger.mutate(payload, {
       onError: (err) => {
         if (err instanceof ApiError) {
+          const llmMessage = getLlmApiErrorMessage(err)
+          if (llmMessage) {
+            toast(llmMessage)
+            return
+          }
           if (err.code === 'bootstrap_already_running') {
             toast(LABELS.BOOTSTRAP_SCANNING)
           } else if (err.code === 'bootstrap_no_text') {

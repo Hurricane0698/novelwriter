@@ -194,7 +194,19 @@ class TestHostedSSRFRejection:
 
         response = MagicMock(usage=None)
         mock_client = MagicMock()
-        mock_client.chat.completions.create = AsyncMock(return_value=response)
+        stream_chunk = MagicMock()
+        stream_chunk.choices = [MagicMock(delta=MagicMock(content="ok"))]
+        stream_chunk.usage = None
+
+        async def fake_stream():
+            yield stream_chunk
+
+        json_response = MagicMock(
+            choices=[MagicMock(message=MagicMock(content='{"ok": true}'))]
+        )
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=[response, fake_stream(), json_response]
+        )
         monkeypatch.setattr(llm_api, "AsyncOpenAI", lambda **kwargs: mock_client)
 
         app = _make_app(db, llm_api.router)
@@ -212,6 +224,7 @@ class TestHostedSSRFRejection:
             resp = c.post("/api/llm/test", headers=headers)
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
+        assert resp.json()["capabilities"] == {"basic": True, "stream": True, "json_mode": True}
 
     def test_hosted_llm_test_records_server_owned_usage(self, db, monkeypatch):
         from app.api import llm as llm_api
@@ -237,8 +250,20 @@ class TestHostedSSRFRejection:
 
             usage = MagicMock(prompt_tokens=1_000, completion_tokens=2_000)
             response = MagicMock(usage=usage)
+            stream_chunk = MagicMock()
+            stream_chunk.choices = [MagicMock(delta=MagicMock(content="ok"))]
+            stream_chunk.usage = None
+
+            async def fake_stream():
+                yield stream_chunk
+
+            json_response = MagicMock(
+                choices=[MagicMock(message=MagicMock(content='{"ok": true}'))]
+            )
             mock_client = MagicMock()
-            mock_client.chat.completions.create = AsyncMock(return_value=response)
+            mock_client.chat.completions.create = AsyncMock(
+                side_effect=[response, fake_stream(), json_response]
+            )
             monkeypatch.setattr(llm_api, "AsyncOpenAI", lambda **kwargs: mock_client)
 
             with TestClient(app) as c:
@@ -258,6 +283,218 @@ class TestHostedSSRFRejection:
         finally:
             monkeypatch.setattr("app.database.SessionLocal", prev_session_local)
             config_mod._settings_instance = prev
+
+    def test_llm_test_reports_json_mode_incompatibility(self, db, monkeypatch):
+        from app.api import llm as llm_api
+        from app.core.auth import get_current_user_or_default
+
+        basic_response = MagicMock(usage=None)
+        stream_chunk = MagicMock()
+        stream_chunk.choices = [MagicMock(delta=MagicMock(content="ok"))]
+        stream_chunk.usage = None
+
+        async def fake_stream():
+            yield stream_chunk
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=[
+                basic_response,
+                fake_stream(),
+                Exception("response_format json_object is not supported"),
+            ]
+        )
+        monkeypatch.setattr(llm_api, "AsyncOpenAI", lambda **kwargs: mock_client)
+
+        app = _make_app(db, llm_api.router)
+        app.dependency_overrides[get_current_user_or_default] = lambda: User(
+            id=1, username="default", hashed_password="x", role="admin", is_active=True
+        )
+
+        headers = {
+            "x-llm-base-url": "http://localhost:8000/v1",
+            "x-llm-api-key": "k",
+            "x-llm-model": "m",
+        }
+
+        with TestClient(app) as c:
+            resp = c.post("/api/llm/test", headers=headers)
+
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["ok"] is False
+        assert payload["capabilities"] == {"basic": True, "stream": True, "json_mode": False}
+        assert "JSON 模式" in payload["error"]
+
+    def test_llm_test_reports_stream_incompatibility(self, db, monkeypatch):
+        from app.api import llm as llm_api
+        from app.core.auth import get_current_user_or_default
+
+        basic_response = MagicMock(usage=None)
+        json_response = MagicMock(
+            choices=[MagicMock(message=MagicMock(content='{"ok": true}'))]
+        )
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=[
+                basic_response,
+                Exception("streaming is not supported"),
+                json_response,
+            ]
+        )
+        monkeypatch.setattr(llm_api, "AsyncOpenAI", lambda **kwargs: mock_client)
+
+        app = _make_app(db, llm_api.router)
+        app.dependency_overrides[get_current_user_or_default] = lambda: User(
+            id=1, username="default", hashed_password="x", role="admin", is_active=True
+        )
+
+        headers = {
+            "x-llm-base-url": "http://localhost:8000/v1",
+            "x-llm-api-key": "k",
+            "x-llm-model": "m",
+        }
+
+        with TestClient(app) as c:
+            resp = c.post("/api/llm/test", headers=headers)
+
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["ok"] is False
+        assert payload["capabilities"] == {"basic": True, "stream": False, "json_mode": True}
+        assert "流式输出" in payload["error"]
+
+    def test_llm_test_retries_stream_probe_without_stream_options(self, db, monkeypatch):
+        from app.api import llm as llm_api
+        from app.core.auth import get_current_user_or_default
+
+        basic_response = MagicMock(usage=None)
+        stream_chunk = MagicMock()
+        stream_chunk.choices = [MagicMock(delta=MagicMock(content="ok"))]
+        stream_chunk.usage = None
+
+        async def fake_stream():
+            yield stream_chunk
+
+        json_response = MagicMock(
+            choices=[MagicMock(message=MagicMock(content='{"ok": true}'))]
+        )
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=[
+                basic_response,
+                Exception("Unknown field: stream_options"),
+                fake_stream(),
+                json_response,
+            ]
+        )
+        monkeypatch.setattr(llm_api, "AsyncOpenAI", lambda **kwargs: mock_client)
+
+        app = _make_app(db, llm_api.router)
+        app.dependency_overrides[get_current_user_or_default] = lambda: User(
+            id=1, username="default", hashed_password="x", role="admin", is_active=True
+        )
+
+        headers = {
+            "x-llm-base-url": "http://localhost:8000/v1",
+            "x-llm-api-key": "k",
+            "x-llm-model": "m",
+        }
+
+        with TestClient(app) as c:
+            resp = c.post("/api/llm/test", headers=headers)
+
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["ok"] is True
+        assert payload["capabilities"] == {"basic": True, "stream": True, "json_mode": True}
+
+    def test_hosted_llm_test_allows_byok_when_hosted_budget_hard_stop_is_reached(self, db, monkeypatch):
+        from app.api import llm as llm_api
+        from app.config import Settings
+        from app.core.auth import get_current_user_or_default
+        import app.config as config_mod
+
+        prev = config_mod._settings_instance
+        config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
+        try:
+            db.add(
+                TokenUsage(
+                    user_id=1,
+                    model="gemini-3.0-flash",
+                    prompt_tokens=10,
+                    completion_tokens=10,
+                    total_tokens=20,
+                    cost_estimate=1.0,
+                    billing_source="hosted",
+                    node_name="writer",
+                )
+            )
+            db.commit()
+
+            basic_response = MagicMock(usage=None)
+            stream_chunk = MagicMock()
+            stream_chunk.choices = [MagicMock(delta=MagicMock(content="ok"))]
+            stream_chunk.usage = None
+
+            async def fake_stream():
+                yield stream_chunk
+
+            json_response = MagicMock(
+                choices=[MagicMock(message=MagicMock(content='{"ok": true}'))]
+            )
+            mock_client = MagicMock()
+            mock_client.chat.completions.create = AsyncMock(
+                side_effect=[basic_response, fake_stream(), json_response]
+            )
+            monkeypatch.setattr(llm_api, "AsyncOpenAI", lambda **kwargs: mock_client)
+
+            app = _make_app(db, llm_api.router)
+            app.dependency_overrides[get_current_user_or_default] = lambda: User(
+                id=1, username="u", hashed_password="x", role="admin", is_active=True
+            )
+
+            headers = {
+                "x-llm-base-url": "https://example.com/v1",
+                "x-llm-api-key": "k",
+                "x-llm-model": "m",
+            }
+
+            with TestClient(app) as c:
+                resp = c.post("/api/llm/test", headers=headers)
+
+            assert resp.status_code == 200
+            assert resp.json()["ok"] is True
+        finally:
+            config_mod._settings_instance = prev
+
+    def test_llm_test_rejects_partial_byok_headers(self, db, monkeypatch):
+        from app.api import llm as llm_api
+        from app.core.auth import get_current_user_or_default
+        import app.api.novels as novels_api
+        import app.core.url_validator as url_validator
+
+        monkeypatch.setattr(novels_api, "get_settings", lambda: MagicMock(deploy_mode="selfhost"))
+        monkeypatch.setattr(url_validator, "get_settings", lambda: MagicMock(deploy_mode="selfhost"))
+        monkeypatch.setattr(llm_api, "AsyncOpenAI", lambda **kwargs: (_ for _ in ()).throw(AssertionError("should not call provider")))
+
+        app = _make_app(db, llm_api.router)
+        app.dependency_overrides[get_current_user_or_default] = lambda: User(
+            id=1, username="default", hashed_password="x", role="admin", is_active=True
+        )
+
+        headers = {
+            "x-llm-base-url": "http://localhost:8000/v1",
+            "x-llm-api-key": "k",
+        }
+
+        with TestClient(app) as c:
+            resp = c.post("/api/llm/test", headers=headers)
+
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["code"] == "llm_config_incomplete"
 
 
     def test_llm_test_rejects_when_ai_is_manually_disabled(self, db):
