@@ -21,7 +21,8 @@ from app.schemas import (
     WorldGenerateResponse,
     WorldGenerateWarning,
 )
-from app.utils.prompts import WORLD_GENERATION_PROMPT, WORLD_GENERATION_SYSTEM_PROMPT
+from app.core.text import PromptKey, get_prompt
+from app.world_relationships import canonicalize_relationship_label
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,7 @@ def _build_world_generation_prompt(*, text: str, chunk_index: int, chunk_count: 
         )
     else:
         chunk_directive = "请尽量完整覆盖文本中明确、稳定、可复用的设定，不要过度压缩条目数量。"
-    return WORLD_GENERATION_PROMPT.format(text=text.strip(), chunk_directive=chunk_directive)
+    return get_prompt(PromptKey.WORLD_GEN).format(text=text.strip(), chunk_directive=chunk_directive)
 
 
 def _merge_worldgen_outputs(outputs: list[WorldGenLLMOutput]) -> WorldGenLLMOutput:
@@ -350,7 +351,7 @@ async def generate_world_drafts(
             await ai_client.generate_structured(
                 prompt=prompt,
                 response_model=WorldGenLLMOutput,
-                system_prompt=WORLD_GENERATION_SYSTEM_PROMPT,
+                system_prompt=get_prompt(PromptKey.WORLD_GEN_SYSTEM),
                 # Structured extraction — low temperature for schema adherence.
                 temperature=0.3,
                 max_tokens=settings.world_generation_chunk_max_tokens,

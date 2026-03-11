@@ -20,7 +20,7 @@ from app.models import Novel, Chapter, Outline, Continuation
 from app.core.ai_client import ai_client
 from app.core.lore_manager import LoreManager
 from app.core.cache import cache_manager
-from app.utils.prompts import CONTINUATION_PROMPT, OUTLINE_PROMPT, SYSTEM_PROMPT
+from app.core.text import PromptKey, get_prompt
 from app.config import get_settings, resolve_context_chapters
 from app.core.chapter_numbering import get_next_missing_chapter_number
 
@@ -70,7 +70,7 @@ def _build_length_guidance(
 
 def _build_system_prompt(length_guidance: str) -> str:
     return (
-        f"{SYSTEM_PROMPT}\n\n"
+        f"{get_prompt(PromptKey.SYSTEM)}\n\n"
         "【长度纪律】\n"
         f"- {length_guidance}\n"
         "- 直接开始写正文，不要先做分析、提纲或铺垫性说明\n"
@@ -153,7 +153,7 @@ async def generate_outline(
         for ch in chapters
     )
 
-    prompt = OUTLINE_PROMPT.format(
+    prompt = get_prompt(PromptKey.OUTLINE).format(
         start=chapter_start,
         end=chapter_end,
         content=content,
@@ -161,7 +161,7 @@ async def generate_outline(
 
     outline_text = await ai_client.generate(
         prompt=prompt,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=get_prompt(PromptKey.SYSTEM),
         max_tokens=1000,
     )
 
@@ -307,7 +307,7 @@ async def _build_continuation_prompt(
 
     constraints_section = (narrative_constraints or "").strip()
 
-    generation_prompt = CONTINUATION_PROMPT.format(
+    generation_prompt = get_prompt(PromptKey.CONTINUATION).format(
         title=novel.title,
         next_chapter=next_chapter,
         outline=outline_content,
