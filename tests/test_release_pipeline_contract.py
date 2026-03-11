@@ -15,6 +15,8 @@ def test_release_tag_workflow_deploys_before_public_publish():
     assert "uses: ./.github/workflows/deploy-hosted.yml" in workflow
     assert "uses: ./.github/workflows/mirror-public.yml" in workflow
     assert re.search(r"publish-public:\n(?:.*\n)*?\s+needs:\s+deploy-hosted", workflow)
+    assert re.search(r"deploy-hosted:\n(?:.*\n)*?\s+id-token:\s+write", workflow)
+    assert re.search(r"publish-public:\n(?:.*\n)*?\s+contents:\s+read", workflow)
 
 
 def test_mirror_public_workflow_is_reusable_and_still_manual_dispatchable():
