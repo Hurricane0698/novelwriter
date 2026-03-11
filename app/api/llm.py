@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
-from app.api.novels import get_llm_config
 from app.database import get_db
 from app.core.auth import get_current_user_or_default
 from app.core.ai_client import (
@@ -15,6 +14,7 @@ from app.core.ai_client import (
     _resolve_billing_source,
     _stream_options_unsupported,
 )
+from app.core.llm_request import get_llm_config
 from app.core.safety_fuses import ensure_ai_available
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])

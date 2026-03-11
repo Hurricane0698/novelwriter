@@ -160,10 +160,10 @@ class TestHostedSSRFRejection:
     def test_hosted_rejects_http_and_link_local_base_url(self, db, monkeypatch):
         from app.api import llm as llm_api
         from app.core.auth import get_current_user_or_default
-        import app.api.novels as novels_api
+        import app.core.llm_request as llm_request
         import app.core.url_validator as url_validator
 
-        monkeypatch.setattr(novels_api, "get_settings", lambda: MagicMock(deploy_mode="hosted"))
+        monkeypatch.setattr(llm_request, "get_settings", lambda: MagicMock(deploy_mode="hosted"))
         monkeypatch.setattr(url_validator, "get_settings", lambda: MagicMock(deploy_mode="hosted"))
 
         app = _make_app(db, llm_api.router)
@@ -186,10 +186,10 @@ class TestHostedSSRFRejection:
     def test_selfhost_allows_http_base_url(self, db, monkeypatch):
         from app.api import llm as llm_api
         from app.core.auth import get_current_user_or_default
-        import app.api.novels as novels_api
+        import app.core.llm_request as llm_request
         import app.core.url_validator as url_validator
 
-        monkeypatch.setattr(novels_api, "get_settings", lambda: MagicMock(deploy_mode="selfhost"))
+        monkeypatch.setattr(llm_request, "get_settings", lambda: MagicMock(deploy_mode="selfhost"))
         monkeypatch.setattr(url_validator, "get_settings", lambda: MagicMock(deploy_mode="selfhost"))
 
         response = MagicMock(usage=None)
@@ -473,10 +473,10 @@ class TestHostedSSRFRejection:
     def test_llm_test_rejects_partial_byok_headers(self, db, monkeypatch):
         from app.api import llm as llm_api
         from app.core.auth import get_current_user_or_default
-        import app.api.novels as novels_api
+        import app.core.llm_request as llm_request
         import app.core.url_validator as url_validator
 
-        monkeypatch.setattr(novels_api, "get_settings", lambda: MagicMock(deploy_mode="selfhost"))
+        monkeypatch.setattr(llm_request, "get_settings", lambda: MagicMock(deploy_mode="selfhost"))
         monkeypatch.setattr(url_validator, "get_settings", lambda: MagicMock(deploy_mode="selfhost"))
         monkeypatch.setattr(llm_api, "AsyncOpenAI", lambda **kwargs: (_ for _ in ()).throw(AssertionError("should not call provider")))
 

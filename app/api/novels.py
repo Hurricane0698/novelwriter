@@ -36,8 +36,15 @@ from app.schemas import (
     UploadResponse,
 )
 from app.core.parser import parse_novel_file
+from app.core.llm_request import get_llm_config
 from app.core.context_assembly import apply_writer_context_budget, assemble_writer_context
 from app.core.continuation_postcheck import postcheck_continuation
+from app.core.continuation_text import (
+    append_user_instruction_for_relevance,
+    extract_narrative_constraints,
+    format_recent_chapters_for_prompt,
+    format_world_context_for_prompt,
+)
 from app.core.generator import continue_novel, continue_novel_stream
 from app.core.chapter_numbering import get_next_missing_chapter_number
 from app.config import get_settings, resolve_context_chapters
@@ -113,53 +120,6 @@ def _safe_delete_where(
         raise
 
 
-def get_llm_config(request: Request) -> dict | None:
-    """Extract per-request LLM config from headers.
-
-    In hosted mode, falls back to server-side config if no headers supplied.
-    """
-    base_url = request.headers.get("x-llm-base-url")
-    api_key = request.headers.get("x-llm-api-key")
-    model = request.headers.get("x-llm-model")
-    if not base_url and not api_key and not model:
-        # Hosted mode: fall back to server-side LLM config
-        settings = get_settings()
-        if settings.deploy_mode == "hosted" and settings.hosted_llm_base_url:
-            return {
-                "base_url": settings.hosted_llm_base_url,
-                "api_key": settings.hosted_llm_api_key,
-                "model": settings.hosted_llm_model,
-                "billing_source_hint": "hosted",
-            }
-        return None
-
-    if not base_url or not api_key or not model:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "llm_config_incomplete",
-                "message": "BYOK requires X-LLM-Base-Url, X-LLM-Api-Key, and X-LLM-Model together.",
-            },
-        )
-
-    settings = get_settings()
-    if settings.deploy_mode == "hosted" and base_url:
-        from app.core.url_validator import UnsafeURLError, validate_llm_url
-        try:
-            validate_llm_url(base_url)
-        except UnsafeURLError as e:
-            # Reject user-controlled endpoints that can be used for SSRF in hosted mode.
-            raise HTTPException(status_code=400, detail=str(e))
-
-    billing_source_hint = "byok" if settings.deploy_mode == "hosted" else "selfhost"
-    return {
-        "base_url": base_url,
-        "api_key": api_key,
-        "model": model,
-        "billing_source_hint": billing_source_hint,
-    }
-
-
 def _user_novels(db: Session, user: User):
     """Return query filtered to novels visible to this user.
 
@@ -182,250 +142,6 @@ def _verify_novel_access(novel: Novel | None, user: User) -> Novel:
         # Hosted mode must not leak existence across users.
         raise HTTPException(status_code=404, detail="Novel not found")
     return novel
-
-
-def _extract_narrative_constraints(writer_ctx: dict[str, Any]) -> str:
-    """Extract constraints from active systems into a standalone prompt section.
-
-    Returns an empty string when no constraints exist, so the prompt template
-    collapses cleanly.
-    """
-    systems = writer_ctx.get("systems") or []
-    rules: list[str] = []
-    for s in systems:
-        if not isinstance(s, dict):
-            continue
-        constraints = s.get("constraints") or []
-        if not isinstance(constraints, list):
-            continue
-        for c in constraints:
-            c = str(c or "").strip()
-            if c:
-                rules.append(c)
-    if not rules:
-        return ""
-    numbered = "\n".join(f"{i}. {r}" for i, r in enumerate(rules, 1))
-    return f"\n<narrative_constraints>\n{numbered}\n</narrative_constraints>\n"
-
-
-# ---------------------------------------------------------------------------
-# System data renderers (display_type → natural language)
-# ---------------------------------------------------------------------------
-
-def _render_hierarchy_data(data: Any) -> str:
-    """Render hierarchy system data as an indented list."""
-    nodes = data.get("nodes") if isinstance(data, dict) else None
-    if not isinstance(nodes, list) or not nodes:
-        return ""
-    lines: list[str] = []
-
-    def _walk(node: Any, depth: int = 0) -> None:
-        if not isinstance(node, dict):
-            return
-        label = str(node.get("label") or node.get("name") or "").strip()
-        if not label:
-            return
-        desc = str(node.get("description") or "").strip()
-        indent = "  " * depth
-        line = f"{indent}· {label}"
-        if desc:
-            line += f"：{desc}"
-        lines.append(line)
-        for child in node.get("children") or []:
-            _walk(child, depth + 1)
-
-    for n in nodes:
-        _walk(n)
-    return "\n".join(lines)
-
-
-def _render_graph_data(data: Any) -> str:
-    """Render graph system data as nodes + edges."""
-    if not isinstance(data, dict):
-        return ""
-    nodes = data.get("nodes") or []
-    edges = data.get("edges") or []
-    if not isinstance(nodes, list) and not isinstance(edges, list):
-        return ""
-    lines: list[str] = []
-    node_map: dict[str, str] = {}
-    for n in nodes:
-        if not isinstance(n, dict):
-            continue
-        nid = str(n.get("id") or "")
-        label = str(n.get("label") or n.get("name") or nid).strip()
-        node_map[nid] = label
-        desc = str(n.get("description") or "").strip()
-        line = f"· {label}"
-        if desc:
-            line += f"：{desc}"
-        lines.append(line)
-    for e in edges:
-        if not isinstance(e, dict):
-            continue
-        src = node_map.get(str(e.get("source") or e.get("from") or ""), str(e.get("source") or e.get("from") or "?"))
-        tgt = node_map.get(str(e.get("target") or e.get("to") or ""), str(e.get("target") or e.get("to") or "?"))
-        elabel = str(e.get("label") or "").strip()
-        if elabel:
-            lines.append(f"  {src} —{elabel}→ {tgt}")
-        else:
-            lines.append(f"  {src} → {tgt}")
-    return "\n".join(lines)
-
-
-def _render_timeline_data(data: Any) -> str:
-    """Render timeline system data as a chronological list."""
-    events = data.get("events") if isinstance(data, dict) else None
-    if not isinstance(events, list) or not events:
-        return ""
-    lines: list[str] = []
-    for ev in events:
-        if not isinstance(ev, dict):
-            continue
-        label = str(ev.get("label") or "").strip()
-        date = str(ev.get("date") or "").strip()
-        desc = str(ev.get("description") or "").strip()
-        if not label:
-            continue
-        line = "· "
-        if date:
-            line += f"{date}，{label}"
-        else:
-            line += label
-        if desc:
-            line += f"：{desc}"
-        lines.append(line)
-    return "\n".join(lines)
-
-
-def _render_list_data(data: Any) -> str:
-    """Render list system data as bullet points."""
-    items = data.get("items") if isinstance(data, dict) else None
-    if not isinstance(items, list) or not items:
-        return ""
-    lines: list[str] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        label = str(item.get("label") or item.get("name") or "").strip()
-        desc = str(item.get("description") or "").strip()
-        if not label:
-            continue
-        line = f"· {label}"
-        if desc:
-            line += f"：{desc}"
-        lines.append(line)
-    return "\n".join(lines)
-
-
-_SYSTEM_DATA_RENDERERS = {
-    "hierarchy": _render_hierarchy_data,
-    "graph": _render_graph_data,
-    "timeline": _render_timeline_data,
-    "list": _render_list_data,
-}
-
-
-def _render_system_data(display_type: str, data: Any) -> str:
-    """Render system data as natural language based on display_type."""
-    renderer = _SYSTEM_DATA_RENDERERS.get(display_type)
-    if renderer and data:
-        return renderer(data)
-    if data:
-        try:
-            return json.dumps(data, ensure_ascii=False, sort_keys=True)
-        except TypeError:
-            return str(data)
-    return ""
-
-
-def _format_world_context_for_prompt(writer_ctx: dict[str, Any]) -> str:
-    """Render assemble_writer_context() output into an LLM-friendly text block."""
-    systems = writer_ctx.get("systems") or []
-    entities = writer_ctx.get("entities") or []
-    relationships = writer_ctx.get("relationships") or []
-
-    id_to_name: dict[int, str] = {}
-    for e in entities:
-        try:
-            id_to_name[int(e.get("id"))] = str(e.get("name") or "").strip()
-        except Exception:
-            continue
-
-    lines: list[str] = []
-
-    if systems:
-        lines.append("〈世界体系〉")
-        for s in systems:
-            name = str(s.get("name") or "").strip()
-            desc = str(s.get("description") or "").strip()
-            display_type = str(s.get("display_type") or "").strip()
-            header = f"- {name}" if name else "- （未命名体系）"
-            if desc:
-                header += f"：{desc}"
-            lines.append(header)
-
-            # Constraints are extracted separately via _extract_narrative_constraints
-            # and injected as a dedicated prompt section; skip them here.
-
-            data = s.get("data")
-            rendered = _render_system_data(display_type, data)
-            if rendered:
-                for dl in rendered.split("\n"):
-                    lines.append(f"  {dl}")
-
-    if entities:
-        lines.append("〈角色与事物〉")
-        for e in entities:
-            name = str(e.get("name") or "").strip()
-            entity_type = str(e.get("entity_type") or "").strip()
-            desc = str(e.get("description") or "").strip()
-            header = f"- {name}" if name else "- （未命名实体）"
-            if entity_type:
-                header += f"（{entity_type}）"
-            if desc:
-                header += f"：{desc}"
-            lines.append(header)
-
-            aliases = e.get("aliases") or []
-            if isinstance(aliases, list):
-                normalized = []
-                for a in aliases:
-                    a = str(a or "").strip()
-                    if not a or (name and a == name):
-                        continue
-                    normalized.append(a)
-                if normalized:
-                    lines.append(f"  别名：{'、'.join(normalized)}")
-
-            attrs = e.get("attributes") or []
-            if isinstance(attrs, list) and attrs:
-                for a in attrs:
-                    key = str(a.get("key") or "").strip()
-                    surface = str(a.get("surface") or "").strip()
-                    if key and surface:
-                        lines.append(f"  - {key}：{surface}")
-                    elif key:
-                        lines.append(f"  - {key}")
-
-    if relationships:
-        lines.append("〈人物关系〉")
-        for r in relationships:
-            label = str(r.get("label") or "").strip()
-            desc = str(r.get("description") or "").strip()
-            src_id = r.get("source_id")
-            tgt_id = r.get("target_id")
-            src = id_to_name.get(int(src_id), str(src_id)) if src_id is not None else "？"
-            tgt = id_to_name.get(int(tgt_id), str(tgt_id)) if tgt_id is not None else "？"
-            if label:
-                rel = f"- {src} —{label}→ {tgt}"
-            else:
-                rel = f"- {src} → {tgt}"
-            if desc:
-                rel += f"：{desc}"
-            lines.append(rel)
-
-    return "\n".join(lines).strip()
 
 
 def _build_continue_debug_summary(writer_ctx: dict[str, Any], context_chapters: int) -> ContinueDebugSummary:
@@ -521,14 +237,8 @@ def _prepare_continuation_context(
     if not recent_chapters:
         raise HTTPException(status_code=400, detail="Novel has no chapters")
 
-    recent_text = "\n\n".join(
-        f"【Chapter {ch.chapter_number}: {ch.title}】\n{ch.content}"
-        for ch in recent_chapters
-    )
-
-    relevance_text = recent_text
-    if req.prompt and req.prompt.strip():
-        relevance_text = relevance_text + "\n\n【用户续写指令】\n" + req.prompt.strip()
+    recent_text = format_recent_chapters_for_prompt(recent_chapters)
+    relevance_text = append_user_instruction_for_relevance(recent_text, req.prompt)
 
     try:
         writer_ctx = assemble_writer_context(db, novel_id, chapter_text=relevance_text)
@@ -537,8 +247,8 @@ def _prepare_continuation_context(
         logger.exception("assemble_writer_context failed for novel %s", novel_id)
         raise HTTPException(status_code=500, detail="Context assembly failed")
 
-    world_context = _format_world_context_for_prompt(writer_ctx)
-    narrative_constraints = _extract_narrative_constraints(writer_ctx)
+    world_context = format_world_context_for_prompt(writer_ctx)
+    narrative_constraints = extract_narrative_constraints(writer_ctx)
     debug_summary = _build_continue_debug_summary(writer_ctx, context_chapters=effective_context_chapters)
 
     return _ContinuationContext(
