@@ -4,6 +4,7 @@ Pytest configuration and shared fixtures.
 
 import sys
 from pathlib import Path
+import socket
 
 import pytest
 
@@ -63,3 +64,21 @@ def _bypass_auth():
     app.dependency_overrides.pop(get_current_user_or_default, None)
     app.dependency_overrides.pop(require_admin, None)
     app.dependency_overrides.pop(check_generation_quota, None)
+
+
+@pytest.fixture
+def allow_public_llm_url_resolution(monkeypatch):
+    """Resolve BYOK test hosts to a stable public IP without skipping validation."""
+    import app.core.url_validator as url_validator
+
+    original_getaddrinfo = url_validator.socket.getaddrinfo
+
+    def _install(*, hostname: str = "example.com", ip: str = "93.184.216.34") -> None:
+        def fake_getaddrinfo(requested_hostname, port, family=0, type=0, proto=0, flags=0):
+            if requested_hostname == hostname:
+                return [(socket.AF_INET, socket.SOCK_STREAM, proto or 6, "", (ip, port or 0))]
+            return original_getaddrinfo(requested_hostname, port, family, type, proto, flags)
+
+        monkeypatch.setattr(url_validator.socket, "getaddrinfo", fake_getaddrinfo)
+
+    return _install

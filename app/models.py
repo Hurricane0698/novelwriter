@@ -52,6 +52,7 @@ class Novel(Base):
     continuations = relationship("Continuation", back_populates="novel", cascade="all, delete-orphan")
     lore_entries = relationship("LoreEntry", back_populates="novel", cascade="all, delete-orphan")
     bootstrap_job = relationship("BootstrapJob", back_populates="novel", uselist=False, cascade="all, delete-orphan")
+    derived_asset_jobs = relationship("DerivedAssetJob", back_populates="novel", cascade="all, delete-orphan")
 
 
 class Chapter(Base):
@@ -332,6 +333,32 @@ class BootstrapJob(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     novel = relationship("Novel", back_populates="bootstrap_job")
+
+
+class DerivedAssetJob(Base):
+    __tablename__ = "derived_asset_jobs"
+    __table_args__ = (
+        UniqueConstraint("novel_id", "asset_kind", name="uq_derived_asset_jobs_novel_asset_kind"),
+        Index("ix_derived_asset_jobs_status_lease", "status", "lease_expires_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    novel_id = Column(Integer, ForeignKey("novels.id"), nullable=False)
+    asset_kind = Column(String(50), nullable=False)
+    status = Column(String(20), nullable=False, default="queued")
+    target_revision = Column(Integer, nullable=False, default=0)
+    claimed_revision = Column(Integer, nullable=True)
+    completed_revision = Column(Integer, nullable=True)
+    result = Column(JSON, default=dict)
+    error = Column(Text, nullable=True)
+    lease_owner = Column(String(64), nullable=True)
+    lease_expires_at = Column(DateTime, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    novel = relationship("Novel", back_populates="derived_asset_jobs")
 
 
 class UserEvent(Base):

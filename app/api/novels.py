@@ -48,6 +48,7 @@ from app.core.continuation_text import (
 from app.core.generator import continue_novel, continue_novel_stream
 from app.core.chapter_numbering import get_next_missing_chapter_number
 from app.core.indexing.lifecycle import (
+    enqueue_window_index_rebuild_job,
     mark_window_index_inputs_changed,
     run_window_index_rebuild_for_latest_revision,
 )
@@ -405,7 +406,12 @@ async def upload_novel(
         )
         db.add(chapter)
 
-    mark_window_index_inputs_changed(novel)
+    target_revision = mark_window_index_inputs_changed(novel)
+    enqueue_window_index_rebuild_job(
+        db,
+        novel_id=novel.id,
+        target_revision=target_revision,
+    )
     db.commit()
     _schedule_window_index_rebuild(
         background_tasks,
@@ -564,7 +570,12 @@ def create_chapter(
             try:
                 db.flush()  # surface unique constraint failures before commit
                 novel.total_chapters = int(novel.total_chapters or 0) + 1
-                mark_window_index_inputs_changed(novel)
+                target_revision = mark_window_index_inputs_changed(novel)
+                enqueue_window_index_rebuild_job(
+                    db,
+                    novel_id=novel_id,
+                    target_revision=target_revision,
+                )
                 db.commit()
             except IntegrityError:
                 db.rollback()
@@ -612,7 +623,12 @@ def create_chapter(
     try:
         db.flush()
         novel.total_chapters = int(novel.total_chapters or 0) + 1
-        mark_window_index_inputs_changed(novel)
+        target_revision = mark_window_index_inputs_changed(novel)
+        enqueue_window_index_rebuild_job(
+            db,
+            novel_id=novel_id,
+            target_revision=target_revision,
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -658,7 +674,12 @@ def update_chapter(
         chapter.title = req.title
     if req.content is not None:
         chapter.content = req.content
-    mark_window_index_inputs_changed(novel)
+    target_revision = mark_window_index_inputs_changed(novel)
+    enqueue_window_index_rebuild_job(
+        db,
+        novel_id=novel_id,
+        target_revision=target_revision,
+    )
     db.commit()
     db.refresh(chapter)
     _schedule_window_index_rebuild(
@@ -695,7 +716,12 @@ def delete_chapter(
 
     db.delete(chapter)
     novel.total_chapters = max(int(novel.total_chapters or 0) - 1, 0)
-    mark_window_index_inputs_changed(novel)
+    target_revision = mark_window_index_inputs_changed(novel)
+    enqueue_window_index_rebuild_job(
+        db,
+        novel_id=novel_id,
+        target_revision=target_revision,
+    )
     db.commit()
     _schedule_window_index_rebuild(
         background_tasks,
@@ -929,6 +955,7 @@ def delete_novel(novel_id: int, db: Session = Depends(get_db), current_user: Use
     _safe_delete_where(db, table="world_entities", where_sql="novel_id = :novel_id", params={"novel_id": novel_id})
     _safe_delete_where(db, table="world_systems", where_sql="novel_id = :novel_id", params={"novel_id": novel_id})
     _safe_delete_where(db, table="bootstrap_jobs", where_sql="novel_id = :novel_id", params={"novel_id": novel_id})
+    _safe_delete_where(db, table="derived_asset_jobs", where_sql="novel_id = :novel_id", params={"novel_id": novel_id})
 
     # Exploration tables (not linked off Novel in ORM).
     _safe_delete_where(db, table="exploration_chapters", where_sql="exploration_id IN (SELECT id FROM explorations WHERE novel_id = :novel_id)", params={"novel_id": novel_id})

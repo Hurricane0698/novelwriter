@@ -140,6 +140,26 @@ def test_auto_upgrades_unversioned_schema_missing_only_novel_language(sqlite_eng
     assert calls == [("stamp", "022"), ("upgrade", "head")]
 
 
+def test_auto_upgrades_unversioned_schema_missing_only_derived_asset_jobs(sqlite_engine):
+    engine, db_url = sqlite_engine
+    Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP TABLE derived_asset_jobs"))
+
+    calls: list[tuple[str, str]] = []
+
+    result = ensure_selfhost_database_ready(
+        db_engine=engine,
+        metadata=Base.metadata,
+        db_url=db_url,
+        stamp_fn=lambda _config, revision: calls.append(("stamp", revision)),
+        upgrade_fn=lambda _config, revision: calls.append(("upgrade", revision)),
+    )
+
+    assert result == "upgraded"
+    assert calls == [("stamp", "029"), ("upgrade", "head")]
+
+
 def test_rejects_stale_unversioned_schema(sqlite_engine):
     engine, db_url = sqlite_engine
     with engine.begin() as conn:

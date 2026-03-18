@@ -411,7 +411,12 @@ class TestHostedSSRFRejection:
         assert payload["ok"] is True
         assert payload["capabilities"] == {"basic": True, "stream": True, "json_mode": True}
 
-    def test_hosted_llm_test_allows_byok_when_hosted_budget_hard_stop_is_reached(self, db, monkeypatch):
+    def test_hosted_llm_test_allows_byok_when_hosted_budget_hard_stop_is_reached(
+        self,
+        db,
+        monkeypatch,
+        allow_public_llm_url_resolution,
+    ):
         from app.api import llm as llm_api
         from app.config import Settings
         from app.core.auth import get_current_user_or_default
@@ -420,6 +425,7 @@ class TestHostedSSRFRejection:
         prev = config_mod._settings_instance
         config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
         try:
+            allow_public_llm_url_resolution()
             db.add(
                 TokenUsage(
                     user_id=1,
@@ -497,7 +503,11 @@ class TestHostedSSRFRejection:
         assert resp.json()["detail"]["code"] == "llm_config_incomplete"
 
 
-    def test_llm_test_rejects_when_ai_is_manually_disabled(self, db):
+    def test_llm_test_rejects_when_ai_is_manually_disabled(
+        self,
+        db,
+        allow_public_llm_url_resolution,
+    ):
         from app.api import llm as llm_api
         from app.config import Settings
         from app.core.auth import get_current_user_or_default
@@ -506,6 +516,7 @@ class TestHostedSSRFRejection:
         prev = config_mod._settings_instance
         config_mod._settings_instance = Settings(deploy_mode="hosted", ai_manual_disable=True, _env_file=None)
         try:
+            allow_public_llm_url_resolution()
             app = _make_app(db, llm_api.router)
             app.dependency_overrides[get_current_user_or_default] = lambda: User(
                 id=1, username="u", hashed_password="x", role="admin", is_active=True

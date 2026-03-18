@@ -3,12 +3,19 @@
 
 from __future__ import annotations
 
-import logging
-from threading import Lock
+from dataclasses import dataclass
 from typing import Callable
 
 from sqlalchemy.orm import Session
 
+from app.core.derived_assets import (
+    DERIVED_ASSET_KIND_WINDOW_INDEX,
+    DerivedAssetJobSnapshot,
+    DerivedAssetPersistResult,
+    enqueue_derived_asset_job,
+    inspect_derived_asset_job,
+    run_derived_asset_job_until_idle,
+)
 from app.config import Settings, get_settings
 from app.models import Novel
 
@@ -28,10 +35,7 @@ KNOWN_WINDOW_INDEX_STATUSES = frozenset(
 )
 WINDOW_INDEX_REBUILD_FAILED_MESSAGE = "窗口索引重建失败，请稍后重试"
 
-logger = logging.getLogger(__name__)
-
-_window_index_rebuild_locks_guard = Lock()
-_window_index_rebuild_locks: dict[int, Lock] = {}
+WINDOW_INDEX_JOB_RESULT_STATE_KEY = "asset_state"
 
 
 def normalize_window_index_status(raw_status: str | None, *, has_payload: bool) -> str:
@@ -119,86 +123,146 @@ def mark_window_index_build_failed(
     return target_revision
 
 
-def _get_window_index_rebuild_lock(novel_id: int) -> Lock:
-    with _window_index_rebuild_locks_guard:
-        lock = _window_index_rebuild_locks.get(novel_id)
-        if lock is None:
-            lock = Lock()
-            _window_index_rebuild_locks[novel_id] = lock
-        return lock
+@dataclass(slots=True)
+class WindowIndexBuildOutput:
+    asset_state: str
+    index_payload: bytes | None = None
 
 
-def _finalize_missing_revision(
-    *,
-    session_factory: Callable[[], Session],
-    novel_id: int,
-    target_revision: int,
-) -> bool:
-    db = session_factory()
-    try:
-        novel = db.query(Novel).filter(Novel.id == novel_id).first()
+class _WindowIndexJobAdapter:
+    asset_kind = DERIVED_ASSET_KIND_WINDOW_INDEX
+
+    def build(
+        self,
+        *,
+        novel_id: int,
+        target_revision: int,
+        session_factory: Callable[[], Session],
+        settings: Settings,
+    ) -> WindowIndexBuildOutput:
+        db = session_factory()
+        try:
+            novel = db.query(Novel).filter(Novel.id == novel_id).first()
+            if novel is None:
+                return WindowIndexBuildOutput(asset_state=WINDOW_INDEX_STATUS_MISSING)
+            chapters = load_chapter_texts(db, novel_id)
+            novel_language = getattr(novel, "language", None)
+        finally:
+            db.close()
+
+        if not chapters:
+            return WindowIndexBuildOutput(asset_state=WINDOW_INDEX_STATUS_MISSING)
+
+        artifacts = build_window_index_artifacts(
+            chapters,
+            novel_language=novel_language,
+            settings=settings,
+            include_cooccurrence=False,
+            # Background rebuilds run inside the live web app process.
+            # Keep them on the pure-Python matcher path instead of the
+            # native automaton path to avoid crashing the server.
+            use_automaton=False,
+        )
+        return WindowIndexBuildOutput(
+            asset_state=WINDOW_INDEX_STATUS_FRESH,
+            index_payload=artifacts.index.to_msgpack(),
+        )
+
+    def persist_success(
+        self,
+        *,
+        db: Session,
+        job,
+        target_revision: int,
+        build_output: WindowIndexBuildOutput,
+    ) -> DerivedAssetPersistResult:
+        novel = db.query(Novel).filter(Novel.id == job.novel_id).first()
         if novel is None:
-            return False
-        current_revision = resolve_window_index_target_revision(novel, has_source_text=False)
-        if current_revision > target_revision:
-            return True
-        mark_window_index_missing(novel, revision=target_revision)
-        db.commit()
-        return False
-    finally:
-        db.close()
+            return DerivedAssetPersistResult(superseded=True)
 
-
-def _finalize_failed_revision(
-    *,
-    session_factory: Callable[[], Session],
-    novel_id: int,
-    target_revision: int,
-    error: str,
-) -> bool:
-    db = session_factory()
-    try:
-        novel = db.query(Novel).filter(Novel.id == novel_id).first()
-        if novel is None:
-            return False
         current_revision = int(getattr(novel, "window_index_revision", 0) or 0)
         if current_revision > target_revision:
+            return DerivedAssetPersistResult(
+                superseded=True,
+                next_target_revision=current_revision,
+            )
+
+        target = max(target_revision, current_revision, 1)
+        if build_output.asset_state == WINDOW_INDEX_STATUS_MISSING:
+            mark_window_index_missing(novel, revision=target_revision)
+            return DerivedAssetPersistResult(
+                completed_revision=target_revision,
+                result={WINDOW_INDEX_JOB_RESULT_STATE_KEY: WINDOW_INDEX_STATUS_MISSING},
+            )
+
+        mark_window_index_build_succeeded(
+            novel,
+            index_payload=build_output.index_payload or b"",
+            revision=target,
+        )
+        return DerivedAssetPersistResult(
+            completed_revision=target,
+            result={WINDOW_INDEX_JOB_RESULT_STATE_KEY: WINDOW_INDEX_STATUS_FRESH},
+        )
+
+    def persist_failure(
+        self,
+        *,
+        db: Session,
+        job,
+        target_revision: int,
+        error: str,
+    ) -> bool:
+        novel = db.query(Novel).filter(Novel.id == job.novel_id).first()
+        if novel is None:
             return True
+
+        current_revision = int(getattr(novel, "window_index_revision", 0) or 0)
+        if current_revision > target_revision:
+            job.target_revision = max(int(job.target_revision or 0), current_revision)
+            return True
+
         mark_window_index_build_failed(
             novel,
             error=error,
             revision=max(target_revision, current_revision, 1),
         )
-        db.commit()
         return False
-    finally:
-        db.close()
+
+    def sanitize_error(self, exc: Exception) -> str:
+        _ = exc
+        return WINDOW_INDEX_REBUILD_FAILED_MESSAGE
 
 
-def _finalize_success_revision(
+WINDOW_INDEX_JOB_ADAPTER = _WindowIndexJobAdapter()
+
+
+def enqueue_window_index_rebuild_job(
+    db: Session,
     *,
-    session_factory: Callable[[], Session],
     novel_id: int,
     target_revision: int,
-    index_payload: bytes,
-) -> bool:
-    db = session_factory()
-    try:
-        novel = db.query(Novel).filter(Novel.id == novel_id).first()
-        if novel is None:
-            return False
-        current_revision = int(getattr(novel, "window_index_revision", 0) or 0)
-        if current_revision > target_revision:
-            return True
-        mark_window_index_build_succeeded(
-            novel,
-            index_payload=index_payload,
-            revision=max(target_revision, current_revision, 1),
-        )
-        db.commit()
-        return False
-    finally:
-        db.close()
+    settings: Settings | None = None,
+):
+    return enqueue_derived_asset_job(
+        db,
+        novel_id=novel_id,
+        asset_kind=DERIVED_ASSET_KIND_WINDOW_INDEX,
+        target_revision=target_revision,
+        settings=settings,
+    )
+
+
+def inspect_window_index_rebuild_job(
+    db: Session,
+    *,
+    novel_id: int,
+) -> DerivedAssetJobSnapshot | None:
+    return inspect_derived_asset_job(
+        db,
+        novel_id=novel_id,
+        asset_kind=DERIVED_ASSET_KIND_WINDOW_INDEX,
+    )
 
 
 def run_window_index_rebuild_for_latest_revision(
@@ -207,69 +271,30 @@ def run_window_index_rebuild_for_latest_revision(
     session_factory: Callable[[], Session],
     settings: Settings | None = None,
 ) -> None:
-    rebuild_lock = _get_window_index_rebuild_lock(novel_id)
-    if not rebuild_lock.acquire(blocking=False):
-        return
-
     resolved_settings = settings or get_settings()
+    db = session_factory()
     try:
-        while True:
-            db = session_factory()
-            try:
-                novel = db.query(Novel).filter(Novel.id == novel_id).first()
-                if novel is None:
-                    return
-                chapters = load_chapter_texts(db, novel_id)
-                target_revision = resolve_window_index_target_revision(
-                    novel,
-                    has_source_text=bool(chapters),
-                )
-                novel_language = getattr(novel, "language", None)
-            finally:
-                db.close()
-
-            if not chapters:
-                if _finalize_missing_revision(
-                    session_factory=session_factory,
-                    novel_id=novel_id,
-                    target_revision=target_revision,
-                ):
-                    continue
-                return
-
-            try:
-                artifacts = build_window_index_artifacts(
-                    chapters,
-                    novel_language=novel_language,
-                    settings=resolved_settings,
-                    include_cooccurrence=False,
-                    # Background rebuilds run inside the live web app process.
-                    # Keep them on the pure-Python matcher path instead of the
-                    # native automaton path to avoid crashing the server.
-                    use_automaton=False,
-                )
-            except Exception:
-                logger.exception(
-                    "window_index[%s]: rebuild failed for revision %s",
-                    novel_id,
-                    target_revision,
-                )
-                if _finalize_failed_revision(
-                    session_factory=session_factory,
-                    novel_id=novel_id,
-                    target_revision=target_revision,
-                    error=WINDOW_INDEX_REBUILD_FAILED_MESSAGE,
-                ):
-                    continue
-                return
-
-            if _finalize_success_revision(
-                session_factory=session_factory,
-                novel_id=novel_id,
-                target_revision=target_revision,
-                index_payload=artifacts.index.to_msgpack(),
-            ):
-                continue
+        novel = db.query(Novel).filter(Novel.id == novel_id).first()
+        if novel is None:
             return
+        chapters = load_chapter_texts(db, novel_id)
+        target_revision = resolve_window_index_target_revision(
+            novel,
+            has_source_text=bool(chapters),
+        )
+        enqueue_window_index_rebuild_job(
+            db,
+            novel_id=novel_id,
+            target_revision=target_revision,
+            settings=resolved_settings,
+        )
+        db.commit()
     finally:
-        rebuild_lock.release()
+        db.close()
+
+    run_derived_asset_job_until_idle(
+        novel_id=novel_id,
+        adapter=WINDOW_INDEX_JOB_ADAPTER,
+        session_factory=session_factory,
+        settings=resolved_settings,
+    )

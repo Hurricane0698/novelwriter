@@ -158,7 +158,14 @@ def test_generate_world_charges_quota_on_success(client, db, hosted_user, novel,
     assert hosted_user.generation_quota == before - 1
 
 
-def test_generate_world_allows_byok_when_ai_budget_hard_stop_is_reached(client, db, hosted_user, novel, monkeypatch):
+def test_generate_world_allows_byok_when_ai_budget_hard_stop_is_reached(
+    client,
+    db,
+    hosted_user,
+    novel,
+    monkeypatch,
+    allow_public_llm_url_resolution,
+):
     import app.config as config_mod
     from app.config import Settings
     from app.core.world import generation_application as generation_app
@@ -167,6 +174,7 @@ def test_generate_world_allows_byok_when_ai_budget_hard_stop_is_reached(client, 
     prev = config_mod._settings_instance
     config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
     try:
+        allow_public_llm_url_resolution()
         db.add(
             TokenUsage(
                 user_id=hosted_user.id,

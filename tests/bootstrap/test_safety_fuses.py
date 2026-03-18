@@ -110,7 +110,11 @@ def test_bootstrap_rejects_when_ai_budget_hard_stop_is_reached(client, monkeypat
         config_mod._settings_instance = prev
 
 
-def test_bootstrap_allows_byok_when_ai_budget_hard_stop_is_reached(client, monkeypatch):
+def test_bootstrap_allows_byok_when_ai_budget_hard_stop_is_reached(
+    client,
+    monkeypatch,
+    allow_public_llm_url_resolution,
+):
     import app.config as config_mod
     from app.config import Settings
     from app.core.world import bootstrap_application as bootstrap_app
@@ -120,6 +124,7 @@ def test_bootstrap_allows_byok_when_ai_budget_hard_stop_is_reached(client, monke
     prev = config_mod._settings_instance
     config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
     try:
+        allow_public_llm_url_resolution()
         db.add(
             TokenUsage(
                 user_id=user.id,

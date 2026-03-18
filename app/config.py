@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     bootstrap_common_words_dir: str = "data/common_words"
     bootstrap_stale_job_timeout_seconds: int = 900
 
+    # Derived-asset background jobs
+    derived_asset_job_lease_seconds: int = 300
+    derived_asset_job_stale_timeout_seconds: int = 900
+
     # Lorebook Configuration
     lore_max_total_tokens: int = 2000
     lore_default_priority: int = 100

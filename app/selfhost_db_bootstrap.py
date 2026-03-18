@@ -15,6 +15,7 @@ from app.models import (  # noqa: F401 - register models with Base.metadata
     BootstrapJob,
     Chapter,
     Continuation,
+    DerivedAssetJob,
     Exploration,
     ExplorationChapter,
     LoreEntry,
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 _HEAD_REVISION = "head"
 _PRE_NOVEL_LANGUAGE_REVISION = "022"
+_PRE_DERIVED_ASSET_JOB_REVISION = "029"
 _CORE_TABLES = {"novels", "chapters"}
 _LEGACY_TABLES = {
     "narrative_events",
@@ -62,6 +64,19 @@ _REQUIRED_SCHEMA_COLUMNS: dict[str, set[str]] = {
     "world_systems": {"origin", "worldpack_pack_id"},
     "users": {"nickname", "generation_quota", "feedback_submitted", "feedback_answers", "preferences"},
     "bootstrap_jobs": {"mode", "draft_policy", "initialized"},
+    "derived_asset_jobs": {
+        "asset_kind",
+        "status",
+        "target_revision",
+        "claimed_revision",
+        "completed_revision",
+        "result",
+        "error",
+        "lease_owner",
+        "lease_expires_at",
+        "started_at",
+        "finished_at",
+    },
     "user_events": {"user_id", "event", "created_at"},
 }
 _UNVERSIONED_AUTO_UPGRADE_BASELINES: tuple[tuple[str, dict[str, set[str]]], ...] = (
@@ -75,6 +90,13 @@ _UNVERSIONED_AUTO_UPGRADE_BASELINES: tuple[tuple[str, dict[str, set[str]]], ...]
                 "window_index_built_revision",
                 "window_index_error",
             },
+            "derived_asset_jobs": _REQUIRED_SCHEMA_COLUMNS["derived_asset_jobs"],
+        },
+    ),
+    (
+        _PRE_DERIVED_ASSET_JOB_REVISION,
+        {
+            "derived_asset_jobs": _REQUIRED_SCHEMA_COLUMNS["derived_asset_jobs"],
         },
     ),
 )

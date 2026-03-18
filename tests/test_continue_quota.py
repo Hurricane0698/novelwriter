@@ -219,13 +219,21 @@ def test_continue_rejects_when_ai_budget_hard_stop_is_reached(client, db, hosted
         config_mod._settings_instance = prev
 
 
-def test_continue_allows_byok_when_ai_budget_hard_stop_is_reached(client, db, hosted_user, novel, monkeypatch):
+def test_continue_allows_byok_when_ai_budget_hard_stop_is_reached(
+    client,
+    db,
+    hosted_user,
+    novel,
+    monkeypatch,
+    allow_public_llm_url_resolution,
+):
     import app.config as config_mod
     from app.config import Settings
 
     prev = config_mod._settings_instance
     config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
     try:
+        allow_public_llm_url_resolution()
         db.add(
             TokenUsage(
                 user_id=hosted_user.id,
