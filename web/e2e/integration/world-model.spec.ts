@@ -255,7 +255,7 @@ test('system: create → auto-enters editor → edit name → back shows in list
 
   // Go back and verify name in list
   await editor.getByText('‹ 世界体系').click()
-  await expect(page.getByText('修炼体系')).toBeVisible()
+  await expect(systemRow).toContainText('修炼体系')
 
   // Cleanup via API
   const systems = await (await apiGet(request, `/api/novels/${novelId}/world/systems`)).json()

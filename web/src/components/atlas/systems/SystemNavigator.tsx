@@ -5,6 +5,7 @@ import { DraftReviewSummaryCard, type DraftReviewKind } from '@/components/atlas
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { GlassSurface } from '@/components/ui/glass-surface'
+import { WorldBuildPanel } from '@/components/world-model/shared/WorldBuildPanel'
 import { useWorldSystems, useCreateSystem, useUpdateSystem, useDeleteSystem, useConfirmSystems, useRejectSystems } from '@/hooks/world/useSystems'
 import { LABELS } from '@/constants/labels'
 import { getSystemDisplayTypeLabel } from '@/lib/worldSystemDisplay'
@@ -219,6 +220,7 @@ export function SystemNavigator({ novelId, selectedId, onSelect, onOpenDraftRevi
       </div>
 
       <div className="shrink-0 p-3 border-t border-[var(--nw-glass-border)] space-y-2">
+        <WorldBuildPanel novelId={novelId} />
         <DraftReviewSummaryCard novelId={novelId} onOpen={onOpenDraftReview} />
       </div>
 

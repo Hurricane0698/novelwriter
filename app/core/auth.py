@@ -13,6 +13,7 @@ from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -151,7 +152,14 @@ def _get_or_create_default_user(db: Session) -> User:
             is_active=True,
         )
         db.add(user)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            user = db.query(User).filter(User.username == "default").first()
+            if user is None:
+                raise
+            return user
         db.refresh(user)
 
         # Seed demo novel on first selfhost login (best-effort).

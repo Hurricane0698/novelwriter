@@ -23,6 +23,16 @@ async function ensureUploadConsent(page: import('@playwright/test').Page) {
   }
 }
 
+async function dismissOnboardingAndReturnToStudio(
+  page: import('@playwright/test').Page,
+  novelId: number,
+) {
+  await page.getByTestId('world-onboarding-dismiss').click()
+  await expect(page).toHaveURL(new RegExp(`/world/${novelId}`), { timeout: 15_000 })
+  await page.getByRole('button', { name: '返回工作台' }).click()
+  await expect(page).toHaveURL(new RegExp(`/novel/${novelId}$`), { timeout: 15_000 })
+}
+
 test.beforeAll(async ({ request }) => {
   sessionToken = (await createApiSession(request, { scope: AUTH_SCOPE })).accessToken
 })
@@ -66,10 +76,7 @@ test('import → enter writing desk → continue → adopt', async ({ page }) =>
     chapterBtn.waitFor({ state: 'visible', timeout: 15_000 }),
   ])
   if (await onboarding.isVisible()) {
-    await page.getByTestId('world-onboarding-dismiss').click()
-    await expect(page).toHaveURL(new RegExp(`/world/${novelId}`), { timeout: 15_000 })
-    await page.getByRole('link', { name: '返回作品' }).click()
-    await expect(page).toHaveURL(new RegExp(`/novel/${novelId}$`), { timeout: 15_000 })
+    await dismissOnboardingAndReturnToStudio(page, novelId)
   }
 
   // Sidebar label should NOT duplicate the heading ("第 1 章 · 第一章 ...")
@@ -118,8 +125,8 @@ test('import → enter writing desk → continue → adopt', async ({ page }) =>
   await expect(adoptBtn).toBeEnabled({ timeout: 15_000 })
   await adoptBtn.click()
 
-  // Should return to novel detail and a new chapter should appear.
-  await expect(page).toHaveURL(new RegExp(`/novel/${novelId}$`), { timeout: 15_000 })
+  // Adopting returns to Studio with the newly created chapter selected.
+  await expect(page).toHaveURL(new RegExp(`/novel/${novelId}\\?chapter=2$`), { timeout: 15_000 })
   await expect(chapterList.getByRole('button', { name: /第\s*2\s*章/ })).toBeVisible({ timeout: 15_000 })
 })
 
@@ -162,10 +169,7 @@ test('import supports 30MB txt (boundary)', async ({ page }) => {
     chapterCount.waitFor({ state: 'visible', timeout: 30_000 }),
   ])
   if (await onboarding.isVisible()) {
-    await page.getByTestId('world-onboarding-dismiss').click()
-    await expect(page).toHaveURL(new RegExp(`/world/${novelId}`), { timeout: 15_000 })
-    await page.getByRole('link', { name: '返回作品' }).click()
-    await expect(page).toHaveURL(new RegExp(`/novel/${novelId}$`), { timeout: 15_000 })
+    await dismissOnboardingAndReturnToStudio(page, novelId)
   }
 
   // Parser should split into two chapters, but the page should remain responsive

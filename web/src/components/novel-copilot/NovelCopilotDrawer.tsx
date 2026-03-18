@@ -35,7 +35,6 @@ const dashedPanelClassName =
   `${copilotPanelMutedClassName} rounded-[22px] border-dashed px-4 py-4 text-center text-sm text-muted-foreground`
 
 export function NovelCopilotDrawer({
-  novelId: _novelId,
   onLocateTarget,
 }: {
   novelId: number

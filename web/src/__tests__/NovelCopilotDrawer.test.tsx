@@ -63,7 +63,7 @@ beforeEach(() => {
   })
   mockListRuns.mockReset().mockResolvedValue([])
   mockCreateRun.mockReset().mockImplementation(
-    async (_novelId: number, _sessionId: string, data: { prompt: string }) => ({
+    async (...[, , data]: [number, string, { prompt: string }]) => ({
       run_id: 'backend-run-1',
       status: 'queued',
       prompt: data.prompt,
@@ -74,7 +74,7 @@ beforeEach(() => {
   )
   // Poll returns completed with suggestions matching old mock shape
   mockPollRun.mockReset().mockImplementation(
-    async (_novelId: number, _sessionId: string, _runId: string) => ({
+    async () => ({
       run_id: 'backend-run-1',
       status: 'completed',
       prompt: '补完苏瑶的设定锚点',

@@ -12,6 +12,7 @@ import { EntityDetail } from '@/components/world-model/entities/EntityDetail'
 import { SystemsWorkspace } from '@/components/atlas/systems/SystemsWorkspace'
 import { RelationshipsTab } from '@/components/world-model/relationships/RelationshipsTab'
 import { DraftReviewTab } from '@/components/world-model/shared/DraftReviewTab'
+import { WorldBuildPanel } from '@/components/world-model/shared/WorldBuildPanel'
 import { DraftReviewSummaryCard, type DraftReviewKind } from '@/components/atlas/review/DraftReviewSummaryCard'
 import { DraftReviewNavigator } from '@/components/atlas/review/DraftReviewNavigator'
 import { RelationshipSidebarPanel } from '@/components/atlas/relationships/RelationshipSidebarPanel'
@@ -264,7 +265,12 @@ export function NovelAtlasPage() {
                   novelId={nid}
                   selectedEntityId={effectiveSelectedEntityId}
                   onSelectEntity={setSelectedEntity}
-                  bottomSlot={<DraftReviewSummaryCard novelId={nid} onOpen={openDraftReview} />}
+                  bottomSlot={(
+                    <>
+                      <WorldBuildPanel novelId={nid} />
+                      <DraftReviewSummaryCard novelId={nid} onOpen={openDraftReview} />
+                    </>
+                  )}
                 />
                 <EntityDetail
                   novelId={nid}
@@ -281,6 +287,7 @@ export function NovelAtlasPage() {
                   onSelectEntity={setSelectedEntity}
                   bottomSlot={
                     <>
+                      <WorldBuildPanel novelId={nid} />
                       <RelationshipSidebarPanel
                         novelId={nid}
                         selectedEntityId={effectiveSelectedEntityId}

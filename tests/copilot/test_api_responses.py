@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from app.models import CopilotRun, CopilotSession
-from tests.copilot.test_runtime import client, db, entities, novel  # noqa: F401
+
+pytest_plugins = ("tests.copilot.test_runtime",)
 
 
 def test_run_poll_includes_non_actionable_reason(client, db, novel, entities):

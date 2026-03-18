@@ -29,17 +29,12 @@ function RelationshipsGraphSection({
   onDelete: (relId: number) => void
   selectedRelationshipId?: number | null
 }) {
-  const [selectedRelId, setSelectedRelId] = useState<number | null>(null)
+  const [selectedRelIdState, setSelectedRelId] = useState<number | null>(() => selectedRelationshipId ?? null)
 
-  useEffect(() => {
-    setSelectedRelId(selectedRelationshipId ?? null)
-  }, [selectedRelationshipId])
-
-  useEffect(() => {
-    if (selectedRelId == null) return
-    if (relationships.some((relationship) => relationship.id === selectedRelId)) return
-    setSelectedRelId(null)
-  }, [selectedRelId, relationships])
+  const selectedRelId = selectedRelIdState !== null
+    && relationships.some((relationship) => relationship.id === selectedRelIdState)
+    ? selectedRelIdState
+    : null
 
   const effectiveSelectedRel = selectedRelId
     ? (relationships.find((r) => r.id === selectedRelId) ?? null)
@@ -167,7 +162,7 @@ export function RelationshipsTab({
     <div className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden">
       <div className="flex-1 min-h-0 rounded-2xl border border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-2xl overflow-hidden flex flex-col">
         <RelationshipsGraphSection
-          key={selectedEntityId}
+          key={`${selectedEntityId}:${selectedRelationshipId ?? 'none'}`}
           centerId={selectedEntityId}
           relationships={relationships}
           entities={entities}
