@@ -128,12 +128,25 @@ describe('useDeleteChapter', () => {
       id: novelId,
       title: '测试小说',
       author: '作者',
+      language: 'zh',
       total_chapters: 1,
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-31T00:00:00Z',
     }
+    const initialChapter = {
+      id: 41,
+      novel_id: novelId,
+      chapter_number: 4,
+      title: '归来',
+      source_chapter_label: '第844章 归来',
+      source_chapter_number: 844,
+      content: '章节内容',
+      created_at: '2026-02-01T00:00:00Z',
+      updated_at: null,
+    }
     queryClient.setQueryData(novelKeys.chaptersMeta(novelId), initialMeta)
     queryClient.setQueryData(novelKeys.detail(novelId), initialNovel)
+    queryClient.setQueryData(novelKeys.chapter(novelId, chapterNum), initialChapter)
 
     const { result } = renderHook(() => useDeleteChapter(novelId), {
       wrapper: createQueryClientWrapper(queryClient),
@@ -146,12 +159,14 @@ describe('useDeleteChapter', () => {
     })
 
     expect(queryClient.getQueryData(novelKeys.chaptersMeta(novelId))).toEqual([])
+    expect(queryClient.getQueryData(novelKeys.chapter(novelId, chapterNum))).toBeUndefined()
 
     rejectDelete!(new Error('delete failed'))
     await act(async () => {
       await expect(mutationPromise!).rejects.toThrow('delete failed')
     })
 
+    expect(queryClient.getQueryData(novelKeys.chapter(novelId, chapterNum))).toEqual(initialChapter)
     expect(queryClient.getQueryData(novelKeys.chaptersMeta(novelId))).toEqual(initialMeta)
     expect(queryClient.getQueryData(novelKeys.detail(novelId))).toEqual(initialNovel)
     expect(invalidateQueriesSpy).not.toHaveBeenCalled()

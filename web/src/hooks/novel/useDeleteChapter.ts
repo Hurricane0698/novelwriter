@@ -1,16 +1,18 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/services/api"
 import { novelKeys } from "@/hooks/novel/keys"
-import type { ChapterMeta, Novel } from "@/types/api"
+import type { Chapter, ChapterMeta, Novel } from "@/types/api"
 
 export function useDeleteChapter(novelId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (chapterNum: number) => api.deleteChapter(novelId, chapterNum),
     onMutate: async (chapterNum) => {
+      await qc.cancelQueries({ queryKey: novelKeys.chapter(novelId, chapterNum), exact: true })
       await qc.cancelQueries({ queryKey: novelKeys.chaptersMeta(novelId) })
       await qc.cancelQueries({ queryKey: novelKeys.detail(novelId) })
 
+      const previousChapter = qc.getQueryData<Chapter>(novelKeys.chapter(novelId, chapterNum))
       const previousMeta = qc.getQueryData<ChapterMeta[]>(novelKeys.chaptersMeta(novelId))
       const previousNovel = qc.getQueryData<Novel>(novelKeys.detail(novelId))
 
@@ -30,9 +32,14 @@ export function useDeleteChapter(novelId: number) {
 
       qc.removeQueries({ queryKey: novelKeys.chapter(novelId, chapterNum), exact: true })
 
-      return { previousMeta, previousNovel }
+      return { previousChapter, previousMeta, previousNovel }
     },
-    onError: (_error, _chapterNum, context) => {
+    onError: (_error, chapterNum, context) => {
+      if (context?.previousChapter) {
+        qc.setQueryData(novelKeys.chapter(novelId, chapterNum), context.previousChapter)
+      } else {
+        qc.invalidateQueries({ queryKey: novelKeys.chapter(novelId, chapterNum), exact: true })
+      }
       if (context?.previousMeta) {
         qc.setQueryData(novelKeys.chaptersMeta(novelId), context.previousMeta)
       }

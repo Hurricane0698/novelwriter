@@ -4,15 +4,18 @@ import {
   formatChapterLabel,
   getChapterDisplayTitle,
   matchesChapterSearch,
+  serializeChaptersToPlainText,
   stripLeadingChapterHeading,
 } from '@/lib/chaptersPlainText'
 
 describe('chaptersPlainText', () => {
-  it('stripLeadingChapterHeading strips CN/EN chapter headings', () => {
+  it('stripLeadingChapterHeading strips only numbered chapter headings', () => {
     expect(stripLeadingChapterHeading('第一章 开端')).toBe('开端')
     expect(stripLeadingChapterHeading('第1章 开端')).toBe('开端')
     expect(stripLeadingChapterHeading('第 12 回：归来')).toBe('归来')
     expect(stripLeadingChapterHeading('Chapter 1: Beginning')).toBe('Beginning')
+    expect(stripLeadingChapterHeading('序章')).toBe('序章')
+    expect(stripLeadingChapterHeading('Prologue')).toBe('Prologue')
     expect(stripLeadingChapterHeading('开端')).toBe('开端')
   })
 
@@ -118,6 +121,22 @@ describe('chaptersPlainText', () => {
 
   it('normalizes editable titles even when old data still carries raw headings', () => {
     expect(getChapterDisplayTitle('第一章 开端')).toBe('开端')
+    expect(getChapterDisplayTitle('序章')).toBe('序章')
+    expect(getChapterDisplayTitle('Prologue')).toBe('Prologue')
     expect(getChapterDisplayTitle('开端')).toBe('开端')
+  })
+
+  it('keeps standalone special titles visible, searchable, and exportable', () => {
+    const chapter = {
+      chapter_number: 1,
+      title: '序章',
+      source_chapter_label: null,
+      source_chapter_number: null,
+      content: '故事开始。',
+    }
+
+    expect(formatChapterLabel(chapter)).toBe('第 1 章 · 序章')
+    expect(matchesChapterSearch(chapter, '序章')).toBe(true)
+    expect(serializeChaptersToPlainText([chapter])).toContain('第 1 章 · 序章\n\n故事开始。')
   })
 })

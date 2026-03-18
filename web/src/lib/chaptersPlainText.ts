@@ -13,7 +13,6 @@ const NUMERIC_TOKEN_RE = /\d+/g
 const NUMBERED_CJK_HEADING_RE = /^(\s*第\s*[0-9０-９零〇一二三四五六七八九十百千万兩两壱弐参肆伍陆陸柒捌玖拾佰仟萬貳叁]+\s*[章回节卷篇幕話话節編编巻卷])(.*)$/i
 const KOREAN_NUMBERED_HEADING_RE = /^(\s*제\s*[0-9０-９]+\s*(?:장|화|편|막))(.*)$/i
 const EN_NUMBERED_HEADING_RE = /^(\s*chapter\s+(?:\d+|[ivxlcdm]+))(.*)$/i
-const SPECIAL_HEADING_RE = /^(\s*(?:序[章言]|楔子|尾声|尾聲|后记|後記|番外(?:篇)?|终章|終章|プロローグ|エピローグ|外伝|番外編?|後書き|あとがき|序章|終章|프롤로그|에필로그|외전|후기|서장|종장|prologue|epilogue|afterword|appendix|interlude|preface))(.*)$/i
 
 type ParsedHeading = {
   prefix: string
@@ -57,7 +56,6 @@ function parseChapterHeading(label: string): ParsedHeading | null {
     NUMBERED_CJK_HEADING_RE,
     KOREAN_NUMBERED_HEADING_RE,
     EN_NUMBERED_HEADING_RE,
-    SPECIAL_HEADING_RE,
   ]) {
     const match = trimmed.match(pattern)
     if (!match) continue
