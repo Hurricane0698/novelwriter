@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { GenerationResults } from '@/pages/GenerationResults'
 import { ContinuationResultsStage } from '@/components/studio/stages/ContinuationResultsStage'
+import { UiLocaleProvider } from '@/contexts/UiLocaleContext'
 import { createTestQueryClient } from './helpers'
 
 const mockUseAuth = vi.fn()
@@ -78,12 +79,14 @@ describe('GenerationResults compatibility', () => {
 
   it('redirects the legacy results route into the studio-host results stage', async () => {
     render(
-      <MemoryRouter initialEntries={['/novel/7/chapter/3/results?continuations=0:101&total_variants=1']}>
-        <Routes>
-          <Route path="/novel/:novelId/chapter/:chapterNum/results" element={<GenerationResults />} />
-          <Route path="/novel/:novelId" element={<LocationProbe />} />
-        </Routes>
-      </MemoryRouter>,
+      <UiLocaleProvider>
+        <MemoryRouter initialEntries={['/novel/7/chapter/3/results?continuations=0:101&total_variants=1']}>
+          <Routes>
+            <Route path="/novel/:novelId/chapter/:chapterNum/results" element={<GenerationResults />} />
+            <Route path="/novel/:novelId" element={<LocationProbe />} />
+          </Routes>
+        </MemoryRouter>
+      </UiLocaleProvider>,
     )
 
     await waitFor(() => {
@@ -100,24 +103,26 @@ describe('GenerationResults compatibility', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/novel/7?stage=results&chapter=3&continuations=0:101&total_variants=1']}>
-          <Routes>
-            <Route
-              path="/novel/:novelId"
-              element={(
-                <ContinuationResultsStage
-                  novelId={7}
-                  activeChapterNum={3}
-                  showInjectionSummaryRail={false}
-                  onToggleInjectionSummaryRail={vi.fn()}
-                  onDebugChange={vi.fn()}
-                />
-              )}
-            />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
+      <UiLocaleProvider>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/novel/7?stage=results&chapter=3&continuations=0:101&total_variants=1']}>
+            <Routes>
+              <Route
+                path="/novel/:novelId"
+                element={(
+                  <ContinuationResultsStage
+                    novelId={7}
+                    activeChapterNum={3}
+                    showInjectionSummaryRail={false}
+                    onToggleInjectionSummaryRail={vi.fn()}
+                    onDebugChange={vi.fn()}
+                  />
+                )}
+              />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
+      </UiLocaleProvider>,
     )
 
     expect(screen.getByText('正在加载续写结果...')).toBeInTheDocument()
