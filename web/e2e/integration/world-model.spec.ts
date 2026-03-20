@@ -158,7 +158,7 @@ test('attribute CRUD: add → shows in row → toggle visibility → delete', as
 
   // Delete attribute
   await attrRow.hover()
-  await attrRow.getByRole('button', { name: 'Delete attribute' }).click()
+  await attrRow.getByRole('button', { name: /^(Delete attribute|删除属性)$/ }).click()
   await expect(page.getByText('属性 (0)')).toBeVisible({ timeout: 10000 })
 
   // Cleanup
