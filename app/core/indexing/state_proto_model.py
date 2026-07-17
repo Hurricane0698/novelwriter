@@ -5,11 +5,13 @@ from hashlib import blake2s
 import re
 from typing import TYPE_CHECKING
 
+from app.core.state_proto_contract import STATE_PROTO_PAYLOAD_FORMAT_VERSION
+
 if TYPE_CHECKING:
     from .state_proto_runtime import StateProtoIndex
 
 STATE_PROTO_PAYLOAD_KIND = "state_proto"
-STATE_PROTO_COMPACT_FORMAT_VERSION = 2
+STATE_PROTO_COMPACT_FORMAT_VERSION = STATE_PROTO_PAYLOAD_FORMAT_VERSION
 STATE_PROTO_EXECUTOR_STATE_FRESH = "fresh"
 STATE_PROTO_EXECUTOR_STATE_MISSING = "missing"
 STATE_PROTO_EXECUTOR_BACKEND_NONE = "none"

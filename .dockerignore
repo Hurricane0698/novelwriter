@@ -1,5 +1,6 @@
 web/node_modules/
 web/.vite/
+desktop/
 .venv/
 __pycache__/
 *.pyc

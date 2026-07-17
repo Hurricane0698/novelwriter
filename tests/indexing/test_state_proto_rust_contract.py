@@ -9,6 +9,7 @@ import time
 import pytest
 import _novwr_state_proto
 
+from app.core.state_proto_contract import STATE_PROTO_PAYLOAD_FORMAT_VERSION
 from app.core.indexing.builder import ChapterText
 from app.core.indexing.state_proto import (
     SLOT_ENTITY_CURRENT_LOCATION,
@@ -32,6 +33,17 @@ from app.core.indexing.state_proto_rust_contract import (
     update_rust_state_proto_incremental,
 )
 import app.core.indexing.state_proto_rust_module as rust_module_bridge
+
+
+def test_rust_and_python_payload_format_versions_match():
+    assert (
+        RUST_STATE_PROTO_BUILD_REQUEST_FORMAT_VERSION
+        == STATE_PROTO_PAYLOAD_FORMAT_VERSION
+    )
+    assert (
+        _novwr_state_proto.payload_format_version()
+        == STATE_PROTO_PAYLOAD_FORMAT_VERSION
+    )
 
 
 def test_build_rust_state_proto_request_serializes_explicit_targets_only():

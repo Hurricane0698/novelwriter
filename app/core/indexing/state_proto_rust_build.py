@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import json
 from typing import Any, Sequence
 
+from app.core.state_proto_contract import STATE_PROTO_PAYLOAD_FORMAT_VERSION
+
 from .builder import ChapterText
 from .state_proto_model import (
     TARGET_KIND_ENTITY,
@@ -12,7 +14,7 @@ from .state_proto_model import (
 )
 from .state_proto_rust_module import get_rust_state_proto_module
 
-RUST_STATE_PROTO_BUILD_REQUEST_FORMAT_VERSION = 2
+RUST_STATE_PROTO_BUILD_REQUEST_FORMAT_VERSION = STATE_PROTO_PAYLOAD_FORMAT_VERSION
 
 
 @dataclass(frozen=True, slots=True)

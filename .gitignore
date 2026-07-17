@@ -44,7 +44,12 @@ web/vite.config.d.ts
 
 # Rust
 rust/**/target/
+desktop/src-tauri/target/
 .maturin/
+
+# Desktop build outputs
+desktop/build/
+desktop/runtime-dist/
 
 # Data
 *.db

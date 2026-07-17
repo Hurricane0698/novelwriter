@@ -29,8 +29,9 @@ def test_dotenv_is_used_when_os_env_missing(monkeypatch, tmp_path):
         encoding="utf-8",
     )
 
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("DEPLOY_MODE", raising=False)
     monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
 
     settings = Settings()
     assert settings.jwt_secret_key == "from-dotenv"
-

@@ -227,10 +227,13 @@ class Settings(BaseSettings):
         # Default: prefer `.env` for local/selfhost workflows so project-level config
         # can override user-wide shell exports (e.g., OPENAI_API_KEY in ~/.bashrc).
         #
-        # Safety: in production/hosted deployments, OS env must override `.env` so a stray
-        # checked-in or copied `.env` can't silently downgrade security settings.
+        # Desktop never reads `.env`; its launcher supplies the complete process contract.
+        # In production/hosted deployments, OS env must override `.env` so a stray checked-in
+        # or copied file cannot silently downgrade security settings.
         normalized_env = (os.getenv("ENVIRONMENT") or "").strip().lower()
         normalized_deploy = (os.getenv("DEPLOY_MODE") or "").strip().lower()
+        if normalized_env == "desktop":
+            return (init_settings, env_settings, file_secret_settings)
         if normalized_env in {"production", "prod"} or normalized_deploy == "hosted":
             return (init_settings, env_settings, dotenv_settings, file_secret_settings)
         return (init_settings, dotenv_settings, env_settings, file_secret_settings)

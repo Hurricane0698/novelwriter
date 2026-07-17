@@ -1,0 +1,17 @@
+name: Windows runtime CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-runtime:
+    name: Windows runtime (x64)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-windows-runtime.yml
