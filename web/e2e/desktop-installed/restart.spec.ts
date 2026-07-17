@@ -8,7 +8,13 @@ import {
   installInstalledProductFailureGuard,
   readInstalledProductState,
   testDesktopLlmConnection,
+  writeInstalledPageDiagnostics,
 } from './support'
+
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) return
+  await writeInstalledPageDiagnostics(page, `restart test ${testInfo.status}`)
+})
 
 test('overwrite install preserves and reuses encrypted LLM config', async ({ page }) => {
   const failureGuard = installInstalledProductFailureGuard(page)

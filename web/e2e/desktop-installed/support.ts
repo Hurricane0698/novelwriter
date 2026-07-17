@@ -79,8 +79,9 @@ export function installInstalledProductFailureGuard(page: Page) {
   }
 }
 
-async function writeInstalledLandingDiagnostics(page: Page) {
+export async function writeInstalledPageDiagnostics(page: Page, label: string) {
   const diagnostics: Record<string, unknown> = {
+    label,
     url: page.url(),
     pageClosed: page.isClosed(),
   }
@@ -102,12 +103,25 @@ async function writeInstalledLandingDiagnostics(page: Page) {
         const exactCtas = Array.from(
           document.querySelectorAll('[data-testid="home-start-writing"]'),
         )
+        const testIds = Array.from(document.querySelectorAll('[data-testid]')).map((element) => {
+          const style = window.getComputedStyle(element)
+          return {
+            ...summarizeElement(element),
+            visible: (
+              style.display !== 'none'
+              && style.visibility !== 'hidden'
+              && !element.hasAttribute('hidden')
+              && element.getClientRects().length > 0
+            ),
+          }
+        })
 
         return {
           readyState: document.readyState,
           rootHtml: document.querySelector('#root')?.innerHTML ?? null,
           bodyText: document.body?.innerText ?? '',
           links: Array.from(document.querySelectorAll('a')).map(summarizeElement),
+          testIds,
           exactCtaCount: exactCtas.length,
           exactCtas: exactCtas.map(summarizeElement),
           semanticCtaCount: semanticCtas.length,
@@ -123,6 +137,7 @@ async function writeInstalledLandingDiagnostics(page: Page) {
         MAX_DIAGNOSTIC_TEXT_LENGTH,
       )
       diagnostics.links = snapshot.links
+      diagnostics.testIds = snapshot.testIds
       diagnostics.exactCtaCount = snapshot.exactCtaCount
       diagnostics.exactCtas = snapshot.exactCtas
       diagnostics.semanticCtaCount = snapshot.semanticCtaCount
@@ -132,7 +147,7 @@ async function writeInstalledLandingDiagnostics(page: Page) {
     }
   }
 
-  console.error(`[desktop-installed] landing diagnostics:\n${JSON.stringify(diagnostics, null, 2)}`)
+  console.error(`[desktop-installed] page diagnostics:\n${JSON.stringify(diagnostics, null, 2)}`)
 }
 
 async function expectDesktopLandingSurface(page: Page) {
@@ -140,7 +155,7 @@ async function expectDesktopLandingSurface(page: Page) {
     await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/`)
     await expect(page.getByTestId('home-start-writing')).toBeVisible()
   } catch (error) {
-    await writeInstalledLandingDiagnostics(page)
+    await writeInstalledPageDiagnostics(page, 'landing surface')
     throw error
   }
 }

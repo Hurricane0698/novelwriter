@@ -10,8 +10,14 @@ import {
   installInstalledProductFailureGuard,
   saveDesktopLlmConfig,
   testDesktopLlmConnection,
+  writeInstalledPageDiagnostics,
   writeInstalledProductState,
 } from './support'
+
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) return
+  await writeInstalledPageDiagnostics(page, `initial test ${testInfo.status}`)
+})
 
 test('first installed launch imports a novel and verifies encrypted LLM config', async ({ page }) => {
   const failureGuard = installInstalledProductFailureGuard(page)
