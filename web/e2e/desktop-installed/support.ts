@@ -239,7 +239,7 @@ export async function testDesktopLlmConnection(page: Page) {
   const testResponse = await testResponsePromise
   expect(testResponse.ok(), `Desktop LLM connection test returned HTTP ${testResponse.status()}.`).toBe(true)
   expect(await testResponse.json()).toMatchObject({
-    ok: true,
+    code: 'llm_probe_compatible',
     model: INSTALLED_LLM_MODEL,
     capabilities: {
       basic: true,
