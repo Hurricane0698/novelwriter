@@ -5,10 +5,12 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::process;
 
-use windows_sys::Win32::Foundation::{
-    ERROR_ALREADY_EXISTS, GetLastError, HANDLE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT,
-};
-use windows_sys::Win32::System::Threading::{CreateEventW, SetEvent, WaitForSingleObject};
+use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError, HANDLE};
+#[cfg(test)]
+use windows_sys::Win32::Foundation::{WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
+#[cfg(test)]
+use windows_sys::Win32::System::Threading::WaitForSingleObject;
+use windows_sys::Win32::System::Threading::{CreateEventW, SetEvent};
 
 const EVENT_NAME_RANDOM_BYTES: usize = 16;
 const EVENT_NAME_PREFIX: &str = r"Local\io.github.hurricane0698.novwr.desktop-shutdown";

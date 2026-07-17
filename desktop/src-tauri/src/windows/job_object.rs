@@ -48,11 +48,6 @@ impl EnvironmentDelta {
         self.additions.push((name.into(), value.into()));
     }
 
-    pub fn with_removed(mut self, name: impl Into<OsString>) -> Self {
-        self.remove(name);
-        self
-    }
-
     pub fn with_set(mut self, name: impl Into<OsString>, value: impl Into<OsString>) -> Self {
         self.set(name, value);
         self
@@ -91,22 +86,8 @@ impl ProcessCommand {
         self
     }
 
-    pub fn args<I, S>(mut self, arguments: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<OsString>,
-    {
-        self.arguments.extend(arguments.into_iter().map(Into::into));
-        self
-    }
-
     pub fn environment(mut self, environment: EnvironmentDelta) -> Self {
         self.environment = environment;
-        self
-    }
-
-    pub fn remove_env(mut self, name: impl Into<OsString>) -> Self {
-        self.environment.remove(name);
         self
     }
 
@@ -714,11 +695,11 @@ mod tests {
             (OsString::from("REMOVE_ME"), OsString::from("gone")),
             (OsString::from("Keep"), OsString::from("value")),
         ];
-        let delta = EnvironmentDelta::new()
-            .with_removed("remove_me")
-            .with_removed("PATH")
-            .with_set("path", "new")
-            .with_set("ADD", "added");
+        let mut delta = EnvironmentDelta::new();
+        delta.remove("remove_me");
+        delta.remove("PATH");
+        delta.set("path", "new");
+        delta.set("ADD", "added");
 
         let block = build_environment_block_from(base, &delta).expect("environment block");
 
@@ -880,13 +861,11 @@ mod tests {
             test_dir.join("parent.stdout.log"),
             test_dir.join("parent.stderr.log"),
         )
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            script,
-        ])
+        .arg("-NoLogo")
+        .arg("-NoProfile")
+        .arg("-NonInteractive")
+        .arg("-Command")
+        .arg(script)
         .set_env("NOVWR_JOB_TEST_GRANDCHILD_PID", pid_path.as_os_str())
     }
 
@@ -962,7 +941,8 @@ mod tests {
             test_dir.join("stdout.log"),
             test_dir.join("stderr.log"),
         )
-        .args(["-t", "127.0.0.1"])
+        .arg("-t")
+        .arg("127.0.0.1")
     }
 
     fn create_test_directory(label: &str) -> PathBuf {
