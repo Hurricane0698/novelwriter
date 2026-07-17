@@ -32,9 +32,8 @@ class Novel(Base):
     author = Column(String(255), default="")
     # IMPORTANT: If Novel.language is ever mutated after creation, you MUST call
     # invalidate_novel_language_caches(db, novel_id) from app.core.cache and
-    # commit the transaction. That helper invalidates the lore automaton cache
-    # and advances the window-index revision contract because tokenizer inputs
-    # depend on language.
+    # commit the transaction. That helper advances the window-index revision
+    # contract because tokenizer inputs depend on language.
     language = Column(String(50), nullable=False, default=DEFAULT_LANGUAGE)
     file_path = Column(String(512), nullable=False)
     total_chapters = Column(Integer, default=0)
@@ -50,7 +49,6 @@ class Novel(Base):
     chapters = relationship("Chapter", back_populates="novel", cascade="all, delete-orphan")
     outlines = relationship("Outline", back_populates="novel", cascade="all, delete-orphan")
     continuations = relationship("Continuation", back_populates="novel", cascade="all, delete-orphan")
-    lore_entries = relationship("LoreEntry", back_populates="novel", cascade="all, delete-orphan")
     bootstrap_job = relationship("BootstrapJob", back_populates="novel", uselist=False, cascade="all, delete-orphan")
     derived_asset_jobs = relationship("DerivedAssetJob", back_populates="novel", cascade="all, delete-orphan")
     ingest_job = relationship("NovelIngestJob", back_populates="novel", uselist=False, cascade="all, delete-orphan")
@@ -166,48 +164,6 @@ class WorldGenerationRun(Base):
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-
-class LoreEntry(Base):
-    """
-    Lorebook entry containing injectable context fragments.
-
-    Types: Character | Location | Item | Faction | Event
-    Priority: Lower number = higher priority (1 = protagonist)
-    """
-    __tablename__ = "lore_entries"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    novel_id = Column(Integer, ForeignKey("novels.id"), nullable=False)
-    uid = Column(String(36), unique=True, nullable=False)
-    title = Column(String(255), nullable=False)
-    content = Column(Text, nullable=False)
-    entry_type = Column(String(50), nullable=False)
-    token_budget = Column(Integer, default=500)
-    priority = Column(Integer, default=100)
-    enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-    novel = relationship("Novel", back_populates="lore_entries")
-    keywords = relationship("LoreKey", back_populates="entry", cascade="all, delete-orphan")
-
-
-class LoreKey(Base):
-    """
-    Keywords that trigger LoreEntry injection.
-    Fed to pyahocorasick automaton for O(M) matching.
-    """
-    __tablename__ = "lore_keys"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    entry_id = Column(Integer, ForeignKey("lore_entries.id"), nullable=False)
-    keyword = Column(String(255), nullable=False)
-    is_regex = Column(Boolean, default=False)
-    case_sensitive = Column(Boolean, default=True)
-    created_at = Column(DateTime, server_default=func.now())
-
-    entry = relationship("LoreEntry", back_populates="keywords")
 
 
 class User(Base):

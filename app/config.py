@@ -106,11 +106,6 @@ class Settings(BaseSettings):
     ingest_large_chapter_count: int = 120
     hosted_job_worker_poll_seconds: float = 2.0
 
-    # Lorebook Configuration
-    lore_max_total_tokens: int = 2000
-    lore_default_priority: int = 100
-    lore_default_token_budget: int = 500
-
     # CORS
     cors_allowed_origins: list[str] = ["http://localhost:5173"]
 

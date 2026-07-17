@@ -8,7 +8,6 @@ In SQLite, FK enforcement is often disabled by default. Without explicit cleanup
 from __future__ import annotations
 
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -25,8 +24,6 @@ from app.models import (
     Continuation,
     Exploration,
     ExplorationChapter,
-    LoreEntry,
-    LoreKey,
     Novel,
     Outline,
     User,
@@ -91,18 +88,7 @@ def test_delete_novel_cascades_to_world_and_explorations(db, tmp_path):
     chapter = Chapter(novel_id=novel.id, chapter_number=1, title="c1", content="x")
     outline = Outline(novel_id=novel.id, chapter_start=1, chapter_end=1, outline_text="o")
     cont = Continuation(novel_id=novel.id, chapter_number=1, content="y")
-    entry = LoreEntry(
-        novel_id=novel.id,
-        uid=str(uuid4()),
-        title="l",
-        content="z",
-        entry_type="Character",
-        token_budget=100,
-        priority=10,
-        enabled=True,
-    )
-    key = LoreKey(entry=entry, keyword="k", is_regex=False, case_sensitive=True)
-    db.add_all([chapter, outline, cont, entry, key])
+    db.add_all([chapter, outline, cont])
 
     # World model tables (NOT ORM-cascaded off Novel).
     e1 = WorldEntity(novel_id=novel.id, name="e1", entity_type="Character", description="", aliases=[])
@@ -149,9 +135,6 @@ def test_delete_novel_cascades_to_world_and_explorations(db, tmp_path):
     assert db.query(Chapter).filter(Chapter.novel_id == novel.id).count() == 0
     assert db.query(Outline).filter(Outline.novel_id == novel.id).count() == 0
     assert db.query(Continuation).filter(Continuation.novel_id == novel.id).count() == 0
-    assert db.query(LoreEntry).filter(LoreEntry.novel_id == novel.id).count() == 0
-    # LoreKey rows should be gone when their entry is deleted.
-    assert db.query(LoreKey).count() == 0
 
     assert db.query(WorldRelationship).filter(WorldRelationship.novel_id == novel.id).count() == 0
     assert db.query(WorldEntity).filter(WorldEntity.novel_id == novel.id).count() == 0

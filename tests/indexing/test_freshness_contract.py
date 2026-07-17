@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.core import cache as cache_module
 from app.core.indexing import lifecycle as lifecycle_module
-from app.core.cache import CacheManager, invalidate_novel_language_caches
+from app.core.cache import invalidate_novel_language_caches
 from app.core.indexing import (
     WINDOW_INDEX_REBUILD_FAILED_MESSAGE,
     WINDOW_INDEX_STATUS_FAILED,
@@ -44,15 +42,6 @@ def db():
         Base.metadata.drop_all(bind=engine)
 
 
-@pytest.fixture(autouse=True)
-def reset_cache_singleton():
-    CacheManager._instance = None
-    cache_module.cache_manager = CacheManager()
-    yield
-    CacheManager._instance = None
-    cache_module.cache_manager = CacheManager()
-
-
 def _enqueue_and_run_latest_revision(novel_id: int) -> None:
     assert (
         enqueue_window_index_rebuild_for_latest_revision(
@@ -81,7 +70,7 @@ def test_mark_inputs_changed_transitions_fresh_to_stale():
     assert novel.window_index_error is None
 
 
-def test_language_invalidation_marks_window_index_stale_and_clears_lore(db):
+def test_language_invalidation_marks_window_index_stale(db):
     novel = Novel(title="T", author="A", file_path="/tmp/t.txt")
     db.add(novel)
     db.commit()
@@ -93,11 +82,8 @@ def test_language_invalidation_marks_window_index_stale_and_clears_lore(db):
     )
     db.commit()
 
-    cache_module.cache_manager.set_lore(novel.id, MagicMock())
-
     invalidate_novel_language_caches(db, novel.id)
 
-    assert cache_module.cache_manager.get_lore(novel.id) is None
     assert novel.window_index_status == WINDOW_INDEX_STATUS_STALE
     assert novel.window_index_revision == 2
     assert novel.window_index_built_revision == 1

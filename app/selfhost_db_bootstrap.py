@@ -19,8 +19,6 @@ from app.models import (  # noqa: F401 - register models with Base.metadata
     DerivedAssetJob,
     Exploration,
     ExplorationChapter,
-    LoreEntry,
-    LoreKey,
     Novel,
     NovelIngestJob,
     Outline,

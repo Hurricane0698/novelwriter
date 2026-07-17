@@ -20,17 +20,12 @@ def test_settings_do_not_keep_unwired_provider_fields():
     assert "deepseek_model" not in model_fields
 
 
-def test_lorebook_settings_only_keep_live_defaults():
+def test_settings_do_not_keep_removed_lorebook_fields():
     model_fields = Settings.model_fields
 
-    assert model_fields["lore_max_total_tokens"].default == 2000
-    assert model_fields["lore_default_priority"].default == 100
-    assert model_fields["lore_default_token_budget"].default == 500
-
-    assert "lore_protagonist_priority" not in model_fields
-    assert "lore_item_priority" not in model_fields
-    assert "lore_location_priority" not in model_fields
-    assert "lore_faction_priority" not in model_fields
+    assert "lore_max_total_tokens" not in model_fields
+    assert "lore_default_priority" not in model_fields
+    assert "lore_default_token_budget" not in model_fields
 
 
 def test_settings_do_not_keep_dead_outline_generation_knobs():

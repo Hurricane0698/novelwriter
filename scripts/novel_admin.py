@@ -33,8 +33,6 @@ from app.models import (  # noqa: E402
     WorldRelationship,
     WorldEntity,
     WorldEntityAttribute,
-    LoreEntry,
-    LoreKey,
     Outline,
     Continuation,
     WorldSystem,
@@ -65,14 +63,6 @@ def _delete_novel_rows(db: Session, *, novel_id: int) -> None:
         )
     db.query(WorldEntity).filter(WorldEntity.novel_id == novel_id).delete(synchronize_session=False)
     db.query(WorldSystem).filter(WorldSystem.novel_id == novel_id).delete(synchronize_session=False)
-
-    # Lorebook
-    lore_entry_ids = [
-        entry_id for (entry_id,) in db.query(LoreEntry.id).filter(LoreEntry.novel_id == novel_id).all()
-    ]
-    if lore_entry_ids:
-        db.query(LoreKey).filter(LoreKey.entry_id.in_(lore_entry_ids)).delete(synchronize_session=False)
-    db.query(LoreEntry).filter(LoreEntry.novel_id == novel_id).delete(synchronize_session=False)
 
     # Writing artifacts
     db.query(Outline).filter(Outline.novel_id == novel_id).delete(synchronize_session=False)

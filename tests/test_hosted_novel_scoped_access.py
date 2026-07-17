@@ -80,40 +80,6 @@ class TestHostedIsolationNovelScopedRouters:
             resp = c.get(f"/api/novels/{other_novel.id}/world/entities")
         assert resp.status_code == 404
 
-    def test_hosted_lorebook_denies_cross_tenant_access(self, db, users, monkeypatch):
-        import app.api.deps as api_deps
-        from app.api import lorebook as lorebook_api
-
-        monkeypatch.setattr(api_deps, "get_settings", lambda: MagicMock(deploy_mode="hosted"))
-
-        u1, u2 = users
-        other_novel = Novel(title="N", author="", file_path="/tmp/n.txt", total_chapters=0, owner_id=u2.id)
-        db.add(other_novel)
-        db.commit()
-        db.refresh(other_novel)
-
-        app = _make_app(db, lorebook_api.router, current_user=u1)
-        with TestClient(app) as c:
-            resp = c.get(f"/api/novels/{other_novel.id}/lorebook/entries")
-        assert resp.status_code == 404
-
-    def test_hosted_dashboard_denies_cross_tenant_access(self, db, users, monkeypatch):
-        import app.api.deps as api_deps
-        from app.api import dashboard as dashboard_api
-
-        monkeypatch.setattr(api_deps, "get_settings", lambda: MagicMock(deploy_mode="hosted"))
-
-        u1, u2 = users
-        other_novel = Novel(title="N", author="", file_path="/tmp/n.txt", total_chapters=0, owner_id=u2.id)
-        db.add(other_novel)
-        db.commit()
-        db.refresh(other_novel)
-
-        app = _make_app(db, dashboard_api.router, current_user=u1)
-        with TestClient(app) as c:
-            resp = c.get(f"/api/novels/{other_novel.id}/dashboard")
-        assert resp.status_code == 404
-
 
 class TestSelfhostNovelScopedRouters:
     def test_selfhost_world_ignores_owner_id(self, db, users, monkeypatch):

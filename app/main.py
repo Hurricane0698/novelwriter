@@ -17,7 +17,7 @@ import uuid
 from app.config import get_settings as _get_settings
 from app.database import init_db
 from app.logging_setup import configure_logging
-from app.api import auth, novels, novel_support, lorebook, dashboard, world, copilot
+from app.api import auth, novels, novel_support, world, copilot
 from app.api import llm as llm_api
 from app.api import usage as usage_api
 from app.core.rate_limit import limiter
@@ -119,8 +119,6 @@ if not _skip_cors:
 
 app.include_router(auth.router)
 app.include_router(novels.router)
-app.include_router(lorebook.router)
-app.include_router(dashboard.router)
 app.include_router(usage_api.router)
 app.include_router(world.router)
 app.include_router(copilot.router)
