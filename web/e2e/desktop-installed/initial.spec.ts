@@ -27,10 +27,7 @@ test('first installed launch imports a novel and verifies encrypted LLM config',
   await enterLibraryThroughDesktopLanding(page)
   await assertSeededDemoVisible(page)
 
-  const fileChooserPromise = page.waitForEvent('filechooser')
-  await page.getByTestId('library-create-novel').click()
-  const fileChooser = await fileChooserPromise
-  await fileChooser.setFiles({
+  await page.getByTestId('library-file-input').setInputFiles({
     name: `${INSTALLED_NOVEL_TITLE}.txt`,
     mimeType: 'text/plain',
     buffer: Buffer.from('第一章\n这是 Windows 安装版持久化验证正文。\n', 'utf8'),
