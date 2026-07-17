@@ -32,6 +32,7 @@ analysis = Analysis(
         *collect_submodules("app"),
         "_novwr_state_proto",
         STATE_PROTO_EXTENSION,
+        "passlib.handlers.pbkdf2",
     ],
     hookspath=[],
     hooksconfig={},
