@@ -5,9 +5,10 @@ from PyInstaller.utils.hooks import collect_submodules
 
 
 ROOT = Path(SPECPATH).resolve().parents[1]
-STATE_PROTO_SPEC = find_spec("_novwr_state_proto")
+STATE_PROTO_EXTENSION = "_novwr_state_proto._novwr_state_proto"
+STATE_PROTO_SPEC = find_spec(STATE_PROTO_EXTENSION)
 if STATE_PROTO_SPEC is None or STATE_PROTO_SPEC.origin is None:
-    raise RuntimeError("_novwr_state_proto must be installed before packaging")
+    raise RuntimeError(f"{STATE_PROTO_EXTENSION} must be installed before packaging")
 
 datas = [
     (str(ROOT / "alembic.ini"), "."),
@@ -25,9 +26,13 @@ datas = [
 analysis = Analysis(
     [str(ROOT / "app/desktop_runtime.py")],
     pathex=[str(ROOT)],
-    binaries=[(STATE_PROTO_SPEC.origin, ".")],
+    binaries=[],
     datas=datas,
-    hiddenimports=[*collect_submodules("app"), "_novwr_state_proto"],
+    hiddenimports=[
+        *collect_submodules("app"),
+        "_novwr_state_proto",
+        STATE_PROTO_EXTENSION,
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

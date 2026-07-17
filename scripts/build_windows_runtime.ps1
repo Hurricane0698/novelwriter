@@ -128,8 +128,15 @@ try {
         throw "Packaged runtime executable is missing: $RuntimeExecutable"
     }
 
+    $StateProtoDirectory = Join-Path $InternalDirectory "_novwr_state_proto"
+    if (-not (Test-Path -LiteralPath $StateProtoDirectory -PathType Container)) {
+        throw "Packaged runtime state-proto package is missing: $StateProtoDirectory"
+    }
     $StateProtoModules = @(
-        Get-ChildItem -Path (Join-Path $InternalDirectory "_novwr_state_proto*.pyd") -File
+        Get-ChildItem `
+            -LiteralPath $StateProtoDirectory `
+            -Filter "_novwr_state_proto*.pyd" `
+            -File
     )
     if ($StateProtoModules.Count -ne 1) {
         throw "Packaged runtime must contain exactly one _novwr_state_proto extension; found $($StateProtoModules.Count)."
