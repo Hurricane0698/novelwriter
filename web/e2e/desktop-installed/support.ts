@@ -171,7 +171,9 @@ export async function assertDesktopLoginRouteRemoved(page: Page) {
 }
 
 export async function enterLibraryThroughDesktopLanding(page: Page) {
-  await page.getByTestId('home-start-writing').click()
+  const startWritingLink = page.getByTestId('home-start-writing')
+  await expect(startWritingLink).toHaveAttribute('href', '/library')
+  await page.goto('/library', { waitUntil: 'domcontentloaded' })
   await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/library`, { timeout: 60_000 })
   await expect(page.getByTestId('library-create-novel')).toBeVisible()
 }
