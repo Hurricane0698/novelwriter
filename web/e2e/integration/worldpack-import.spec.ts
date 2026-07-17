@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test'
-import { authHeaders, blockExternalNoise, createApiSession, ensureLoggedIn } from '../fixtures/api-helpers'
+import { authHeaders, blockExternalNoise, createApiSession, ensureProductAccess } from '../fixtures/api-helpers'
 import { waitForInitialNovelReady } from '../fixtures/novel-ready'
 
 const API = 'http://localhost:8000'
@@ -43,7 +43,7 @@ test.afterAll(async ({ request }) => {
 
 test.beforeEach(async ({ page }) => {
   await blockExternalNoise(page)
-  await ensureLoggedIn(page, { scope: AUTH_SCOPE })
+  await ensureProductAccess(page, { scope: AUTH_SCOPE })
 })
 
 test('import worldpack from onboarding dialog populates world model', async ({ page }) => {

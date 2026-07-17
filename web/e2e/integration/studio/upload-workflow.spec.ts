@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test'
-import { authHeaders, blockExternalNoise, createApiSession, ensureLoggedIn } from '../../fixtures/api-helpers'
+import { authHeaders, blockExternalNoise, createApiSession, ensureProductAccess } from '../../fixtures/api-helpers'
 import {
   installTestIdVisibilityProbe,
   waitForInitialNovelReady,
@@ -41,7 +41,7 @@ test.afterAll(async ({ request }) => {
 
 test.beforeEach(async ({ page }) => {
   await blockExternalNoise(page)
-  await ensureLoggedIn(page, { scope: AUTH_SCOPE })
+  await ensureProductAccess(page, { scope: AUTH_SCOPE })
 })
 
 test('upload reaches a ready Studio without flashing empty-world onboarding on first entry', async ({ page }) => {

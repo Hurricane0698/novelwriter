@@ -371,7 +371,13 @@ export async function submitLoginForm(page: Page, options: LoginOptions = {}) {
 }
 
 
-export async function ensureLoggedIn(page: Page, options: LoginOptions = {}) {
+export async function ensureProductAccess(page: Page, options: LoginOptions = {}) {
+  if (getDeployMode() === 'selfhost') {
+    await page.goto('/library')
+    await page.waitForURL(/\/library$/, { timeout: 15_000 })
+    return
+  }
+
   await page.goto('/login')
   await submitLoginForm(page, options)
   await page.waitForURL(/\/library$/, { timeout: 15_000 })

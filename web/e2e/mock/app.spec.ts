@@ -1,25 +1,25 @@
 import { test, expect } from '@playwright/test'
-import { ensureLoggedIn, mockAllApiRoutes, mockAuthRoutes, submitLoginForm } from '../fixtures/api-helpers'
+import { mockAllApiRoutes, mockAuthRoutes } from '../fixtures/api-helpers'
 import { NOVELS, CHAPTERS } from '../fixtures/data'
 
 
-test.describe('Login', () => {
-  test('login form renders and navigates to library on success', async ({ page }) => {
+test.describe('Local access', () => {
+  test('login route returns to Landing and enters Library without credentials', async ({ page }) => {
     await mockAllApiRoutes(page)
     await mockAuthRoutes(page, { authenticated: false })
 
-    await ensureLoggedIn(page, {
-      inviteCode: 'MOCK-INVITE',
-      nickname: 'test',
-      username: 'test',
-      password: 'testpass123!',
-    })
+    await page.goto('/login')
+    await expect(page).toHaveURL('/')
+    await expect(page.getByTestId('home-start-writing')).toBeVisible()
+    await expect(page.getByTestId('login-form')).toHaveCount(0)
+
+    await page.getByTestId('home-start-writing').click()
 
     await expect(page).toHaveURL('/library')
     await expect(page.getByText('我的作品库')).toBeVisible()
   })
 
-  test('returns to the protected page after login', async ({ page }) => {
+  test('product routes remain available without an authenticated session', async ({ page }) => {
     await mockAllApiRoutes(page)
     await mockAuthRoutes(page, { authenticated: false })
     await page.addInitScript(() => {
@@ -27,15 +27,6 @@ test.describe('Login', () => {
     })
 
     await page.goto('/novel/1')
-    await expect(page).toHaveURL(/\/login$/)
-
-    await submitLoginForm(page, {
-      inviteCode: 'MOCK-INVITE',
-      nickname: 'redirect-user',
-      username: 'redirect-user',
-      password: 'testpass123!',
-    })
-
     await expect(page).toHaveURL('/novel/1')
     await expect(page.getByText(NOVELS[0].title)).toBeVisible()
   })
