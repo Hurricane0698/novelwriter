@@ -4,11 +4,18 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
 from app.database import Base
-from app.selfhost_db_bootstrap import ensure_selfhost_database_ready, _matching_unversioned_upgrade_baseline
+from app.selfhost_db_bootstrap import (
+    _MISSING_TABLE,
+    _matching_unversioned_upgrade_baseline,
+    _missing_required_columns,
+    ensure_selfhost_database_ready,
+)
 
 
 @pytest.fixture()
@@ -97,6 +104,28 @@ def _degrade_schema_from_036_to_035(conn) -> None:
     )
     conn.execute(sa.text("DROP TABLE continuation_runs_old"))
     conn.execute(sa.text("CREATE INDEX ix_continuation_runs_novel_status ON continuation_runs (novel_id, status)"))
+
+
+def _alembic_config(db_url: str) -> Config:
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", db_url)
+    return config
+
+
+def _stamp_database(
+    monkeypatch: pytest.MonkeyPatch, db_url: str, revision: str
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    command.stamp(_alembic_config(db_url), revision)
+
+
+def _recorded_revision(engine) -> str:
+    with engine.connect() as conn:
+        return str(
+            conn.execute(
+                sa.text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
+        )
 
 
 def test_bootstraps_fresh_database_and_stamps_head(sqlite_engine):
@@ -293,6 +322,7 @@ def test_repairs_partial_versioned_upgrade_when_schema_is_already_at_later_basel
 def test_matches_unversioned_baseline_for_chapter_source_metadata():
     missing_columns = {
         "auth_identities": {
+            _MISSING_TABLE,
             "user_id",
             "provider",
             "provider_user_id",
@@ -304,6 +334,102 @@ def test_matches_unversioned_baseline_for_chapter_source_metadata():
     }
 
     assert _matching_unversioned_upgrade_baseline(missing_columns) == "030"
+
+
+def test_revision_032_upgrade_creates_generation_admission_tables_and_preserves_data(
+    sqlite_engine,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    engine, db_url = sqlite_engine
+    Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP TABLE world_generation_runs"))
+        conn.execute(sa.text("DROP TABLE novel_ingest_jobs"))
+        conn.execute(sa.text("DROP TABLE continuation_runs"))
+        conn.execute(
+            sa.text(
+                """
+                INSERT INTO users (
+                    username,
+                    hashed_password,
+                    role,
+                    is_active,
+                    nickname,
+                    generation_quota,
+                    feedback_submitted
+                ) VALUES (
+                    'issue-9-user',
+                    'hash',
+                    'user',
+                    1,
+                    'Issue 9',
+                    5,
+                    0
+                )
+                """
+            )
+        )
+        gaps = _missing_required_columns(conn)
+    _stamp_database(monkeypatch, db_url, "032")
+
+    assert _MISSING_TABLE in gaps["continuation_runs"]
+    assert _matching_unversioned_upgrade_baseline(gaps) == "032"
+
+    result = ensure_selfhost_database_ready(
+        db_engine=engine,
+        metadata=Base.metadata,
+        db_url=db_url,
+    )
+
+    inspector = sa.inspect(engine)
+    assert result == "upgraded"
+    assert _recorded_revision(engine) == "040"
+    assert {"continuation_runs", "world_generation_runs"}.issubset(
+        inspector.get_table_names()
+    )
+    assert "uq_continuation_runs_active_semantic" in {
+        index["name"] for index in inspector.get_indexes("continuation_runs")
+    }
+    with engine.connect() as conn:
+        nickname = conn.execute(
+            sa.text("SELECT nickname FROM users WHERE username = 'issue-9-user'")
+        ).scalar_one()
+    assert nickname == "Issue 9"
+
+
+def test_repairs_v032_database_already_stamped_past_continuation_table_creation(
+    sqlite_engine,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    engine, db_url = sqlite_engine
+    Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP TABLE continuation_runs"))
+    _stamp_database(monkeypatch, db_url, "037")
+
+    result = ensure_selfhost_database_ready(
+        db_engine=engine,
+        metadata=Base.metadata,
+        db_url=db_url,
+    )
+
+    inspector = sa.inspect(engine)
+    continuation_columns = {
+        column["name"] for column in inspector.get_columns("continuation_runs")
+    }
+    world_generation_columns = {
+        column["name"] for column in inspector.get_columns("world_generation_runs")
+    }
+    assert result == "upgraded"
+    assert _recorded_revision(engine) == "040"
+    assert {
+        "client_request_id",
+        "request_hash",
+        "semantic_key",
+        "claim_token",
+    }.issubset(continuation_columns)
+    assert "request_hash" not in world_generation_columns
+    assert "response_payload" not in world_generation_columns
 
 
 def test_rejects_stale_unversioned_schema(sqlite_engine):

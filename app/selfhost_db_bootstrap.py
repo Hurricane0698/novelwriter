@@ -41,6 +41,7 @@ _PRE_AUTH_IDENTITIES_REVISION = "032"
 _PRE_NOVEL_INGEST_JOB_REVISION = "034"
 _PRE_WORLD_GENERATION_ADMISSION_REVISION = "035"
 _CORE_TABLES = {"novels", "chapters"}
+_MISSING_TABLE = "__table__"
 _LEGACY_TABLES = {
     "narrative_events",
     "narrative_facts",
@@ -118,54 +119,61 @@ _REQUIRED_SCHEMA_COLUMNS: dict[str, set[str]] = {
         "completed_at",
     },
 }
+
+
+def _missing_table_gap(table_name: str) -> set[str]:
+    return {_MISSING_TABLE, *_REQUIRED_SCHEMA_COLUMNS[table_name]}
+
+
 _UNVERSIONED_AUTO_UPGRADE_BASELINES: tuple[tuple[str, dict[str, set[str]]], ...] = (
     (
         _PRE_WORLD_GENERATION_ADMISSION_REVISION,
         {
             "continuation_runs": _REQUIRED_SCHEMA_COLUMNS["continuation_runs"],
-            "world_generation_runs": _REQUIRED_SCHEMA_COLUMNS["world_generation_runs"],
+            "world_generation_runs": _missing_table_gap("world_generation_runs"),
         },
     ),
     (
         _PRE_NOVEL_INGEST_JOB_REVISION,
         {
             "continuation_runs": _REQUIRED_SCHEMA_COLUMNS["continuation_runs"],
-            "novel_ingest_jobs": _REQUIRED_SCHEMA_COLUMNS["novel_ingest_jobs"],
-            "world_generation_runs": _REQUIRED_SCHEMA_COLUMNS["world_generation_runs"],
+            "novel_ingest_jobs": _missing_table_gap("novel_ingest_jobs"),
+            "world_generation_runs": _missing_table_gap("world_generation_runs"),
         },
     ),
     (
         _PRE_AUTH_IDENTITIES_REVISION,
         {
-            "continuation_runs": _REQUIRED_SCHEMA_COLUMNS["continuation_runs"],
-            "novel_ingest_jobs": _REQUIRED_SCHEMA_COLUMNS["novel_ingest_jobs"],
-            "world_generation_runs": _REQUIRED_SCHEMA_COLUMNS["world_generation_runs"],
+            "continuation_runs": _missing_table_gap("continuation_runs"),
+            "novel_ingest_jobs": _missing_table_gap("novel_ingest_jobs"),
+            "world_generation_runs": _missing_table_gap("world_generation_runs"),
         },
     ),
     (
         _PRE_CHAPTER_SOURCE_METADATA_REVISION,
         {
-            "auth_identities": _REQUIRED_SCHEMA_COLUMNS["auth_identities"],
+            "auth_identities": _missing_table_gap("auth_identities"),
             "chapters": _REQUIRED_SCHEMA_COLUMNS["chapters"],
-            "continuation_runs": _REQUIRED_SCHEMA_COLUMNS["continuation_runs"],
-            "world_generation_runs": _REQUIRED_SCHEMA_COLUMNS["world_generation_runs"],
+            "continuation_runs": _missing_table_gap("continuation_runs"),
+            "novel_ingest_jobs": _missing_table_gap("novel_ingest_jobs"),
+            "world_generation_runs": _missing_table_gap("world_generation_runs"),
         },
     ),
     (
         _PRE_DERIVED_ASSET_JOB_REVISION,
         {
-            "auth_identities": _REQUIRED_SCHEMA_COLUMNS["auth_identities"],
+            "auth_identities": _missing_table_gap("auth_identities"),
             "chapters": _REQUIRED_SCHEMA_COLUMNS["chapters"],
-            "continuation_runs": _REQUIRED_SCHEMA_COLUMNS["continuation_runs"],
-            "derived_asset_jobs": _REQUIRED_SCHEMA_COLUMNS["derived_asset_jobs"],
-            "novel_ingest_jobs": _REQUIRED_SCHEMA_COLUMNS["novel_ingest_jobs"],
-            "world_generation_runs": _REQUIRED_SCHEMA_COLUMNS["world_generation_runs"],
+            "continuation_runs": _missing_table_gap("continuation_runs"),
+            "derived_asset_jobs": _missing_table_gap("derived_asset_jobs"),
+            "novel_ingest_jobs": _missing_table_gap("novel_ingest_jobs"),
+            "world_generation_runs": _missing_table_gap("world_generation_runs"),
         },
     ),
     (
         _PRE_NOVEL_LANGUAGE_REVISION,
         {
-            "auth_identities": _REQUIRED_SCHEMA_COLUMNS["auth_identities"],
+            "auth_identities": _missing_table_gap("auth_identities"),
             "novels": {
                 "language",
                 "window_index_status",
@@ -174,10 +182,10 @@ _UNVERSIONED_AUTO_UPGRADE_BASELINES: tuple[tuple[str, dict[str, set[str]]], ...]
                 "window_index_error",
             },
             "chapters": _REQUIRED_SCHEMA_COLUMNS["chapters"],
-            "continuation_runs": _REQUIRED_SCHEMA_COLUMNS["continuation_runs"],
-            "derived_asset_jobs": _REQUIRED_SCHEMA_COLUMNS["derived_asset_jobs"],
-            "novel_ingest_jobs": _REQUIRED_SCHEMA_COLUMNS["novel_ingest_jobs"],
-            "world_generation_runs": _REQUIRED_SCHEMA_COLUMNS["world_generation_runs"],
+            "continuation_runs": _missing_table_gap("continuation_runs"),
+            "derived_asset_jobs": _missing_table_gap("derived_asset_jobs"),
+            "novel_ingest_jobs": _missing_table_gap("novel_ingest_jobs"),
+            "world_generation_runs": _missing_table_gap("world_generation_runs"),
         },
     ),
 )
@@ -200,13 +208,13 @@ def _user_tables(bind) -> set[str]:
 
 def _missing_required_columns(bind) -> dict[str, set[str]]:
     inspector = sa.inspect(bind)
+    tables = set(inspector.get_table_names())
     missing: dict[str, set[str]] = {}
     for table_name, required_columns in _REQUIRED_SCHEMA_COLUMNS.items():
-        try:
-            existing = {column["name"] for column in inspector.get_columns(table_name)}
-        except Exception:
-            missing[table_name] = set(required_columns)
+        if table_name not in tables:
+            missing[table_name] = _missing_table_gap(table_name)
             continue
+        existing = {column["name"] for column in inspector.get_columns(table_name)}
         absent = required_columns - existing
         if absent:
             missing[table_name] = absent
