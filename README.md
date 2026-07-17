@@ -156,6 +156,20 @@ novwr uninstall
 
 默认安装目录为 `~/.novwr`。如果只是想用，**看到这里就够了**。
 
+### Windows 桌面版（本机运行，免 Docker）
+
+> 适合 Windows 用户；不需要 Docker，也不需要命令行。目前在 Windows 11 x64 上验证。
+
+1. 从 [Releases](https://github.com/Hurricane0698/novelwriter/releases/latest) 下载 `NovWr_x.y.z_x64-setup.exe`
+2. 双击安装（当前用户安装，无需管理员权限）
+3. 启动 `NovWr`，在「设置 → AI 模型配置」填入你的 LLM API 信息即可开始写作
+
+说明：
+
+- 数据完全保存在本机 `%LOCALAPPDATA%\NovWr`，覆盖安装升级不丢数据；卸载会保留作品数据，但会清除本机加密保存的 API 配置
+- API Key 使用 Windows 系统加密（DPAPI）保存在本机，界面不回显
+- 安装包暂未做代码签名，首次运行 SmartScreen 可能提示「Windows 已保护你的电脑」：点击「更多信息」→「仍要运行」即可
+
 ### 备选路径：Docker（熟悉 Docker 的用户）
 
 ```bash
@@ -175,6 +189,7 @@ http://localhost:8000
 ### 如何选
 
 - **绝大多数用户**：选上面的“一键安装”
+- **Windows 用户想最省事**：选“Windows 桌面版”，下载安装包即用
 - **你已经熟悉 Docker / 想手动控制目录与 compose**：选“手动 Docker”
 - **你要二次开发**：看下面的“本地开发”
 
