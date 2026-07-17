@@ -153,7 +153,11 @@ export async function writeInstalledPageDiagnostics(page: Page, label: string) {
 async function expectDesktopLandingSurface(page: Page) {
   try {
     await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/`)
-    await expect(page.getByTestId('home-start-writing')).toBeVisible()
+    // First launch renders Landing while the runner absorbs WebView2 first-run,
+    // Defender scanning of the fresh install, and first-user demo seeding; the
+    // route chunk can take 30-70s to arrive, so this gate gets its own budget
+    // below the 210s test and 300s outer process deadlines.
+    await expect(page.getByTestId('home-start-writing')).toBeVisible({ timeout: 120_000 })
   } catch (error) {
     await writeInstalledPageDiagnostics(page, 'landing surface')
     throw error
