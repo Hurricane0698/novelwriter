@@ -94,7 +94,7 @@ def novel(db, hosted_user):
 
 @pytest.fixture
 def client(db, hosted_user, monkeypatch):
-    from app.api import novels
+    from app.api import novels, novel_support
     import app.api.novel_continuation_context as continuation_context
     import app.api.novel_continuation_runtime as continuation_api
     from app.core.auth import get_current_user_or_default
@@ -124,7 +124,7 @@ def client(db, hosted_user, monkeypatch):
 
     def fake_prepare(db_sess, novel_id, req, current_user):
         n = db_sess.query(Novel).filter(Novel.id == novel_id).first()
-        novels._verify_novel_access(n, current_user)
+        novel_support.verify_novel_access(n, current_user)
         return ctx
 
     monkeypatch.setattr(continuation_api, "_prepare_continuation_context", fake_prepare)

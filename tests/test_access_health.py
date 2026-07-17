@@ -13,7 +13,7 @@ def _build_static_dir(tmp_path):
 def test_access_health_report_marks_missing_critical_checks_as_degraded(tmp_path, monkeypatch):
     import app.config as config_mod
     import app.main as main_mod
-    from app.api import novels as novels_api
+    from app.api import novel_support as novels_api
     from app.config import Settings
 
     static_dir = _build_static_dir(tmp_path)
@@ -41,7 +41,7 @@ def test_access_health_report_marks_missing_critical_checks_as_degraded(tmp_path
 def test_access_health_endpoint_reports_hosted_access_contract(tmp_path, monkeypatch):
     import app.config as config_mod
     import app.main as main_mod
-    from app.api import novels as novels_api
+    from app.api import novel_support as novels_api
     from app.config import reload_settings
     from app.main import app
     from app.version import APP_VERSION

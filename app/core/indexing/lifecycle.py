@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 import logging
 from time import perf_counter
 from typing import Any, Callable, Iterable, Mapping
@@ -12,6 +11,8 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.core.derived_assets import (
+    DERIVED_ASSET_JOB_STATUS_QUEUED,
+    DERIVED_ASSET_JOB_STATUS_RUNNING,
     DERIVED_ASSET_KIND_WINDOW_INDEX,
     DerivedAssetJobSnapshot,
     DerivedAssetPersistResult,
@@ -21,7 +22,7 @@ from app.core.derived_assets import (
     run_derived_asset_job_until_idle,
 )
 from app.config import Settings, get_settings
-from app.core.job_runtime import utcnow_naive
+from app.core.job_runtime import stale_running_job_filter, utcnow_naive
 from app.core.world.bootstrap_queue import ensure_ingest_bootstrap_job
 from app.models import DerivedAssetJob
 from app.models import Novel
@@ -221,22 +222,10 @@ class WindowIndexLifecycleSnapshot:
 
 
 def _stale_window_index_job_filter(now, settings: Settings):
-    stale_timeout = int(settings.derived_asset_job_stale_timeout_seconds or 0)
-    if stale_timeout > 0:
-        stale_cutoff = now - timedelta(seconds=stale_timeout)
-        return or_(
-            and_(
-                DerivedAssetJob.lease_expires_at.is_not(None),
-                DerivedAssetJob.lease_expires_at <= now,
-            ),
-            and_(
-                DerivedAssetJob.lease_expires_at.is_(None),
-                DerivedAssetJob.updated_at <= stale_cutoff,
-            ),
-        )
-    return and_(
-        DerivedAssetJob.lease_expires_at.is_not(None),
-        DerivedAssetJob.lease_expires_at <= now,
+    return stale_running_job_filter(
+        DerivedAssetJob,
+        now=now,
+        stale_timeout_seconds=int(settings.derived_asset_job_stale_timeout_seconds or 0),
     )
 
 
@@ -254,9 +243,9 @@ def select_next_window_index_rebuild_job_novel_id(
             .filter(
                 DerivedAssetJob.asset_kind == DERIVED_ASSET_KIND_WINDOW_INDEX,
                 or_(
-                    DerivedAssetJob.status == "queued",
+                    DerivedAssetJob.status == DERIVED_ASSET_JOB_STATUS_QUEUED,
                     and_(
-                        DerivedAssetJob.status == "running",
+                        DerivedAssetJob.status == DERIVED_ASSET_JOB_STATUS_RUNNING,
                         _stale_window_index_job_filter(now, resolved_settings),
                     ),
                 ),

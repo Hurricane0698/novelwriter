@@ -29,6 +29,7 @@ from app.core.copilot.run_state import (
     call_copilot_llm,
     claim_run_for_execution,
     copilot_run_failed_message,
+    ensure_run_lease,
     fail_run,
     parse_llm_response,
     resolve_run_interaction_locale,
@@ -141,13 +142,7 @@ async def run_one_shot(
         turn_intent,
     )
 
-    if (
-        run_id
-        and worker_id
-        and db_factory
-        and not deps.renew_run_lease(db_factory, run_id=run_id, worker_id=worker_id)
-    ):
-        raise deps.lease_lost_error_factory(run_id)
+    ensure_run_lease(deps, db_factory, run_id=run_id, worker_id=worker_id)
 
     await deps.acquire_llm_slot()
     try:
@@ -157,13 +152,7 @@ async def run_one_shot(
     finally:
         deps.release_llm_slot()
 
-    if (
-        run_id
-        and worker_id
-        and db_factory
-        and not deps.renew_run_lease(db_factory, run_id=run_id, worker_id=worker_id)
-    ):
-        raise deps.lease_lost_error_factory(run_id)
+    ensure_run_lease(deps, db_factory, run_id=run_id, worker_id=worker_id)
 
     return deps.parse_llm_response(response_text), evidence
 

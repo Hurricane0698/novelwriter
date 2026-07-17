@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event
 
 import app.core.ingest.worker as ingest_worker
+from app.api import novel_support
 from app.models import Chapter, Novel
 
 from .support import make_novels_app, novel_txt_bytes, patch_upload_dir, run_ingest_and_index_jobs
@@ -23,7 +24,7 @@ def test_selfhost_upload_persists_novel_and_chapters(db, tmp_path, monkeypatch, 
                 "title": "T",
                 "author": "A",
                 "consent_acknowledged": "true",
-                "consent_version": novels_api.UPLOAD_CONSENT_VERSION,
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
         status_resp = c.get(f"/api/novels/{resp.json()['novel_id']}/status")
@@ -103,7 +104,7 @@ def test_upload_keeps_failed_ingest_state_after_accept(db, tmp_path, monkeypatch
                 "title": "T",
                 "author": "A",
                 "consent_acknowledged": "true",
-                "consent_version": novels_api.UPLOAD_CONSENT_VERSION,
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
 

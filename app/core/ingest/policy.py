@@ -13,7 +13,7 @@ def _meets_threshold(value: int, *, threshold: int) -> bool:
     return normalized_threshold > 0 and normalized >= normalized_threshold
 
 
-def _upload_limit_bytes(settings: Settings) -> int:
+def upload_limit_bytes(settings: Settings) -> int:
     return max(int(settings.upload_max_megabytes or 0), 1) * _MEBIBYTE
 
 
@@ -23,7 +23,7 @@ def resolve_ingest_policy(
     settings: Settings | None = None,
 ) -> IngestPolicyDecision:
     resolved_settings = settings or get_settings()
-    if max(int(policy_input.source_bytes or 0), 0) > _upload_limit_bytes(resolved_settings):
+    if max(int(policy_input.source_bytes or 0), 0) > upload_limit_bytes(resolved_settings):
         return IngestPolicyDecision(
             size_tier="reject",
             auto_index_plan="skip_auto",

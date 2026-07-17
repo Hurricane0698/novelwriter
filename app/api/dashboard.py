@@ -11,14 +11,14 @@ Provides aggregated data to reduce multiple API calls from frontend:
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.chapter_numbering import load_recent_chapters
 from app.models import (
     Novel,
-    Chapter,
     LoreEntry,
 )
 from app.schemas import (
@@ -39,14 +39,6 @@ router = APIRouter(
 )
 
 
-def _get_novel_or_404(db: Session, novel_id: int) -> Novel:
-    """Get novel by ID or raise 404."""
-    novel = db.get(Novel, novel_id)
-    if not novel:
-        raise HTTPException(status_code=404, detail=f"Novel {novel_id} not found")
-    return novel
-
-
 # =============================================================================
 # Dashboard Endpoint
 # =============================================================================
@@ -56,6 +48,7 @@ async def get_novel_dashboard(
     novel_id: int,
     recent_chapters_limit: int = 5,
     db: Session = Depends(get_db),
+    novel: Novel = Depends(verify_novel_access),
 ):
     """
     Get aggregated dashboard data for a novel.
@@ -65,8 +58,6 @@ async def get_novel_dashboard(
     - Component status (lorebook)
     - Recent chapters
     """
-    novel = _get_novel_or_404(db, novel_id)
-
     # Build component status
     lorebook_count = db.query(func.count(LoreEntry.id)).filter(
         LoreEntry.novel_id == novel_id,
@@ -78,20 +69,13 @@ async def get_novel_dashboard(
     )
 
     # Get recent chapters
-    recent_chapters_db = (
-        db.query(Chapter)
-        .filter(Chapter.novel_id == novel_id)
-        .order_by(Chapter.chapter_number.desc())
-        .limit(recent_chapters_limit)
-        .all()
-    )
     recent_chapters = [
         RecentChapterSummary(
             chapter_number=ch.chapter_number,
             title=ch.title,
             char_count=len(ch.content) if ch.content else 0,
         )
-        for ch in reversed(recent_chapters_db)
+        for ch in load_recent_chapters(db, novel_id, recent_chapters_limit)
     ]
 
     return NovelDashboard(
@@ -122,8 +106,6 @@ async def batch_create_lorebook_entries(
     """
     import uuid
     from app.models import LoreEntry, LoreKey
-
-    _get_novel_or_404(db, novel_id)
 
     created_entries: List[LoreEntry] = []
     errors: List[str] = []

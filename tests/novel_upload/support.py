@@ -63,12 +63,10 @@ def run_ingest_and_index_jobs(*, max_rounds: int = 5) -> None:
 
 def patch_upload_dir(monkeypatch, tmp_path) -> Path:
     from app.api import novel_support
-    from app.api import novels as novels_api
 
     upload_dir = tmp_path / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(novel_support, "UPLOAD_DIR", upload_dir)
-    monkeypatch.setattr(novels_api, "UPLOAD_DIR", upload_dir, raising=False)
     return upload_dir
 
 

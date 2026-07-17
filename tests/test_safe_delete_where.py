@@ -5,7 +5,7 @@ import sqlalchemy as sa
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.api.novels import _safe_delete_where
+from app.api.novel_support import safe_delete_where as _safe_delete_where
 
 
 def _make_db() -> Session:

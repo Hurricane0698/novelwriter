@@ -5,7 +5,7 @@
 Generator utilities for continuation and outline generation.
 
 This module provides:
-1. Lorebook context injection
+1. Continuation prompt assembly with WorldModel context injection
 2. Multi-model routing support
 """
 
@@ -16,15 +16,13 @@ import re
 from sqlalchemy.orm import Session
 import logging
 
-from app.models import Novel, Chapter, Outline, Continuation
+from app.models import Novel, Outline, Continuation
 from app.core.ai_client import ai_client
 from app.core.continuation_text import format_chapter_heading_for_prompt, format_next_chapter_reference
-from app.core.lore_manager import LoreManager
-from app.core.cache import cache_manager
 from app.core.text import PromptKey, get_prompt
 from app.core.text.snippets import SnippetKey, get_snippet
 from app.config import get_settings, resolve_context_chapters
-from app.core.chapter_numbering import get_next_missing_chapter_number
+from app.core.chapter_numbering import get_next_missing_chapter_number, load_recent_chapters
 from app.language import resolve_prompt_locale
 from app.language_policy import get_language_policy
 
@@ -114,7 +112,6 @@ async def _build_continuation_prompt(
     db: Session,
     novel_id: int,
     use_core_memory: bool = True,
-    use_lorebook: bool = True,
     prompt: str | None = None,
     max_tokens: int | None = None,
     target_chars: int | None = None,
@@ -157,14 +154,7 @@ async def _build_continuation_prompt(
         context_chapters,
         default=settings.max_context_chapters,
     )
-    recent_chapters = (
-        db.query(Chapter)
-        .filter(Chapter.novel_id == novel_id)
-        .order_by(Chapter.chapter_number.desc())
-        .limit(effective_context_chapters)
-        .all()
-    )
-    recent_chapters = list(reversed(recent_chapters))
+    recent_chapters = load_recent_chapters(db, novel_id, effective_context_chapters)
 
     if not recent_chapters:
         raise ValueError(
@@ -221,32 +211,9 @@ async def _build_continuation_prompt(
         except Exception:
             logger.info("Injecting WorldModel context for novel %s", novel_id)
 
-    lorebook_context = ""
-    if use_lorebook:
-        try:
-            lore_manager = cache_manager.get_lore(novel_id)
-            if not lore_manager:
-                lore_manager = LoreManager(novel_id)
-                lore_manager.build_automaton(db)
-                cache_manager.set_lore(novel_id, lore_manager)
-            context, matched_entries, total_tokens = lore_manager.get_injection_context(
-                recent_content,
-                max_tokens=settings.lore_max_total_tokens,
-            )
-            if context:
-                lorebook_context = f"\n<supplementary_lore>\n{context}\n</supplementary_lore>"
-                logger.info(
-                    f"Injecting Lorebook context for novel {novel_id}: "
-                    f"{len(matched_entries)} entries, {total_tokens} tokens"
-                )
-        except Exception as e:
-            logger.warning(f"Failed to get Lorebook context for novel {novel_id}: {e}")
-
     combined_context = ""
     if world_context_section:
         combined_context += world_context_section
-    if lorebook_context:
-        combined_context += lorebook_context
 
     user_instruction = ""
     if prompt and prompt.strip():
@@ -295,7 +262,6 @@ async def continue_novel(
     novel_id: int,
     num_versions: int = 1,
     use_core_memory: bool = True,
-    use_lorebook: bool = True,
     prompt: str | None = None,
     max_tokens: int | None = None,
     target_chars: int | None = None,
@@ -314,7 +280,6 @@ async def continue_novel(
         db: Database session
         novel_id: ID of the novel to continue
         num_versions: Number of continuation versions to generate
-        use_lorebook: Whether to inject Lorebook context
         prompt: Optional user instruction for guiding the continuation
         max_tokens: Optional max tokens for generation (defaults to settings.default_continuation_tokens)
         target_chars: Optional target length in characters for the continuation
@@ -330,7 +295,6 @@ async def continue_novel(
         db=db,
         novel_id=novel_id,
         use_core_memory=use_core_memory,
-        use_lorebook=use_lorebook,
         prompt=prompt,
         max_tokens=max_tokens,
         target_chars=target_chars,
@@ -383,7 +347,6 @@ async def continue_novel_stream(
     novel_id: int,
     num_versions: int = 1,
     use_core_memory: bool = True,
-    use_lorebook: bool = True,
     prompt: str | None = None,
     max_tokens: int | None = None,
     target_chars: int | None = None,
@@ -401,7 +364,6 @@ async def continue_novel_stream(
         db=db,
         novel_id=novel_id,
         use_core_memory=use_core_memory,
-        use_lorebook=use_lorebook,
         prompt=prompt,
         max_tokens=max_tokens,
         target_chars=target_chars,

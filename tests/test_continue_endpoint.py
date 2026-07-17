@@ -595,7 +595,6 @@ async def test_build_continuation_prompt_uses_novel_language_for_prompt_locale(d
         db,
         novel.id,
         use_core_memory=False,
-        use_lorebook=False,
         context_chapters=2,
     )
 
@@ -622,7 +621,6 @@ async def test_build_continuation_prompt_uses_internal_chapter_reference_even_wi
         db,
         novel.id,
         use_core_memory=False,
-        use_lorebook=False,
         context_chapters=2,
     )
 

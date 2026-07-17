@@ -4,6 +4,8 @@ from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 
+from app.api import novel_support
+
 from .support import make_app, make_novels_app, novel_txt_bytes, patch_upload_dir
 
 
@@ -19,7 +21,7 @@ def test_upload_rejects_non_txt(db, tmp_path, monkeypatch, novels_api, active_us
                 "title": "T",
                 "author": "A",
                 "consent_acknowledged": "true",
-                "consent_version": novels_api.UPLOAD_CONSENT_VERSION,
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
 
@@ -40,7 +42,7 @@ def test_upload_rejects_too_large(db, tmp_path, monkeypatch, novels_api, active_
                 "title": "T",
                 "author": "A",
                 "consent_acknowledged": "true",
-                "consent_version": novels_api.UPLOAD_CONSENT_VERSION,
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
 
@@ -65,7 +67,7 @@ def test_hosted_upload_requires_auth(db, tmp_path, monkeypatch, novels_api):
                 "title": "T",
                 "author": "A",
                 "consent_acknowledged": "true",
-                "consent_version": novels_api.UPLOAD_CONSENT_VERSION,
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
 
@@ -80,7 +82,7 @@ def test_upload_requires_consent(db, tmp_path, monkeypatch, novels_api, active_u
         resp = c.post(
             "/api/novels/upload",
             files={"file": ("novel.txt", novel_txt_bytes(), "text/plain")},
-            data={"title": "T", "author": "A", "consent_version": novels_api.UPLOAD_CONSENT_VERSION},
+            data={"title": "T", "author": "A", "consent_version": novel_support.UPLOAD_CONSENT_VERSION},
         )
 
     assert resp.status_code == 400

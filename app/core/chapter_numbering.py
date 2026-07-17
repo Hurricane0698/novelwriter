@@ -29,3 +29,15 @@ def get_next_missing_chapter_number(db: Session, novel_id: int) -> int:
         if num > expected:
             break
     return expected
+
+
+def load_recent_chapters(db: Session, novel_id: int, limit: int) -> list[Chapter]:
+    """Return the last `limit` chapters in ascending chapter_number order."""
+    rows = (
+        db.query(Chapter)
+        .filter(Chapter.novel_id == novel_id)
+        .order_by(Chapter.chapter_number.desc())
+        .limit(limit)
+        .all()
+    )
+    return list(reversed(rows))

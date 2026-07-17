@@ -1,12 +1,14 @@
 from typing import Any, Literal, Type, TypeVar
 from dataclasses import dataclass, field
 import json
-import os
 import logging
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 from app.config import get_settings
-from app.core.safety_fuses import ensure_ai_available_fresh_session
+from app.core.safety_fuses import (
+    ensure_ai_available_fresh_session,
+    token_usage_recording_disabled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +104,7 @@ def _record_usage(model: str, prompt_tokens: int, completion_tokens: int,
                   endpoint: str = "", node_name: str | None = None, user_id: int | None = None,
                   billing_source: str = _BILLING_SOURCE_SELFHOST) -> None:
     """Persist token usage to DB. Non-blocking — failures are logged, never raised."""
-    if os.getenv("DISABLE_TOKEN_USAGE_RECORDING", "").lower() in {"1", "true", "yes", "on"}:
+    if token_usage_recording_disabled():
         return
 
     try:

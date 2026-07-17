@@ -62,11 +62,6 @@ class LoreManager:
         self._entry_cache: Dict[int, LoreEntrySnapshot] = {}
         self._is_built = False
 
-    @property
-    def entry_count(self) -> int:
-        """Return number of cached entries (for status checks)."""
-        return len(self._entry_cache)
-
     def build_automaton(self, db: Session) -> None:
         """
         Build Aho-Corasick automaton from all enabled entries for this novel.

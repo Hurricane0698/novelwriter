@@ -10,11 +10,8 @@ from sqlalchemy.orm import Session, defer
 
 from app.core.auth import get_current_user_or_default
 from app.core.events import ensure_project_start_event
-from app.core.ingest import inspect_novel_readiness, inspect_novel_readinesses
-from app.core.indexing.lifecycle import (
-    inspect_window_index_lifecycle,
-    inspect_window_index_lifecycles,
-)
+from app.core.ingest import inspect_novel_readinesses
+from app.core.indexing.lifecycle import inspect_window_index_lifecycles
 from app.core.seed_demo import is_seeded_demo_novel
 from app.database import get_db
 from app.models import Novel, User
@@ -68,15 +65,7 @@ def get_novel(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ):
-    row = (
-        db.query(Novel)
-        .options(defer(Novel.window_index))
-        .add_columns(novel_support.novel_window_index_presence_column())
-        .filter(Novel.id == novel_id)
-        .first()
-    )
-    novel = row[0] if row is not None else None
-    novel_support.verify_novel_access(novel, current_user)
+    novel, has_payload = novel_support.fetch_novel_with_presence(db, novel_id, current_user)
     if is_seeded_demo_novel(novel):
         ensure_project_start_event(
             db,
@@ -85,20 +74,10 @@ def get_novel(
             start_mode="demo",
             meta={"entry_action": "demo_open"},
         )
-    index_state = inspect_window_index_lifecycle(
+    return novel_support.serialize_novel_with_states(
         novel,
         db=db,
-        has_payload_override=bool(row[1]) if row is not None else None,
-    )
-    readiness_state = inspect_novel_readiness(
-        novel,
-        db=db,
-        index_state=index_state,
-    )
-    return novel_support.serialize_novel(
-        novel,
-        index_state=index_state,
-        readiness_state=readiness_state,
+        has_window_index_payload=has_payload,
     )
 
 
@@ -108,27 +87,9 @@ def get_novel_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ):
-    row = (
-        db.query(Novel)
-        .options(defer(Novel.window_index))
-        .add_columns(novel_support.novel_window_index_presence_column())
-        .filter(Novel.id == novel_id)
-        .first()
-    )
-    novel = row[0] if row is not None else None
-    novel_support.verify_novel_access(novel, current_user)
-    index_state = inspect_window_index_lifecycle(
+    novel, has_payload = novel_support.fetch_novel_with_presence(db, novel_id, current_user)
+    return novel_support.serialize_novel_with_states(
         novel,
         db=db,
-        has_payload_override=bool(row[1]) if row is not None else None,
-    )
-    readiness_state = inspect_novel_readiness(
-        novel,
-        db=db,
-        index_state=index_state,
-    )
-    return novel_support.serialize_novel(
-        novel,
-        index_state=index_state,
-        readiness_state=readiness_state,
+        has_window_index_payload=has_payload,
     ).window_index

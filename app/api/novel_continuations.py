@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_user_or_default
 from app.core.llm_request import get_llm_config
 from app.database import get_db
-from app.models import Continuation, Novel, User
+from app.models import Continuation, User
 from app.schemas import (
     ContinueRequest,
     ContinueResponse,
@@ -69,8 +69,7 @@ def get_continuations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ):
-    novel = db.query(Novel).filter(Novel.id == novel_id).first()
-    novel_support.verify_novel_access(novel, current_user)
+    novel_support.get_accessible_novel(db, novel_id, current_user)
 
     parts = [p.strip() for p in (ids or "").split(",") if p.strip()]
     if not parts:

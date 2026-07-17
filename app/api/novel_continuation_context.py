@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.config import get_settings, resolve_context_chapters
+from app.core.chapter_numbering import load_recent_chapters
 from app.core.context_assembly import apply_writer_context_budget, assemble_writer_context
 from app.core.continuation_text import (
     append_user_instruction_for_relevance,
@@ -18,7 +19,7 @@ from app.core.continuation_text import (
     format_recent_chapters_for_prompt,
     format_world_context_for_prompt,
 )
-from app.models import Chapter, Novel, User
+from app.models import User
 from app.schemas import ContinueDebugSummary, ContinueRequest
 
 from . import novel_support
@@ -103,22 +104,14 @@ def _prepare_continuation_context(
 ) -> _ContinuationContext:
     settings = get_settings()
 
-    novel = db.query(Novel).filter(Novel.id == novel_id).first()
-    novel_support.verify_novel_access(novel, current_user)
+    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
 
     effective_context_chapters = resolve_context_chapters(
         req.context_chapters,
         default=settings.max_context_chapters,
     )
 
-    recent_chapters = (
-        db.query(Chapter)
-        .filter(Chapter.novel_id == novel_id)
-        .order_by(Chapter.chapter_number.desc())
-        .limit(effective_context_chapters)
-        .all()
-    )
-    recent_chapters = list(reversed(recent_chapters))
+    recent_chapters = load_recent_chapters(db, novel_id, effective_context_chapters)
     if not recent_chapters:
         raise HTTPException(status_code=400, detail="Novel has no chapters")
 

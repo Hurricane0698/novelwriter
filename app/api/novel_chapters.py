@@ -30,6 +30,37 @@ from . import novel_support
 router = APIRouter(prefix="/api/novels", tags=["novels"])
 
 
+def _get_chapter_or_404(db: Session, novel_id: int, chapter_number: int) -> Chapter:
+    chapter = (
+        db.query(Chapter)
+        .filter(Chapter.novel_id == novel_id, Chapter.chapter_number == chapter_number)
+        .first()
+    )
+    if not chapter:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Chapter {chapter_number} not found in novel {novel_id}",
+        )
+    return chapter
+
+
+def _persist_new_chapter(db: Session, novel: Novel, novel_id: int) -> None:
+    """Flush the pending chapter, bump counters, and enqueue the index rebuild.
+
+    Runs inside the caller's try block; IntegrityError propagates to the
+    caller's numbering-specific conflict handler.
+    """
+    db.flush()
+    novel.total_chapters = int(novel.total_chapters or 0) + 1
+    target_revision = mark_window_index_inputs_changed(novel)
+    enqueue_window_index_rebuild_job(
+        db,
+        novel_id=novel_id,
+        target_revision=target_revision,
+    )
+    db.commit()
+
+
 @router.get("/{novel_id}/chapters", response_model=List[ChapterResponse])
 def get_chapters(
     novel_id: int,
@@ -38,8 +69,7 @@ def get_chapters(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ) -> List[ChapterResponse]:
-    novel = db.query(Novel).filter(Novel.id == novel_id).first()
-    novel_support.verify_novel_access(novel, current_user)
+    novel_support.get_accessible_novel(db, novel_id, current_user)
 
     query = (
         db.query(Chapter)
@@ -60,8 +90,7 @@ def get_chapters_meta(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ) -> List[ChapterMetaResponse]:
-    novel = db.query(Novel).filter(Novel.id == novel_id).first()
-    novel_support.verify_novel_access(novel, current_user)
+    novel_support.get_accessible_novel(db, novel_id, current_user)
 
     query = (
         db.query(
@@ -101,20 +130,9 @@ def get_chapter(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ):
-    novel = db.query(Novel).filter(Novel.id == novel_id).first()
-    novel_support.verify_novel_access(novel, current_user)
+    novel_support.get_accessible_novel(db, novel_id, current_user)
 
-    chapter = (
-        db.query(Chapter)
-        .filter(Chapter.novel_id == novel_id, Chapter.chapter_number == chapter_number)
-        .first()
-    )
-    if not chapter:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Chapter {chapter_number} not found in novel {novel_id}",
-        )
-    return chapter
+    return _get_chapter_or_404(db, novel_id, chapter_number)
 
 
 @router.post("/{novel_id}/chapters", response_model=ChapterResponse, status_code=201)
@@ -124,8 +142,7 @@ def create_chapter(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ):
-    novel = db.query(Novel).filter(Novel.id == novel_id).first()
-    novel_support.verify_novel_access(novel, current_user)
+    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
 
     if req.chapter_number is not None and req.chapter_number < 1:
         raise HTTPException(status_code=400, detail="chapter_number must be >= 1")
@@ -141,15 +158,7 @@ def create_chapter(
             )
             db.add(chapter)
             try:
-                db.flush()
-                novel.total_chapters = int(novel.total_chapters or 0) + 1
-                target_revision = mark_window_index_inputs_changed(novel)
-                enqueue_window_index_rebuild_job(
-                    db,
-                    novel_id=novel_id,
-                    target_revision=target_revision,
-                )
-                db.commit()
+                _persist_new_chapter(db, novel, novel_id)
             except IntegrityError:
                 db.rollback()
                 try:
@@ -187,15 +196,7 @@ def create_chapter(
     )
     db.add(chapter)
     try:
-        db.flush()
-        novel.total_chapters = int(novel.total_chapters or 0) + 1
-        target_revision = mark_window_index_inputs_changed(novel)
-        enqueue_window_index_rebuild_job(
-            db,
-            novel_id=novel_id,
-            target_revision=target_revision,
-        )
-        db.commit()
+        _persist_new_chapter(db, novel, novel_id)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail=f"Chapter {chapter_number} already exists")
@@ -213,19 +214,9 @@ def update_chapter(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ):
-    novel = db.query(Novel).filter(Novel.id == novel_id).first()
-    novel_support.verify_novel_access(novel, current_user)
+    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
 
-    chapter = (
-        db.query(Chapter)
-        .filter(Chapter.novel_id == novel_id, Chapter.chapter_number == chapter_number)
-        .first()
-    )
-    if not chapter:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Chapter {chapter_number} not found in novel {novel_id}",
-        )
+    chapter = _get_chapter_or_404(db, novel_id, chapter_number)
 
     if req.title is None and req.content is None:
         raise HTTPException(status_code=400, detail="Must provide title and/or content")
@@ -253,19 +244,9 @@ def delete_chapter(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ):
-    novel = db.query(Novel).filter(Novel.id == novel_id).first()
-    novel_support.verify_novel_access(novel, current_user)
+    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
 
-    chapter = (
-        db.query(Chapter)
-        .filter(Chapter.novel_id == novel_id, Chapter.chapter_number == chapter_number)
-        .first()
-    )
-    if not chapter:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Chapter {chapter_number} not found in novel {novel_id}",
-        )
+    chapter = _get_chapter_or_404(db, novel_id, chapter_number)
 
     db.delete(chapter)
     novel.total_chapters = max(int(novel.total_chapters or 0) - 1, 0)

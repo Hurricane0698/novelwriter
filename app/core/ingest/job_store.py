@@ -21,12 +21,6 @@ INGEST_JOB_STATUS_QUEUED = "queued"
 INGEST_JOB_STATUS_RUNNING = "running"
 INGEST_JOB_STATUS_COMPLETED = "completed"
 INGEST_JOB_STATUS_FAILED = "failed"
-ACTIVE_INGEST_JOB_STATUSES = frozenset(
-    {
-        INGEST_JOB_STATUS_QUEUED,
-        INGEST_JOB_STATUS_RUNNING,
-    }
-)
 
 INGEST_JOB_STAGE_ACCEPTED = "accepted"
 INGEST_JOB_STAGE_DECODING = "decoding"
@@ -151,6 +145,16 @@ def _running_stale_filter(now, settings: Settings):
     )
 
 
+def _requeue_as_accepted(job: NovelIngestJob) -> None:
+    job.status = INGEST_JOB_STATUS_QUEUED
+    job.stage = INGEST_JOB_STAGE_ACCEPTED
+    job.error = None
+    job.lease_owner = None
+    job.lease_expires_at = None
+    job.started_at = None
+    job.finished_at = None
+
+
 def enqueue_novel_ingest_job(
     db: Session,
     *,
@@ -178,15 +182,9 @@ def enqueue_novel_ingest_job(
             if job is None:
                 raise
 
-    job.status = INGEST_JOB_STATUS_QUEUED
-    job.stage = INGEST_JOB_STAGE_ACCEPTED
     job.source_bytes = max(int(source_bytes or 0), int(job.source_bytes or 0), 0)
     job.requested_language = requested_language or job.requested_language
-    job.error = None
-    job.lease_owner = None
-    job.lease_expires_at = None
-    job.started_at = None
-    job.finished_at = None
+    _requeue_as_accepted(job)
     return job
 
 
@@ -194,13 +192,7 @@ def reset_novel_ingest_job_for_retry(db: Session, *, novel_id: int) -> NovelInge
     job = db.query(NovelIngestJob).filter(NovelIngestJob.novel_id == novel_id).first()
     if job is None:
         return None
-    job.status = INGEST_JOB_STATUS_QUEUED
-    job.stage = INGEST_JOB_STAGE_ACCEPTED
-    job.error = None
-    job.lease_owner = None
-    job.lease_expires_at = None
-    job.started_at = None
-    job.finished_at = None
+    _requeue_as_accepted(job)
     return job
 
 

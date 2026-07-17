@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 
 def utcnow_naive() -> datetime:
-    return datetime.now(timezone.utc).astimezone(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def normalize_utc_naive(value: datetime | None) -> datetime | None:

@@ -8,7 +8,7 @@ from .contracts import (
     ReadinessMode,
 )
 from .parser_service import parse_source_file, resolve_requested_language
-from .policy import resolve_ingest_policy
+from .policy import resolve_ingest_policy, upload_limit_bytes
 from .service import accept_novel_upload
 from .status import (
     READINESS_ACCEPTING,
@@ -91,4 +91,5 @@ __all__ = [
     "run_next_novel_ingest_job",
     "run_novel_ingest_job_until_idle",
     "select_next_novel_ingest_job_novel_id",
+    "upload_limit_bytes",
 ]

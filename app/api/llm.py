@@ -14,7 +14,7 @@ from app.core.ai_client import (
     _resolve_billing_source,
     _stream_options_unsupported,
 )
-from app.core.llm_request import get_llm_config
+from app.core.llm_request import get_llm_config, read_llm_override
 from app.core.safety_fuses import ensure_ai_available
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
@@ -88,11 +88,7 @@ async def test_llm_connection(
     if not config or not config.get("base_url") or not config.get("api_key") or not config.get("model"):
         raise HTTPException(status_code=400, detail="Missing LLM config headers (X-LLM-Base-Url, X-LLM-Api-Key, X-LLM-Model)")
 
-    using_request_override = bool(
-        request.headers.get("x-llm-base-url")
-        and request.headers.get("x-llm-api-key")
-        and request.headers.get("x-llm-model")
-    )
+    using_request_override = read_llm_override(request).is_complete()
     billing_source = _resolve_billing_source(
         config.get("billing_source_hint"),
         using_request_override=using_request_override,

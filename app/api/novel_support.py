@@ -10,7 +10,7 @@ from typing import Any
 import sqlalchemy as sa
 from fastapi import HTTPException
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.core.ingest import inspect_novel_readiness
 from app.core.indexing.lifecycle import (
@@ -109,6 +109,24 @@ def verify_novel_access(novel: Novel | None, user: User) -> Novel:
     return novel
 
 
+def get_accessible_novel(db: Session, novel_id: int, user: User) -> Novel:
+    novel = db.query(Novel).filter(Novel.id == novel_id).first()
+    return verify_novel_access(novel, user)
+
+
+def fetch_novel_with_presence(db: Session, novel_id: int, user: User) -> tuple[Novel, bool]:
+    """Load a novel with the window-index payload deferred plus a presence flag."""
+    row = (
+        db.query(Novel)
+        .options(defer(Novel.window_index))
+        .add_columns(novel_window_index_presence_column())
+        .filter(Novel.id == novel_id)
+        .first()
+    )
+    novel = verify_novel_access(row[0] if row is not None else None, user)
+    return novel, bool(row[1])
+
+
 def novel_window_index_presence_column():
     return Novel.window_index.is_not(None).label("has_window_index_payload")
 
@@ -183,55 +201,40 @@ def _serialize_window_index_job_metrics(job_snapshot) -> WindowIndexJobMetricsRe
 def serialize_novel(
     novel: Novel,
     *,
-    db: Session | None = None,
-    index_state: WindowIndexLifecycleSnapshot | None = None,
-    readiness_state=None,
+    index_state: WindowIndexLifecycleSnapshot,
+    readiness_state,
 ) -> NovelResponse:
-    resolved_index_state = index_state
-    if resolved_index_state is None:
-        if db is None:
-            raise ValueError("db is required when index_state is not provided")
-        resolved_index_state = inspect_window_index_lifecycle(novel, db=db)
-    resolved_readiness_state = readiness_state
-    if resolved_readiness_state is None:
-        if db is None:
-            raise ValueError("db is required when readiness_state is not provided")
-        resolved_readiness_state = inspect_novel_readiness(
-            novel,
-            db=db,
-            index_state=resolved_index_state,
-        )
     job_response = None
-    if resolved_index_state.job is not None:
+    if index_state.job is not None:
         job_response = WindowIndexJobResponse(
-            status=DerivedAssetJobStatus(resolved_index_state.job.status),
-            target_revision=resolved_index_state.job.target_revision,
-            completed_revision=resolved_index_state.job.completed_revision,
-            error=resolved_index_state.job.error,
-            created_at=resolved_index_state.job.created_at,
-            started_at=resolved_index_state.job.started_at,
-            finished_at=resolved_index_state.job.finished_at,
-            metrics=_serialize_window_index_job_metrics(resolved_index_state.job),
+            status=DerivedAssetJobStatus(index_state.job.status),
+            target_revision=index_state.job.target_revision,
+            completed_revision=index_state.job.completed_revision,
+            error=index_state.job.error,
+            created_at=index_state.job.created_at,
+            started_at=index_state.job.started_at,
+            finished_at=index_state.job.finished_at,
+            metrics=_serialize_window_index_job_metrics(index_state.job),
         )
     ingest_response = None
-    if resolved_readiness_state.ingest_job is not None:
+    if readiness_state.ingest_job is not None:
         ingest_response = NovelIngestJobResponse(
-            status=NovelIngestJobStatus(resolved_readiness_state.ingest_job.status),
-            stage=NovelIngestJobStage(resolved_readiness_state.ingest_job.stage),
+            status=NovelIngestJobStatus(readiness_state.ingest_job.status),
+            stage=NovelIngestJobStage(readiness_state.ingest_job.stage),
             size_tier=(
-                NovelIngestSizeTier(resolved_readiness_state.ingest_job.size_tier)
-                if resolved_readiness_state.ingest_job.size_tier
+                NovelIngestSizeTier(readiness_state.ingest_job.size_tier)
+                if readiness_state.ingest_job.size_tier
                 else None
             ),
-            source_bytes=resolved_readiness_state.ingest_job.source_bytes,
-            source_chars=resolved_readiness_state.ingest_job.source_chars,
-            chapter_count=resolved_readiness_state.ingest_job.chapter_count,
-            requested_language=resolved_readiness_state.ingest_job.requested_language,
-            resolved_language=resolved_readiness_state.ingest_job.resolved_language,
-            auto_index_plan=resolved_readiness_state.ingest_job.auto_index_plan,
-            bootstrap_plan=resolved_readiness_state.ingest_job.bootstrap_plan,
-            readiness_mode=resolved_readiness_state.ingest_job.readiness_mode,
-            error=resolved_readiness_state.ingest_job.error,
+            source_bytes=readiness_state.ingest_job.source_bytes,
+            source_chars=readiness_state.ingest_job.source_chars,
+            chapter_count=readiness_state.ingest_job.chapter_count,
+            requested_language=readiness_state.ingest_job.requested_language,
+            resolved_language=readiness_state.ingest_job.resolved_language,
+            auto_index_plan=readiness_state.ingest_job.auto_index_plan,
+            bootstrap_plan=readiness_state.ingest_job.bootstrap_plan,
+            readiness_mode=readiness_state.ingest_job.readiness_mode,
+            error=readiness_state.ingest_job.error,
         )
     return NovelResponse(
         id=novel.id,
@@ -241,16 +244,16 @@ def serialize_novel(
         total_chapters=novel.total_chapters,
         is_seeded_demo=is_seeded_demo_novel(novel),
         window_index=WindowIndexStateResponse(
-            status=WindowIndexLifecycleStatus(resolved_index_state.status),
-            revision=resolved_index_state.revision,
-            built_revision=resolved_index_state.built_revision,
-            error=resolved_index_state.error,
-            readiness=WindowIndexReadinessStatus(resolved_readiness_state.readiness),
+            status=WindowIndexLifecycleStatus(index_state.status),
+            revision=index_state.revision,
+            built_revision=index_state.built_revision,
+            error=index_state.error,
+            readiness=WindowIndexReadinessStatus(readiness_state.readiness),
             capabilities=WindowIndexCapabilitiesResponse(
-                chapters_available=resolved_readiness_state.capabilities.chapters_available,
-                whole_book_index_available=resolved_readiness_state.capabilities.whole_book_index_available,
-                bootstrap_available=resolved_readiness_state.capabilities.bootstrap_available,
-                recent_fallback_only=resolved_readiness_state.capabilities.recent_fallback_only,
+                chapters_available=readiness_state.capabilities.chapters_available,
+                whole_book_index_available=readiness_state.capabilities.whole_book_index_available,
+                bootstrap_available=readiness_state.capabilities.bootstrap_available,
+                recent_fallback_only=readiness_state.capabilities.recent_fallback_only,
             ),
             ingest=ingest_response,
             job=job_response,
@@ -258,3 +261,23 @@ def serialize_novel(
         created_at=novel.created_at,
         updated_at=novel.updated_at,
     )
+
+
+def serialize_novel_with_states(
+    novel: Novel,
+    *,
+    db: Session,
+    has_window_index_payload: bool,
+) -> NovelResponse:
+    """Resolve index/readiness states for one novel and serialize it."""
+    index_state = inspect_window_index_lifecycle(
+        novel,
+        db=db,
+        has_payload_override=has_window_index_payload,
+    )
+    readiness_state = inspect_novel_readiness(
+        novel,
+        db=db,
+        index_state=index_state,
+    )
+    return serialize_novel(novel, index_state=index_state, readiness_state=readiness_state)

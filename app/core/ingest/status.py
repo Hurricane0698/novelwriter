@@ -9,6 +9,9 @@ from app.models import Novel
 
 from .job_store import (
     INGEST_JOB_STAGE_ACCEPTED,
+    INGEST_JOB_STATUS_FAILED,
+    INGEST_JOB_STATUS_QUEUED,
+    INGEST_JOB_STATUS_RUNNING,
     NovelIngestJobSnapshot,
     inspect_novel_ingest_job,
     inspect_novel_ingest_jobs,
@@ -61,7 +64,7 @@ def resolve_novel_readiness(
 
     if ingest_job is not None:
         if (
-            ingest_job.status == "queued"
+            ingest_job.status == INGEST_JOB_STATUS_QUEUED
             and ingest_job.stage == INGEST_JOB_STAGE_ACCEPTED
             and not chapters_available
         ):
@@ -70,10 +73,10 @@ def resolve_novel_readiness(
                 capabilities=capabilities,
                 ingest_job=ingest_job,
             )
-        if ingest_job.status in {"queued", "running"}:
+        if ingest_job.status in {INGEST_JOB_STATUS_QUEUED, INGEST_JOB_STATUS_RUNNING}:
             readiness = READINESS_DEGRADED_READY if chapters_available else READINESS_PROCESSING
             return NovelReadinessSnapshot(readiness=readiness, capabilities=capabilities, ingest_job=ingest_job)
-        if ingest_job.status == "failed" and not chapters_available:
+        if ingest_job.status == INGEST_JOB_STATUS_FAILED and not chapters_available:
             return NovelReadinessSnapshot(
                 readiness=READINESS_FAILED_RETRYABLE,
                 capabilities=capabilities,

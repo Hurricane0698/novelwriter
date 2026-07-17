@@ -1,5 +1,4 @@
 from .jobs import (
-    ACTIVE_DERIVED_ASSET_JOB_STATUSES,
     DERIVED_ASSET_JOB_STATUS_COMPLETED,
     DERIVED_ASSET_JOB_STATUS_FAILED,
     DERIVED_ASSET_JOB_STATUS_QUEUED,
@@ -11,14 +10,12 @@ from .jobs import (
     enqueue_derived_asset_job,
     inspect_derived_asset_job,
     inspect_derived_asset_jobs,
-    is_active_derived_asset_job_status,
     is_stale_running_derived_asset_job,
     run_derived_asset_job_until_idle,
     serialize_derived_asset_job,
 )
 
 __all__ = [
-    "ACTIVE_DERIVED_ASSET_JOB_STATUSES",
     "DERIVED_ASSET_JOB_STATUS_COMPLETED",
     "DERIVED_ASSET_JOB_STATUS_FAILED",
     "DERIVED_ASSET_JOB_STATUS_QUEUED",
@@ -30,7 +27,6 @@ __all__ = [
     "enqueue_derived_asset_job",
     "inspect_derived_asset_job",
     "inspect_derived_asset_jobs",
-    "is_active_derived_asset_job_status",
     "is_stale_running_derived_asset_job",
     "run_derived_asset_job_until_idle",
     "serialize_derived_asset_job",

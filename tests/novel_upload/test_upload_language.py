@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 import app.core.ingest.worker as ingest_worker
+from app.api import novel_support
 from app.core.parser import ParsedChapter
 
 from .support import (
@@ -29,7 +30,7 @@ def test_upload_normalizes_explicit_language(db, tmp_path, monkeypatch, novels_a
                 "author": "A",
                 "language": "EN_US",
                 "consent_acknowledged": "true",
-                "consent_version": novels_api.UPLOAD_CONSENT_VERSION,
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
 
@@ -54,7 +55,7 @@ def test_upload_auto_detects_english_language_when_omitted(db, tmp_path, monkeyp
                 "title": "T",
                 "author": "A",
                 "consent_acknowledged": "true",
-                "consent_version": novels_api.UPLOAD_CONSENT_VERSION,
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
 
@@ -79,7 +80,7 @@ def test_upload_auto_detects_japanese_language_when_omitted(db, tmp_path, monkey
                 "title": "T",
                 "author": "A",
                 "consent_acknowledged": "true",
-                "consent_version": novels_api.UPLOAD_CONSENT_VERSION,
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
 
@@ -104,7 +105,7 @@ def test_upload_auto_detects_korean_language_when_omitted(db, tmp_path, monkeypa
                 "title": "T",
                 "author": "A",
                 "consent_acknowledged": "true",
-                "consent_version": novels_api.UPLOAD_CONSENT_VERSION,
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
 
@@ -150,7 +151,7 @@ def test_upload_passes_normalized_language_to_parser(db, tmp_path, monkeypatch, 
                 "author": "A",
                 "language": "JA_JP",
                 "consent_acknowledged": "true",
-                "consent_version": novels_api.UPLOAD_CONSENT_VERSION,
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
 
@@ -198,7 +199,7 @@ def test_upload_passes_detected_language_to_parser_when_language_omitted(
                 "title": "T",
                 "author": "A",
                 "consent_acknowledged": "true",
-                "consent_version": novels_api.UPLOAD_CONSENT_VERSION,
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
 

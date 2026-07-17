@@ -6,12 +6,16 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from sqlalchemy.orm import Session
 
-from app.core.auth import settle_quota_reservation
+from app.core.copilot.run_state import (
+    resolve_running_lease_expiry,
+    run_settings,
+    settle_run_quota,
+    utcnow_naive,
+)
 from app.core.copilot.scope import EvidenceItem, serialize_evidence
 from app.core.copilot.suggestions import (
     CompiledSuggestion,
@@ -22,34 +26,6 @@ from app.core.copilot.workspace import Workspace
 from app.models import CopilotRun
 
 logger = logging.getLogger(__name__)
-
-
-def _utcnow_naive() -> datetime:
-    return datetime.now(timezone.utc).astimezone(timezone.utc).replace(tzinfo=None)
-
-
-def _run_settings():
-    from app.config import get_settings
-
-    return get_settings()
-
-
-def _resolve_running_lease_expiry(now: datetime, lease_seconds: int) -> datetime | None:
-    if lease_seconds <= 0:
-        return None
-    return now + timedelta(seconds=lease_seconds)
-
-
-def _settle_run_quota(
-    db: Session,
-    run: CopilotRun,
-    *,
-    charge_count: int = 0,
-) -> None:
-    reservation_id = getattr(run, "quota_reservation_id", None)
-    if reservation_id is None:
-        return
-    settle_quota_reservation(db, reservation_id, charge_count=charge_count, commit=False)
 
 
 def renew_run_lease(
@@ -64,9 +40,9 @@ def renew_run_lease(
         run = db.query(CopilotRun).filter(CopilotRun.run_id == run_id).first()
         if run is None or run.status != "running" or run.lease_owner != worker_id:
             return False
-        run.lease_expires_at = _resolve_running_lease_expiry(
-            _utcnow_naive(),
-            _run_settings().copilot_run_lease_seconds,
+        run.lease_expires_at = resolve_running_lease_expiry(
+            utcnow_naive(),
+            run_settings().copilot_run_lease_seconds,
         )
         db.commit()
         return True
@@ -81,9 +57,9 @@ def persist_preloaded_evidence(
 ) -> None:
     """Persist preloaded evidence and renew the running lease heartbeat."""
     run.evidence_json = [serialize_evidence(item) for item in evidence]
-    run.lease_expires_at = _resolve_running_lease_expiry(
-        _utcnow_naive(),
-        _run_settings().copilot_run_lease_seconds,
+    run.lease_expires_at = resolve_running_lease_expiry(
+        utcnow_naive(),
+        run_settings().copilot_run_lease_seconds,
     )
     db.commit()
 
@@ -113,9 +89,9 @@ def persist_running_workspace(
         ws_run.workspace_json = workspace.to_dict()
         ws_run.trace_json = build_running_trace(workspace, interaction_locale=interaction_locale)
         if worker_id:
-            ws_run.lease_expires_at = _resolve_running_lease_expiry(
-                _utcnow_naive(),
-                _run_settings().copilot_run_lease_seconds,
+            ws_run.lease_expires_at = resolve_running_lease_expiry(
+                utcnow_naive(),
+                run_settings().copilot_run_lease_seconds,
             )
         db.commit()
         return True
@@ -165,10 +141,10 @@ def persist_completed_run(
         store_run.error = None
         store_run.lease_owner = None
         store_run.lease_expires_at = None
-        store_run.finished_at = _utcnow_naive()
+        store_run.finished_at = utcnow_naive()
         if workspace:
             store_run.workspace_json = workspace.to_dict()
-        _settle_run_quota(db, store_run, charge_count=1)
+        settle_run_quota(db, store_run, charge_count=1)
         db.commit()
         return True
     finally:

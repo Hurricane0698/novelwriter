@@ -34,12 +34,6 @@ DERIVED_ASSET_JOB_STATUS_QUEUED = "queued"
 DERIVED_ASSET_JOB_STATUS_RUNNING = "running"
 DERIVED_ASSET_JOB_STATUS_COMPLETED = "completed"
 DERIVED_ASSET_JOB_STATUS_FAILED = "failed"
-ACTIVE_DERIVED_ASSET_JOB_STATUSES = frozenset(
-    {
-        DERIVED_ASSET_JOB_STATUS_QUEUED,
-        DERIVED_ASSET_JOB_STATUS_RUNNING,
-    }
-)
 
 
 @dataclass(slots=True)
@@ -182,10 +176,6 @@ def inspect_derived_asset_jobs(
         int(job.novel_id): serialize_derived_asset_job(job)
         for job in jobs
     }
-
-
-def is_active_derived_asset_job_status(status: str | None) -> bool:
-    return status in ACTIVE_DERIVED_ASSET_JOB_STATUSES
 
 
 def is_stale_running_derived_asset_job(
@@ -385,6 +375,51 @@ def _claim_derived_asset_job(
         db.close()
 
 
+def _load_owned_running_job(
+    db: Session,
+    claim: _DerivedAssetClaim,
+    *,
+    action: str,
+) -> DerivedAssetJob | None:
+    """Load the claimed job; None when missing or the lease was lost."""
+    job = db.query(DerivedAssetJob).filter(DerivedAssetJob.id == claim.job_id).first()
+    if job is None:
+        return None
+    if (
+        job.status != DERIVED_ASSET_JOB_STATUS_RUNNING
+        or job.lease_owner != claim.worker_id
+        or int(job.claimed_revision or 0) != claim.target_revision
+    ):
+        logger.warning(
+            f"Skipping derived-asset {action} persistence after lease loss",
+            extra={
+                "job_id": claim.job_id,
+                "novel_id": claim.novel_id,
+                "asset_kind": claim.asset_kind,
+            },
+        )
+        return None
+    return job
+
+
+def _requeue_for_newer_revision(db: Session, job: DerivedAssetJob) -> bool:
+    apply_row_updates(
+        job,
+        release_lease_values(
+            DerivedAssetJob,
+            now=utcnow_naive(),
+            extra_updates={
+                DerivedAssetJob.status: DERIVED_ASSET_JOB_STATUS_QUEUED,
+                DerivedAssetJob.claimed_revision: None,
+                DerivedAssetJob.error: None,
+                DerivedAssetJob.finished_at: None,
+            },
+        ),
+    )
+    db.commit()
+    return True
+
+
 def _finalize_success(
     *,
     claim: _DerivedAssetClaim,
@@ -394,22 +429,8 @@ def _finalize_success(
 ) -> bool:
     db = session_factory()
     try:
-        job = db.query(DerivedAssetJob).filter(DerivedAssetJob.id == claim.job_id).first()
+        job = _load_owned_running_job(db, claim, action="success")
         if job is None:
-            return False
-        if (
-            job.status != DERIVED_ASSET_JOB_STATUS_RUNNING
-            or job.lease_owner != claim.worker_id
-            or int(job.claimed_revision or 0) != claim.target_revision
-        ):
-            logger.warning(
-                "Skipping derived-asset success persistence after lease loss",
-                extra={
-                    "job_id": claim.job_id,
-                    "novel_id": claim.novel_id,
-                    "asset_kind": claim.asset_kind,
-                },
-            )
             return False
 
         finished_at = utcnow_naive()
@@ -434,21 +455,7 @@ def _finalize_success(
         job.result = dict(persisted.result or {})
 
         if persisted.superseded or int(job.target_revision or 0) > claim.target_revision:
-            apply_row_updates(
-                job,
-                release_lease_values(
-                    DerivedAssetJob,
-                    now=utcnow_naive(),
-                    extra_updates={
-                        DerivedAssetJob.status: DERIVED_ASSET_JOB_STATUS_QUEUED,
-                        DerivedAssetJob.claimed_revision: None,
-                        DerivedAssetJob.error: None,
-                        DerivedAssetJob.finished_at: None,
-                    },
-                ),
-            )
-            db.commit()
-            return True
+            return _requeue_for_newer_revision(db, job)
 
         apply_row_updates(
             job,
@@ -481,22 +488,8 @@ def _finalize_failure(
 ) -> bool:
     db = session_factory()
     try:
-        job = db.query(DerivedAssetJob).filter(DerivedAssetJob.id == claim.job_id).first()
+        job = _load_owned_running_job(db, claim, action="failure")
         if job is None:
-            return False
-        if (
-            job.status != DERIVED_ASSET_JOB_STATUS_RUNNING
-            or job.lease_owner != claim.worker_id
-            or int(job.claimed_revision or 0) != claim.target_revision
-        ):
-            logger.warning(
-                "Skipping derived-asset failure persistence after lease loss",
-                extra={
-                    "job_id": claim.job_id,
-                    "novel_id": claim.novel_id,
-                    "asset_kind": claim.asset_kind,
-                },
-            )
             return False
 
         superseded = adapter.persist_failure(
@@ -508,21 +501,7 @@ def _finalize_failure(
         job.result = {}
 
         if superseded or int(job.target_revision or 0) > claim.target_revision:
-            apply_row_updates(
-                job,
-                release_lease_values(
-                    DerivedAssetJob,
-                    now=utcnow_naive(),
-                    extra_updates={
-                        DerivedAssetJob.status: DERIVED_ASSET_JOB_STATUS_QUEUED,
-                        DerivedAssetJob.claimed_revision: None,
-                        DerivedAssetJob.error: None,
-                        DerivedAssetJob.finished_at: None,
-                    },
-                ),
-            )
-            db.commit()
-            return True
+            return _requeue_for_newer_revision(db, job)
 
         finished_at = utcnow_naive()
         apply_row_updates(

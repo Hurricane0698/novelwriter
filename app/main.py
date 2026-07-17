@@ -17,7 +17,7 @@ import uuid
 from app.config import get_settings as _get_settings
 from app.database import init_db
 from app.logging_setup import configure_logging
-from app.api import auth, novels, lorebook, dashboard, world, copilot
+from app.api import auth, novels, novel_support, lorebook, dashboard, world, copilot
 from app.api import llm as llm_api
 from app.api import usage as usage_api
 from app.core.rate_limit import limiter
@@ -220,7 +220,7 @@ def _build_access_health_report(*, static_dir: _Path | None) -> dict[str, object
     assets_dir = static_root / "assets" if static_root is not None else None
     assets_present = bool(assets_dir and assets_dir.is_dir() and any(assets_dir.iterdir()))
 
-    upload_dir = novels.UPLOAD_DIR
+    upload_dir = novel_support.UPLOAD_DIR
     invite_ready = settings.deploy_mode != "hosted" or settings.hosted_invite_login_enabled
     github_configured = auth._github_oauth_is_configured()
     github_enabled = settings.deploy_mode == "hosted" and settings.hosted_github_login_enabled and github_configured
@@ -267,7 +267,7 @@ def _build_access_health_report(*, static_dir: _Path | None) -> dict[str, object
             "hosted_llm_configured": hosted_llm_ready,
             "ai_manual_disable": settings.ai_manual_disable,
             "stream_media_type": "application/x-ndjson",
-            "stream_headers": novels.STREAMING_RESPONSE_HEADERS,
+            "stream_headers": novel_support.STREAMING_RESPONSE_HEADERS,
             "max_concurrent_llm_calls": settings.max_concurrent_llm_calls,
             "max_background_concurrent_llm_calls": settings.max_background_concurrent_llm_calls,
         },

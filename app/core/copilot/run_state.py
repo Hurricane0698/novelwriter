@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session, object_session
@@ -15,12 +15,22 @@ from sqlalchemy.orm import Session, object_session
 from app.core.ai_client import AIClient
 from app.core.auth import settle_quota_reservation
 from app.core.copilot.messages import CopilotTextKey, get_copilot_text
+from app.core.job_runtime import (
+    is_stale_running_job,
+    resolve_lease_expiry,
+    utcnow_naive,
+)
 from app.language import normalize_copilot_interaction_locale
 from app.models import CopilotRun
 
 logger = logging.getLogger(__name__)
 
 ACTIVE_RUN_STATUSES = frozenset({"queued", "running"})
+
+# Queue and running leases share the same expiry rule; keep both names because
+# call sites distinguish the two lease kinds.
+resolve_queue_lease_expiry = resolve_lease_expiry
+resolve_running_lease_expiry = resolve_lease_expiry
 
 
 def resolve_run_interaction_locale(run: CopilotRun | None) -> str:
@@ -53,18 +63,6 @@ def running_trace_summary(interaction_locale: str) -> str:
     )
 
 
-def utcnow_naive() -> datetime:
-    return datetime.now(timezone.utc).astimezone(timezone.utc).replace(tzinfo=None)
-
-
-def normalize_utc_naive(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
-
-
 def run_settings():
     from app.config import get_settings
 
@@ -75,18 +73,15 @@ def is_active_run_status(status: str | None) -> bool:
     return status in ACTIVE_RUN_STATUSES
 
 
-def resolve_queue_lease_expiry(
-    now: datetime, queue_timeout_seconds: int
-) -> datetime | None:
-    if queue_timeout_seconds <= 0:
-        return None
-    return now + timedelta(seconds=queue_timeout_seconds)
-
-
-def resolve_running_lease_expiry(now: datetime, lease_seconds: int) -> datetime | None:
-    if lease_seconds <= 0:
-        return None
-    return now + timedelta(seconds=lease_seconds)
+def ensure_run_lease(deps, db_factory, *, run_id: str, worker_id: str) -> None:
+    """Renew the running lease or raise the deps' lease-lost error."""
+    if (
+        run_id
+        and worker_id
+        and db_factory
+        and not deps.renew_run_lease(db_factory, run_id=run_id, worker_id=worker_id)
+    ):
+        raise deps.lease_lost_error_factory(run_id)
 
 
 def interrupt_run(
@@ -149,26 +144,20 @@ def is_stale_run(
     if not is_active_run_status(run.status):
         return False
 
-    current_time = normalize_utc_naive(now) or utcnow_naive()
-    lease_expires_at = normalize_utc_naive(run.lease_expires_at)
-    if lease_expires_at is not None:
-        return lease_expires_at <= current_time
-
-    settings = run_settings()
     stale_timeout = (
-        settings.copilot_run_stale_timeout_seconds
+        run_settings().copilot_run_stale_timeout_seconds
         if stale_after_seconds is None
         else stale_after_seconds
     )
-    if stale_timeout <= 0:
-        return False
-
-    updated_at = normalize_utc_naive(run.updated_at) or normalize_utc_naive(
-        run.created_at
+    return is_stale_running_job(
+        status=run.status,
+        running_status=run.status,
+        lease_expires_at=run.lease_expires_at,
+        updated_at=run.updated_at,
+        created_at=run.created_at,
+        stale_timeout_seconds=int(stale_timeout or 0),
+        now=now,
     )
-    if updated_at is None:
-        return False
-    return updated_at <= (current_time - timedelta(seconds=stale_timeout))
 
 
 def reclaim_stale_runs(

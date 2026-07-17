@@ -9,20 +9,20 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from starlette.concurrency import run_in_threadpool
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.auth import get_current_user_or_default
 from app.core.events import ensure_project_start_event, record_event
 from app.core.ingest import (
+    INGEST_JOB_STATUS_FAILED,
     accept_novel_upload,
     inspect_novel_ingest_job,
-    inspect_novel_readiness,
     reset_novel_ingest_job_for_retry,
+    upload_limit_bytes,
 )
-from app.core.indexing.lifecycle import inspect_window_index_lifecycle
 from app.database import get_db
-from app.models import Novel, User
+from app.models import User
 from app.schemas import (
     NovelResponse,
     UploadResponse,
@@ -86,7 +86,7 @@ async def upload_novel(
     token = uuid4().hex
     safe_filename = f"{safe_stem}_{token}{ext}" if safe_stem else f"{token}{ext}"
     file_path = novel_support.UPLOAD_DIR / safe_filename
-    max_size = max(1, int(settings.upload_max_megabytes)) * 1024 * 1024
+    max_size = upload_limit_bytes(settings)
     chunk_size = max(1024, int(settings.upload_chunk_size_bytes))
     bytes_written = 0
     try:
@@ -175,15 +175,7 @@ def retry_novel_ingest(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ):
-    row = (
-        db.query(Novel)
-        .options(defer(Novel.window_index))
-        .add_columns(novel_support.novel_window_index_presence_column())
-        .filter(Novel.id == novel_id)
-        .first()
-    )
-    novel = row[0] if row is not None else None
-    novel_support.verify_novel_access(novel, current_user)
+    novel, has_payload = novel_support.fetch_novel_with_presence(db, novel_id, current_user)
 
     ingest_job = inspect_novel_ingest_job(db, novel_id=novel_id)
     if ingest_job is None:
@@ -191,7 +183,7 @@ def retry_novel_ingest(
             status_code=404,
             detail={"code": "ingest_job_not_found", "message": "Novel ingest job not found"},
         )
-    if ingest_job.status != "failed":
+    if ingest_job.status != INGEST_JOB_STATUS_FAILED:
         raise HTTPException(
             status_code=409,
             detail={"code": "ingest_retry_not_allowed", "message": "Novel ingest retry is not allowed"},
@@ -202,20 +194,10 @@ def retry_novel_ingest(
     db.commit()
     db.refresh(novel)
 
-    index_state = inspect_window_index_lifecycle(
+    return novel_support.serialize_novel_with_states(
         novel,
         db=db,
-        has_payload_override=bool(row[1]) if row is not None else None,
-    )
-    readiness_state = inspect_novel_readiness(
-        novel,
-        db=db,
-        index_state=index_state,
-    )
-    return novel_support.serialize_novel(
-        novel,
-        index_state=index_state,
-        readiness_state=readiness_state,
+        has_window_index_payload=has_payload,
     )
 
 
@@ -225,8 +207,7 @@ def delete_novel(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ):
-    novel = db.query(Novel).filter(Novel.id == novel_id).first()
-    novel_support.verify_novel_access(novel, current_user)
+    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
 
     novel_support.safe_delete_where(
         db,

@@ -30,6 +30,11 @@ def _detail(code: str, message: str, **extra: object) -> dict[str, object]:
     return payload
 
 
+def token_usage_recording_disabled() -> bool:
+    """Operator kill-switch for token-usage persistence (OS env only)."""
+    return os.getenv("DISABLE_TOKEN_USAGE_RECORDING", "").lower() in {"1", "true", "yes", "on"}
+
+
 def ensure_hosted_user_capacity(db: Session) -> None:
     """Block creation of new hosted users once the configured cap is reached.
 
@@ -130,7 +135,7 @@ def get_ai_unavailable_detail(
     if hard_stop_usd <= 0:
         return None
 
-    if os.getenv("DISABLE_TOKEN_USAGE_RECORDING", "").lower() in {"1", "true", "yes", "on"}:
+    if token_usage_recording_disabled():
         return _detail(
             "ai_budget_meter_disabled",
             "AI features are temporarily disabled because spend metering is disabled.",

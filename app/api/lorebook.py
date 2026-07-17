@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.database import get_db
-from app.models import Novel, LoreEntry, LoreKey
+from app.models import LoreEntry, LoreKey
 from app.schemas import (
     LoreEntryCreate,
     LoreEntryUpdate,
@@ -37,17 +37,6 @@ router = APIRouter(
 )
 
 
-def get_novel_or_404(novel_id: int, db: Session) -> Novel:
-    """Get novel by ID or raise 404."""
-    novel = db.query(Novel).filter(Novel.id == novel_id).first()
-    if not novel:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Novel with id={novel_id} not found. Verify the novel exists."
-        )
-    return novel
-
-
 @router.get("/entries", response_model=List[LoreEntryResponse])
 def list_lore_entries(
     novel_id: int,
@@ -55,8 +44,6 @@ def list_lore_entries(
     db: Session = Depends(get_db),
 ):
     """List all lorebook entries for a novel."""
-    get_novel_or_404(novel_id, db)
-
     query = db.query(LoreEntry).filter(LoreEntry.novel_id == novel_id)
     if enabled_only:
         query = query.filter(LoreEntry.enabled.is_(True))
@@ -72,8 +59,6 @@ def create_lore_entry(
     db: Session = Depends(get_db),
 ):
     """Create a new lorebook entry with keywords."""
-    get_novel_or_404(novel_id, db)
-
     if not entry_data.keywords:
         raise HTTPException(
             status_code=400,
@@ -115,8 +100,6 @@ async def import_character_card(
     db: Session = Depends(get_db),
 ):
     """Import a character card (JSON/PNG) as a lorebook entry."""
-    get_novel_or_404(novel_id, db)
-
     if not file.filename:
         raise HTTPException(status_code=400, detail="Character card filename is required.")
 
@@ -180,8 +163,6 @@ def get_lore_entry(
     db: Session = Depends(get_db),
 ):
     """Get a specific lorebook entry."""
-    get_novel_or_404(novel_id, db)
-
     entry = db.query(LoreEntry).filter(
         LoreEntry.id == entry_id,
         LoreEntry.novel_id == novel_id,
@@ -203,8 +184,6 @@ def update_lore_entry(
     db: Session = Depends(get_db),
 ):
     """Update a lorebook entry."""
-    get_novel_or_404(novel_id, db)
-
     entry = db.query(LoreEntry).filter(
         LoreEntry.id == entry_id,
         LoreEntry.novel_id == novel_id,
@@ -236,8 +215,6 @@ def delete_lore_entry(
     db: Session = Depends(get_db),
 ):
     """Delete a lorebook entry and its keywords."""
-    get_novel_or_404(novel_id, db)
-
     entry = db.query(LoreEntry).filter(
         LoreEntry.id == entry_id,
         LoreEntry.novel_id == novel_id,
@@ -262,8 +239,6 @@ def add_keyword(
     db: Session = Depends(get_db),
 ):
     """Add a keyword to a lorebook entry."""
-    get_novel_or_404(novel_id, db)
-
     entry = db.query(LoreEntry).filter(
         LoreEntry.id == entry_id,
         LoreEntry.novel_id == novel_id,
@@ -296,8 +271,6 @@ def delete_keyword(
     db: Session = Depends(get_db),
 ):
     """Delete a keyword from a lorebook entry."""
-    get_novel_or_404(novel_id, db)
-
     key = (
         db.query(LoreKey)
         .join(LoreEntry, LoreEntry.id == LoreKey.entry_id)
@@ -345,8 +318,6 @@ def match_and_inject(
     and returns the combined context from matching entries,
     respecting token budgets and priorities.
     """
-    get_novel_or_404(novel_id, db)
-
     lore_manager = LoreManager(novel_id)
     lore_manager.build_automaton(db)
     context, matched_entries, total_tokens = lore_manager.get_injection_context(

@@ -37,6 +37,7 @@ from .job_store import (
     INGEST_JOB_STAGE_PLANNING,
     INGEST_JOB_STATUS_COMPLETED,
     INGEST_JOB_STATUS_FAILED,
+    INGEST_JOB_STATUS_QUEUED,
     INGEST_JOB_STATUS_RUNNING,
     claim_novel_ingest_job,
     select_next_novel_ingest_job_novel_id,
@@ -87,65 +88,28 @@ def _touch_stage(
         db.close()
 
 
-def _finalize_success(
+def _finalize_ingest_job(
     *,
     claim,
     session_factory: Callable[[], Session],
-    parsed,
-    decision,
+    status: str,
+    stage: str,
+    error: str | None,
+    persist: Callable[[Session, NovelIngestJob], bool] | None = None,
 ) -> None:
-    db = session_factory()
-    try:
-        job = db.query(NovelIngestJob).filter(NovelIngestJob.id == claim.job_id).first()
-        if job is None:
-            return
-        novel = db.query(Novel).filter(Novel.id == claim.novel_id).first()
-        if novel is None:
-            return
-        if job.status != INGEST_JOB_STATUS_RUNNING or job.lease_owner != claim.worker_id:
-            return
+    """Release the lease and finalize the claimed job row.
 
-        persist_ingest_success(
-            db,
-            novel=novel,
-            job=job,
-            parsed=parsed,
-            decision=decision,
-        )
-        now = utcnow_naive()
-        apply_row_updates(
-            job,
-            release_lease_values(
-                NovelIngestJob,
-                now=now,
-                extra_updates={
-                    NovelIngestJob.status: INGEST_JOB_STATUS_COMPLETED,
-                    NovelIngestJob.stage: INGEST_JOB_STAGE_COMPLETED,
-                    NovelIngestJob.error: None,
-                    NovelIngestJob.finished_at: now,
-                },
-            ),
-        )
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
-
-
-def _finalize_failure(
-    *,
-    claim,
-    session_factory: Callable[[], Session],
-    error: str,
-) -> None:
+    `persist` runs after the lease-ownership guard; returning False aborts
+    without finalizing (e.g. the novel disappeared mid-job).
+    """
     db = session_factory()
     try:
         job = db.query(NovelIngestJob).filter(NovelIngestJob.id == claim.job_id).first()
         if job is None:
             return
         if job.status != INGEST_JOB_STATUS_RUNNING or job.lease_owner != claim.worker_id:
+            return
+        if persist is not None and not persist(db, job):
             return
 
         now = utcnow_naive()
@@ -155,8 +119,8 @@ def _finalize_failure(
                 NovelIngestJob,
                 now=now,
                 extra_updates={
-                    NovelIngestJob.status: INGEST_JOB_STATUS_FAILED,
-                    NovelIngestJob.stage: INGEST_JOB_STAGE_FAILED,
+                    NovelIngestJob.status: status,
+                    NovelIngestJob.stage: stage,
                     NovelIngestJob.error: error,
                     NovelIngestJob.finished_at: now,
                 },
@@ -254,11 +218,26 @@ class _NovelIngestRuntimeAdapter:
         claim,
         build_output: _NovelIngestBuildOutput,
     ) -> bool:
-        _finalize_success(
+        def _persist(db: Session, job: NovelIngestJob) -> bool:
+            novel = db.query(Novel).filter(Novel.id == claim.novel_id).first()
+            if novel is None:
+                return False
+            persist_ingest_success(
+                db,
+                novel=novel,
+                job=job,
+                parsed=build_output.parsed,
+                decision=build_output.decision,
+            )
+            return True
+
+        _finalize_ingest_job(
             claim=claim,
             session_factory=self._session_factory,
-            parsed=build_output.parsed,
-            decision=build_output.decision,
+            status=INGEST_JOB_STATUS_COMPLETED,
+            stage=INGEST_JOB_STAGE_COMPLETED,
+            error=None,
+            persist=_persist,
         )
         ensure_ingest_bootstrap_job(
             claim.novel_id,
@@ -268,9 +247,11 @@ class _NovelIngestRuntimeAdapter:
         return False
 
     def finalize_failure(self, *, claim, error: str) -> bool:
-        _finalize_failure(
+        _finalize_ingest_job(
             claim=claim,
             session_factory=self._session_factory,
+            status=INGEST_JOB_STATUS_FAILED,
+            stage=INGEST_JOB_STAGE_FAILED,
             error=error,
         )
         return False
@@ -329,15 +310,31 @@ def enqueue_next_deferred_window_index_build(
     settings: Settings | None = None,
 ) -> bool:
     resolved_settings = settings or get_settings()
-    if select_next_novel_ingest_job_novel_id(
-        session_factory=session_factory,
-        settings=resolved_settings,
-    ) is not None:
-        return False
-
     db = session_factory()
     try:
         now = utcnow_naive()
+        pending_ingest = (
+            db.query(NovelIngestJob.id)
+            .filter(
+                or_(
+                    NovelIngestJob.status == INGEST_JOB_STATUS_QUEUED,
+                    and_(
+                        NovelIngestJob.status == INGEST_JOB_STATUS_RUNNING,
+                        stale_running_job_filter(
+                            NovelIngestJob,
+                            now=now,
+                            stale_timeout_seconds=int(
+                                resolved_settings.ingest_job_stale_timeout_seconds or 0
+                            ),
+                        ),
+                    ),
+                )
+            )
+            .first()
+        )
+        if pending_ingest is not None:
+            return False
+
         row = (
             db.query(
                 NovelIngestJob.novel_id,

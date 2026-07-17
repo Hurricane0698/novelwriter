@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.ai_client import AIClient
 from app.core.copilot.prompt_contract import PromptBuild
+from app.core.copilot.run_state import ensure_run_lease as _ensure_run_lease
 from app.core.copilot.scope import EvidenceItem, ScopeSnapshot
 from app.core.copilot.tool_call_recovery import recover_tool_calls_from_text
 from app.core.copilot.tool_contract import ResearchToolCatalog
@@ -59,19 +60,6 @@ class ToolLoopDeps:
     client_factory: Callable[[], AIClient] = AIClient
 
 
-def _ensure_run_lease(
-    deps: ToolLoopDeps,
-    db_factory: Callable[[], Session],
-    *,
-    run_id: str,
-    worker_id: str,
-) -> None:
-    if (
-        run_id
-        and worker_id
-        and not deps.renew_run_lease(db_factory, run_id=run_id, worker_id=worker_id)
-    ):
-        raise deps.lease_lost_error_factory(run_id)
 
 
 def _execute_pending_tool_calls(
