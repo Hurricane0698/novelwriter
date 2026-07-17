@@ -6,6 +6,7 @@
 ; - current-user installs do not restore or expose a custom install directory.
 ; - uninstall preserves novels, logs, and runtime state.
 ; - direct uninstall removes the DPAPI-backed LLM configuration; installer replacement preserves it.
+; - installer replacement removes the previous app tree before installing.
 
 Unicode true
 ManifestDPIAware true
@@ -403,6 +404,15 @@ Function PageLeaveReinstall
       ; Other erros? show generic error message and return to select un/reinstall page
       MessageBox MB_ICONEXCLAMATION "$(unableToUninstall)"
       Abort
+    ${EndIf}
+
+    ; _?= runs the previous uninstaller in place, so it cannot delete its own
+    ; executable or the application directory. Finish the replacement here so
+    ; the new install writes into a fresh app tree.
+    ${If} $WixMode <> 1
+    ${AndIf} $4 != ""
+      Delete "$4\uninstall.exe"
+      RMDir "$4"
     ${EndIf}
   reinst_done:
 FunctionEnd
