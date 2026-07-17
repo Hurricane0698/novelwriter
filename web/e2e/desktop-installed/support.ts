@@ -22,6 +22,14 @@ export interface InstalledProductState {
   title: string
 }
 
+const MAX_DIAGNOSTIC_HTML_LENGTH = 12_000
+const MAX_DIAGNOSTIC_TEXT_LENGTH = 6_000
+
+function truncateDiagnosticValue(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value
+  return `${value.slice(0, maxLength)}\n...[truncated ${value.length - maxLength} characters]`
+}
+
 function requiredStatePath(): string {
   const statePath = process.env.NOVWR_DESKTOP_E2E_STATE?.trim()
   if (!statePath) {
@@ -45,6 +53,13 @@ export function installInstalledProductFailureGuard(page: Page) {
     console.error(`[desktop-installed] ${message}`)
   }
 
+  page.on('console', (message) => {
+    if (message.type() !== 'error') return
+    record(`console error: ${message.text()}`)
+  })
+  page.on('crash', () => {
+    record('page crashed')
+  })
   page.on('pageerror', (error) => {
     record(`pageerror: ${error.stack || error.message}`)
   })
@@ -64,16 +79,80 @@ export function installInstalledProductFailureGuard(page: Page) {
   }
 }
 
+async function writeInstalledLandingDiagnostics(page: Page) {
+  const diagnostics: Record<string, unknown> = {
+    url: page.url(),
+    pageClosed: page.isClosed(),
+  }
+
+  if (!page.isClosed()) {
+    try {
+      const snapshot = await page.evaluate(() => {
+        const summarizeElement = (element: Element) => ({
+          tag: element.tagName.toLowerCase(),
+          text: element.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+          href: element instanceof HTMLAnchorElement ? element.href : null,
+          testId: element.getAttribute('data-testid'),
+        })
+        const actionableElements = Array.from(document.querySelectorAll('a, button'))
+        const semanticCtas = actionableElements.filter((element) => {
+          const text = element.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() ?? ''
+          return text.includes('开始写作') || text.includes('start writing')
+        })
+        const exactCtas = Array.from(
+          document.querySelectorAll('[data-testid="home-start-writing"]'),
+        )
+
+        return {
+          readyState: document.readyState,
+          rootHtml: document.querySelector('#root')?.innerHTML ?? null,
+          bodyText: document.body?.innerText ?? '',
+          links: Array.from(document.querySelectorAll('a')).map(summarizeElement),
+          exactCtaCount: exactCtas.length,
+          exactCtas: exactCtas.map(summarizeElement),
+          semanticCtaCount: semanticCtas.length,
+          semanticCtas: semanticCtas.map(summarizeElement),
+        }
+      })
+      diagnostics.readyState = snapshot.readyState
+      diagnostics.rootHtml = snapshot.rootHtml === null
+        ? null
+        : truncateDiagnosticValue(snapshot.rootHtml, MAX_DIAGNOSTIC_HTML_LENGTH)
+      diagnostics.bodyText = truncateDiagnosticValue(
+        snapshot.bodyText,
+        MAX_DIAGNOSTIC_TEXT_LENGTH,
+      )
+      diagnostics.links = snapshot.links
+      diagnostics.exactCtaCount = snapshot.exactCtaCount
+      diagnostics.exactCtas = snapshot.exactCtas
+      diagnostics.semanticCtaCount = snapshot.semanticCtaCount
+      diagnostics.semanticCtas = snapshot.semanticCtas
+    } catch (error) {
+      diagnostics.snapshotError = error instanceof Error ? error.stack || error.message : String(error)
+    }
+  }
+
+  console.error(`[desktop-installed] landing diagnostics:\n${JSON.stringify(diagnostics, null, 2)}`)
+}
+
+async function expectDesktopLandingSurface(page: Page) {
+  try {
+    await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/`)
+    await expect(page.getByTestId('home-start-writing')).toBeVisible()
+  } catch (error) {
+    await writeInstalledLandingDiagnostics(page)
+    throw error
+  }
+}
+
 export async function assertDesktopLanding(page: Page) {
   await page.goto('/')
-  await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/`)
-  await expect(page.getByTestId('home-start-writing')).toBeVisible()
+  await expectDesktopLandingSurface(page)
 }
 
 export async function assertDesktopLoginRouteRemoved(page: Page) {
   await page.goto('/login')
-  await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/`)
-  await expect(page.getByTestId('home-start-writing')).toBeVisible()
+  await expectDesktopLandingSurface(page)
 }
 
 export async function enterLibraryThroughDesktopLanding(page: Page) {
