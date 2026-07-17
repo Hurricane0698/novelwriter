@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import socket
 import sys
+import threading
+import time
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -55,6 +57,10 @@ def _configure_desktop_environment(
 
     monkeypatch.setenv("NOVWR_DESKTOP_DATA_DIR", str(data_dir))
     monkeypatch.setenv("NOVWR_DESKTOP_JWT_SECRET", _JWT_SECRET)
+    monkeypatch.setenv(
+        "NOVWR_DESKTOP_SHUTDOWN_EVENT",
+        "Local\\io.github.hurricane0698.novwr.test.shutdown",
+    )
     monkeypatch.setattr(sys, "_MEIPASS", str(runtime_root), raising=False)
     state_proto_module = SimpleNamespace(
         payload_format_version=lambda: STATE_PROTO_PAYLOAD_FORMAT_VERSION
@@ -198,12 +204,24 @@ def test_runtime_validates_packaged_state_proto_after_environment_setup(
         return state_proto_module
 
     monkeypatch.setattr(desktop_runtime, "import_module", import_module)
+    stop_event = threading.Event()
+    monkeypatch.setattr(
+        desktop_runtime,
+        "_open_desktop_shutdown_event",
+        lambda: stop_event,
+    )
     worker_module = ModuleType("app.workers.background_jobs")
-    worker_module.run_worker_loop = lambda *, once: events.append("worker") or 0
+    worker_module.run_worker_loop = lambda *, once, stop_event: (
+        events.append(("worker", once, stop_event)) or 0
+    )
     monkeypatch.setitem(sys.modules, "app.workers.background_jobs", worker_module)
 
     assert desktop_runtime.main(["worker"]) == 0
-    assert events == ["import", "payload-version", "worker"]
+    assert events == [
+        "import",
+        "payload-version",
+        ("worker", False, stop_event),
+    ]
 
 
 @pytest.mark.parametrize("failure", (ImportError("missing"), ValueError("invalid")))
@@ -273,15 +291,38 @@ def test_serve_checks_fixed_port_before_starting_single_uvicorn_worker(
     _data_dir, runtime_root = _configure_desktop_environment(monkeypatch, tmp_path)
     events: list[object] = []
     uvicorn_module = ModuleType("uvicorn")
+    stop_event = threading.Event()
+    stop_event.set()
 
-    def run(app: str, **kwargs):
-        events.append(("uvicorn", app, kwargs, Path.cwd()))
+    class Config:
+        def __init__(self, app: str, **kwargs):
+            self.app = app
+            self.kwargs = kwargs
+            events.append(("config", app, kwargs, Path.cwd()))
 
-    uvicorn_module.run = run
+    class Server:
+        def __init__(self, config):
+            self.config = config
+            self.should_exit = False
+
+        def run(self):
+            deadline = time.monotonic() + 1
+            while not self.should_exit and time.monotonic() < deadline:
+                time.sleep(0.001)
+            assert self.should_exit
+            events.append("server-stopped")
+
+    uvicorn_module.Config = Config
+    uvicorn_module.Server = Server
     monkeypatch.setattr(
         desktop_runtime,
         "_require_desktop_port_available",
         lambda: events.append("port-check"),
+    )
+    monkeypatch.setattr(
+        desktop_runtime,
+        "_open_desktop_shutdown_event",
+        lambda: stop_event,
     )
     monkeypatch.setitem(sys.modules, "uvicorn", uvicorn_module)
 
@@ -289,7 +330,7 @@ def test_serve_checks_fixed_port_before_starting_single_uvicorn_worker(
     assert events == [
         "port-check",
         (
-            "uvicorn",
+            "config",
             "app.main:app",
             {
                 "host": "127.0.0.1",
@@ -299,6 +340,7 @@ def test_serve_checks_fixed_port_before_starting_single_uvicorn_worker(
             },
             runtime_root,
         ),
+        "server-stopped",
     ]
 
 
@@ -333,16 +375,65 @@ def test_worker_reuses_existing_worker_loop(
 ):
     data_dir, runtime_root = _configure_desktop_environment(monkeypatch, tmp_path)
     worker_module = ModuleType("app.workers.background_jobs")
-    calls: list[bool] = []
+    stop_event = threading.Event()
+    calls: list[tuple[bool, threading.Event]] = []
 
-    def run_worker_loop(*, once: bool):
-        calls.append(once)
+    def run_worker_loop(*, once: bool, stop_event: threading.Event):
+        calls.append((once, stop_event))
         assert Path.cwd() == runtime_root
         assert os.environ["SCNGS_DATA_DIR"] == str(data_dir)
         return 7
 
     worker_module.run_worker_loop = run_worker_loop
     monkeypatch.setitem(sys.modules, "app.workers.background_jobs", worker_module)
+    monkeypatch.setattr(
+        desktop_runtime,
+        "_open_desktop_shutdown_event",
+        lambda: stop_event,
+    )
 
     assert desktop_runtime.main(["worker"]) == 7
-    assert calls == [False]
+    assert calls == [(False, stop_event)]
+
+
+def test_windows_shutdown_event_bridge_sets_and_closes_local_event(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv(
+        "NOVWR_DESKTOP_SHUTDOWN_EVENT",
+        "Local\\io.github.hurricane0698.novwr.test.shutdown",
+    )
+
+    class FakeKernel32:
+        def __init__(self):
+            self.native_event = threading.Event()
+            self.closed = threading.Event()
+            self.opened: tuple[int, bool, str] | None = None
+
+        def OpenEventW(self, access: int, inherit: bool, name: str):
+            self.opened = (access, inherit, name)
+            return 123
+
+        def WaitForSingleObject(self, handle: int, timeout: int):
+            assert handle == 123
+            assert timeout == desktop_runtime._INFINITE
+            assert self.native_event.wait(1)
+            return desktop_runtime._WAIT_OBJECT_0
+
+        def CloseHandle(self, handle: int):
+            assert handle == 123
+            self.closed.set()
+            return True
+
+    kernel32 = FakeKernel32()
+    stop_event = desktop_runtime._open_desktop_shutdown_event(kernel32=kernel32)
+
+    assert not stop_event.is_set()
+    kernel32.native_event.set()
+    assert stop_event.wait(1)
+    assert kernel32.closed.wait(1)
+    assert kernel32.opened == (
+        desktop_runtime._SYNCHRONIZE,
+        False,
+        "Local\\io.github.hurricane0698.novwr.test.shutdown",
+    )

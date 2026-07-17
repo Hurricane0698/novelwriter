@@ -1,0 +1,13 @@
+{
+  "name": "novwr-desktop",
+  "private": true,
+  "version": "0.3.2",
+  "scripts": {
+    "icons": "node scripts/generate-windows-icons.mjs",
+    "tauri": "tauri",
+    "tauri:build": "tauri build --bundles nsis"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}

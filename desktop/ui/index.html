@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NovWr</title>
+    <link rel="stylesheet" href="failure.css" />
+    <script src="failure.js" defer></script>
+  </head>
+  <body>
+    <main class="shell" aria-live="polite">
+      <img class="mark" src="novwr-mark.svg" alt="NovWr" width="72" height="72" />
+      <section class="status" aria-labelledby="status-title">
+        <p class="eyebrow">NOVWR</p>
+        <h1 id="status-title">正在启动</h1>
+        <p id="status-summary" class="summary">本地服务正在准备。</p>
+        <div id="failure-actions" class="actions" hidden>
+          <button id="open-logs" type="button">打开日志</button>
+          <button id="quit" class="secondary" type="button">退出</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

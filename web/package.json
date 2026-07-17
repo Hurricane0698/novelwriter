@@ -19,6 +19,7 @@
     "test:e2e": "playwright test",
     "test:e2e:mock": "playwright test --config=playwright.config.ts",
     "test:e2e:integration": "playwright test --config=playwright.integration.config.ts",
+    "test:e2e:desktop-installed": "playwright test --config=playwright.desktop-installed.config.ts",
     "test:e2e:studio:mock": "playwright test --config=playwright.config.ts e2e/mock/studio",
     "test:e2e:studio:integration": "playwright test --config=playwright.integration.config.ts e2e/integration/studio"
   },

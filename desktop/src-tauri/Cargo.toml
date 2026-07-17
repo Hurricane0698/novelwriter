@@ -1,0 +1,59 @@
+[package]
+name = "novwr-desktop"
+version = "0.3.2"
+description = "NovWr Windows desktop shell"
+authors = ["NovWr contributors"]
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[lib]
+name = "novwr_desktop"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "NovWr"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = "=2.6.3"
+
+[dependencies]
+getrandom = "0.4"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "=2.11.5", default-features = false }
+thiserror = "2"
+
+[target.'cfg(windows)'.dependencies]
+anyhow = "1"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json"] }
+tauri = { version = "=2.11.5", default-features = false, features = [
+  "common-controls-v6",
+  "compression",
+  "dynamic-acl",
+  "tray-icon",
+  "wry",
+] }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
+windows-version = "=0.1.7"
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_JobObjects",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

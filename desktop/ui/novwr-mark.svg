@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NovWr NW mark">
+  <rect width="512" height="512" rx="72" fill="#171a1f"/>
+  <path d="M88 376V136l152 240V136" fill="none" stroke="#f5f1e8" stroke-linecap="square" stroke-linejoin="miter" stroke-width="46"/>
+  <path d="M270 136l48 240 54-154 52 154 42-240" fill="none" stroke="#d94b43" stroke-linecap="square" stroke-linejoin="miter" stroke-width="42"/>
+</svg>

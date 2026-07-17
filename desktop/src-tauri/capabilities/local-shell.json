@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "local-shell",
+  "description": "Narrow permissions for the bundled NovWr startup and failure page.",
+  "windows": ["main"],
+  "permissions": ["core:default", "allow-open-logs", "allow-quit"]
+}

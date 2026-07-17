@@ -1,0 +1,121 @@
+:root {
+  color: #202226;
+  background: #f4f2ed;
+  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-width: 320px;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  place-items: center;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 440px);
+  gap: 28px;
+  width: min(100% - 48px, 600px);
+  align-items: start;
+}
+
+.mark {
+  display: block;
+  border-radius: 8px;
+}
+
+.status {
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #6b6d72;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+h1 {
+  margin: 0;
+  color: #171a1f;
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.summary {
+  margin: 12px 0 0;
+  color: #55585e;
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+button {
+  min-width: 112px;
+  min-height: 40px;
+  border: 1px solid #171a1f;
+  border-radius: 6px;
+  padding: 8px 16px;
+  color: #ffffff;
+  background: #171a1f;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #30343a;
+}
+
+button:focus-visible {
+  outline: 3px solid #d94b43;
+  outline-offset: 2px;
+}
+
+button.secondary {
+  color: #202226;
+  background: transparent;
+}
+
+button.secondary:hover {
+  background: #e7e4dd;
+}
+
+@media (max-width: 520px) {
+  .shell {
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 18px;
+    width: min(100% - 32px, 600px);
+  }
+
+  .mark {
+    width: 56px;
+    height: 56px;
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+}

@@ -8,6 +8,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$TargetTriple = "x86_64-pc-windows-msvc"
+$RequiredNodeVersion = "v20.19.5"
+$RequiredRustVersion = "1.85.0"
+
 if ($env:OS -ne "Windows_NT") {
     throw "The NovWr desktop runtime must be built on Windows."
 }
@@ -50,11 +54,21 @@ if ($ActualUvVersion -ne $RequiredUvVersion) {
 }
 
 $NodeVersion = (& node --version).Trim()
-if ($LASTEXITCODE -ne 0) {
-    throw "Node.js version check failed."
+if ($LASTEXITCODE -ne 0 -or $NodeVersion -ne $RequiredNodeVersion) {
+    throw "The NovWr desktop runtime requires Node.js $RequiredNodeVersion; found $NodeVersion."
 }
-if ($NodeVersion -notmatch '^v20\.') {
-    throw "The NovWr desktop runtime requires Node.js 20; found $NodeVersion."
+
+$RustVersionLines = @(& rustc --version --verbose)
+if ($LASTEXITCODE -ne 0) {
+    throw "rustc version check failed."
+}
+$RustReleaseLine = $RustVersionLines | Where-Object { $_ -like "release:*" }
+$RustHostLine = $RustVersionLines | Where-Object { $_ -like "host:*" }
+if ($RustReleaseLine -ne "release: $RequiredRustVersion") {
+    throw "The NovWr desktop runtime requires Rust $RequiredRustVersion; found $RustReleaseLine."
+}
+if ($RustHostLine -ne "host: $TargetTriple") {
+    throw "The NovWr desktop runtime requires the $TargetTriple Rust host; found $RustHostLine."
 }
 
 $PreviousPythonUtf8 = [Environment]::GetEnvironmentVariable("PYTHONUTF8", "Process")

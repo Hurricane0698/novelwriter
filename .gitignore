@@ -45,11 +45,14 @@ web/vite.config.d.ts
 # Rust
 rust/**/target/
 desktop/src-tauri/target/
+desktop/src-tauri/gen/schemas/
 .maturin/
 
 # Desktop build outputs
 desktop/build/
+desktop/desktop-dist/
 desktop/runtime-dist/
+desktop/src-tauri/resources/novwr-runtime/
 
 # Data
 *.db

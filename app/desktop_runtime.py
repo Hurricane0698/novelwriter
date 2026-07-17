@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+from ctypes import wintypes
 from importlib import import_module
+import logging
 import os
 import socket
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -12,11 +16,18 @@ from typing import Sequence
 
 _DATA_DIR_ENV = "NOVWR_DESKTOP_DATA_DIR"
 _JWT_SECRET_ENV = "NOVWR_DESKTOP_JWT_SECRET"
+_SHUTDOWN_EVENT_ENV = "NOVWR_DESKTOP_SHUTDOWN_EVENT"
 _DATABASE_FILE_NAME = "novels.db"
 _HOST = "127.0.0.1"
 _PORT = 8000
 _MINIMUM_JWT_SECRET_LENGTH = 32
 _INSECURE_JWT_SECRETS = {"CHANGE-ME-IN-PRODUCTION"}
+_SYNCHRONIZE = 0x00100000
+_WAIT_OBJECT_0 = 0
+_WAIT_FAILED = 0xFFFFFFFF
+_INFINITE = 0xFFFFFFFF
+
+logger = logging.getLogger(__name__)
 
 
 class DesktopRuntimeError(RuntimeError):
@@ -181,25 +192,95 @@ def _require_desktop_port_available() -> None:
         ) from exc
 
 
+def _load_kernel32():
+    if sys.platform != "win32":
+        raise DesktopRuntimeError("Desktop shutdown events require Windows.")
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenEventW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel32.OpenEventW.restype = wintypes.HANDLE
+    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    return kernel32
+
+
+def _open_desktop_shutdown_event(*, kernel32=None) -> threading.Event:
+    event_name = _required_environment_value(_SHUTDOWN_EVENT_ENV)
+    kernel32 = kernel32 or _load_kernel32()
+    handle = kernel32.OpenEventW(_SYNCHRONIZE, False, event_name)
+    if not handle:
+        error_code = ctypes.get_last_error()
+        error_message = (
+            ctypes.FormatError(error_code).strip()
+            if error_code
+            else "unknown Windows error"
+        )
+        raise DesktopRuntimeError(
+            f"OpenEventW failed for {_SHUTDOWN_EVENT_ENV}: {error_message}"
+        )
+
+    stop_event = threading.Event()
+
+    def wait_for_shutdown() -> None:
+        try:
+            result = kernel32.WaitForSingleObject(handle, _INFINITE)
+            if result == _WAIT_FAILED:
+                logger.error("desktop shutdown event wait failed")
+            elif result != _WAIT_OBJECT_0:
+                logger.error(
+                    "desktop shutdown event returned unexpected wait result 0x%08X",
+                    result,
+                )
+            stop_event.set()
+        finally:
+            if not kernel32.CloseHandle(handle):
+                logger.warning("desktop shutdown event handle close failed")
+
+    threading.Thread(
+        target=wait_for_shutdown,
+        name="novwr-desktop-shutdown",
+        daemon=True,
+    ).start()
+    return stop_event
+
+
 def _run_serve() -> int:
     _require_desktop_port_available()
+    stop_event = _open_desktop_shutdown_event()
 
     import uvicorn
 
-    uvicorn.run(
+    config = uvicorn.Config(
         "app.main:app",
         host=_HOST,
         port=_PORT,
         workers=1,
         reload=False,
     )
+    server = uvicorn.Server(config)
+
+    def request_server_shutdown() -> None:
+        stop_event.wait()
+        server.should_exit = True
+
+    threading.Thread(
+        target=request_server_shutdown,
+        name="novwr-server-shutdown",
+        daemon=True,
+    ).start()
+    server.run()
     return 0
 
 
 def _run_worker() -> int:
     from app.workers.background_jobs import run_worker_loop
 
-    return run_worker_loop(once=False)
+    return run_worker_loop(
+        once=False,
+        stop_event=_open_desktop_shutdown_event(),
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
