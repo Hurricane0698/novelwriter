@@ -6,7 +6,11 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: 0,
   workers: 1,
-  timeout: 210_000,
+  // First launch on 2-vCPU runners can crawl for ~3 minutes while WebView2
+  // first-run, Defender scanning, and the queued demo index build compete;
+  // the budget covers that storm plus the normal flow, below the outer
+  // process watchdog in smoke_windows_desktop_installer.ps1.
+  timeout: 360_000,
   expect: {
     timeout: 30_000,
   },
