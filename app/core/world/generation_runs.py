@@ -4,9 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 from datetime import datetime, timezone
-from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
@@ -27,11 +25,6 @@ class WorldGenerationRunClaim:
     status: str
 
 
-def build_world_generation_request_hash(*, text: str) -> str:
-    normalized = (text or "").strip()
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-
-
 def _to_claim(run: WorldGenerationRun, *, owner: bool) -> WorldGenerationRunClaim:
     return WorldGenerationRunClaim(
         run_id=int(run.id),
@@ -45,13 +38,11 @@ def claim_world_generation_run(
     *,
     user_id: int,
     novel_id: int,
-    request_hash: str,
     claim_token: str,
 ) -> WorldGenerationRunClaim:
     created = WorldGenerationRun(
         user_id=user_id,
         novel_id=novel_id,
-        request_hash=request_hash,
         claim_token=claim_token,
         status=WORLD_GENERATION_RUN_STATUS_RUNNING,
     )
@@ -84,7 +75,6 @@ def complete_world_generation_run(
     *,
     run_id: int,
     claim_token: str,
-    response_payload: dict[str, Any],
 ) -> bool:
     result = db.execute(
         sa.update(WorldGenerationRun)
@@ -95,7 +85,6 @@ def complete_world_generation_run(
         )
         .values(
             status=WORLD_GENERATION_RUN_STATUS_COMPLETED,
-            response_payload=response_payload,
             completed_at=datetime.now(timezone.utc),
             updated_at=sa.func.now(),
         )

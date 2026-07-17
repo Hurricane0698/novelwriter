@@ -144,7 +144,6 @@ def test_generate_world_duplicate_click_fast_fails_before_generation(client, db,
         WorldGenerationRun(
             user_id=hosted_user.id,
             novel_id=novel.id,
-            request_hash="already-running",
             claim_token="existing-owner",
             status="running",
         )
@@ -173,7 +172,6 @@ def test_generate_world_duplicate_click_beats_quota_exhaustion(client, db, hoste
         WorldGenerationRun(
             user_id=hosted_user.id,
             novel_id=novel.id,
-            request_hash="already-running",
             claim_token="existing-owner",
             status="running",
         )
@@ -202,7 +200,6 @@ def test_generate_world_does_not_reclaim_old_running_row_on_timeout(client, db, 
         WorldGenerationRun(
             user_id=hosted_user.id,
             novel_id=novel.id,
-            request_hash="stale-world-run",
             claim_token="stale-owner",
             status="running",
             created_at=stale_started,
@@ -255,6 +252,56 @@ def test_generate_world_charges_quota_on_success(client, db, hosted_user, novel,
 
     db.refresh(hosted_user)
     assert hosted_user.generation_quota == before - 1
+
+
+def test_generate_world_settles_durable_reservation_on_success(client, db, hosted_user, novel, monkeypatch):
+    """World generation charges through a durable reservation row, not a bare decrement."""
+    from app.core.world import generation_application as generation_app
+    from app.models import QuotaReservation
+    from app.schemas import WorldGenerateResponse
+
+    mock = AsyncMock(
+        return_value=WorldGenerateResponse(
+            entities_created=0,
+            relationships_created=0,
+            systems_created=0,
+            warnings=[],
+        )
+    )
+    monkeypatch.setattr(generation_app, "generate_world_drafts", mock)
+
+    resp = client.post(f"/api/novels/{novel.id}/world/generate", json={"text": "这是一段足够长的世界观设定文本。"})
+    assert resp.status_code == 200
+
+    reservations = db.query(QuotaReservation).filter(QuotaReservation.user_id == hosted_user.id).all()
+    assert len(reservations) == 1
+    assert reservations[0].reserved_count == 1
+    assert reservations[0].charged_count == 1
+    assert reservations[0].released_at is not None
+
+
+def test_generate_world_failure_refunds_and_releases_durable_reservation(client, db, hosted_user, novel, monkeypatch):
+    """Failed generation refunds via the reservation row and leaves no open lease."""
+    from app.core.world import generation_application as generation_app
+    from app.models import QuotaReservation
+
+    before = hosted_user.generation_quota
+    monkeypatch.setattr(
+        generation_app,
+        "generate_world_drafts",
+        AsyncMock(side_effect=RuntimeError("boom")),
+    )
+
+    resp = client.post(f"/api/novels/{novel.id}/world/generate", json={"text": "这是一段足够长的世界观设定文本。"})
+    assert resp.status_code == 500
+
+    db.refresh(hosted_user)
+    assert hosted_user.generation_quota == before
+
+    reservations = db.query(QuotaReservation).filter(QuotaReservation.user_id == hosted_user.id).all()
+    assert len(reservations) == 1
+    assert reservations[0].charged_count == 0
+    assert reservations[0].released_at is not None
 
 
 def test_generate_world_rejects_byok_when_ai_budget_hard_stop_is_reached(
@@ -355,8 +402,6 @@ async def test_generate_world_records_setting_import_project_start_and_success_e
         generate_world_drafts_fn=_runner,
         acquire_llm_slot_fn=_acquire,
         release_llm_slot_fn=lambda: None,
-        reserve_quota_fn=lambda *_args, **_kwargs: None,
-        refund_quota_fn=lambda *_args, **_kwargs: None,
         record_event_fn=lambda db, user_id, event, novel_id=None, meta=None: recorded.append(
             {
                 "db": db,

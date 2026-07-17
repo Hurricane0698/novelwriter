@@ -165,7 +165,6 @@ class TestGitHubOAuthLogin:
             db.close()
 
     def test_repeat_github_login_resolves_same_user_and_preserves_quota(self, hosted_github_client, monkeypatch):
-        from app.core.auth import decrement_quota
         from app.models import AuthIdentity, User
 
         _mock_github_identity(
@@ -189,7 +188,8 @@ class TestGitHubOAuthLogin:
         db = next(db_gen)
         try:
             user = db.query(User).filter(User.id == user_id).one()
-            decrement_quota(db, user, count=2)
+            user.generation_quota -= 2
+            db.commit()
         finally:
             db.close()
 
@@ -265,7 +265,6 @@ class TestGitHubOAuthLogin:
         assert me_resp.status_code == 401
 
     def test_github_user_and_invite_user_stay_separate_without_fallback_identity(self, hosted_github_client, monkeypatch):
-        from app.core.auth import decrement_quota
         from app.models import AuthIdentity, User
 
         _mock_github_identity(
@@ -287,7 +286,8 @@ class TestGitHubOAuthLogin:
         db = next(db_gen)
         try:
             user = db.query(User).filter(User.id == github_user_id).one()
-            decrement_quota(db, user, count=2)
+            user.generation_quota -= 2
+            db.commit()
         finally:
             db.close()
 

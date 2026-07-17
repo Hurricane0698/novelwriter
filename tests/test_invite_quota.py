@@ -215,14 +215,15 @@ class TestInviteRegistration:
         assert me1.status_code == 200
         user_id = me1.json()["id"]
 
-        from app.core.auth import AUTH_PROVIDER_HOSTED_PASSWORD, AUTH_PROVIDER_INVITE_CODE, decrement_quota
+        from app.core.auth import AUTH_PROVIDER_HOSTED_PASSWORD, AUTH_PROVIDER_INVITE_CODE
         from app.models import AuthIdentity, User
 
         db_gen = app.dependency_overrides[get_db]()
         db = next(db_gen)
         try:
             user = db.query(User).filter(User.id == user_id).one()
-            decrement_quota(db, user, count=2)
+            user.generation_quota -= 2
+            db.commit()
         finally:
             db.close()
 
@@ -571,10 +572,10 @@ class TestFeedback:
         assert feedback_resp.json()["generation_quota"] == 25  # still 5 + 20
 
 
-class TestDecrementQuota:
-    def test_decrement_reduces_quota(self, hosted_client):
-        """decrement_quota subtracts the correct count."""
-        from app.core.auth import decrement_quota
+class TestQuotaDeduction:
+    def test_open_reservation_reduces_quota(self, hosted_client):
+        """open_quota_reservation atomically deducts the reserved count."""
+        from app.core.auth import open_quota_reservation
 
         hosted_client.post("/api/auth/invite", json={
             "invite_code": "TEST-CODE-123",
@@ -589,16 +590,18 @@ class TestDecrementQuota:
         user = db.query(User).filter(User.nickname == "扣减测试").first()
         assert user.generation_quota == 5
 
-        decrement_quota(db, user, count=3)
+        assert open_quota_reservation(db, user.id, count=3) is not None
+        db.refresh(user)
         assert user.generation_quota == 2
 
-        decrement_quota(db, user, count=1)
+        assert open_quota_reservation(db, user.id, count=1) is not None
+        db.refresh(user)
         assert user.generation_quota == 1
 
-    def test_decrement_rejects_insufficient_quota(self, hosted_client):
-        """decrement_quota raises 429 when count exceeds remaining quota."""
+    def test_open_reservation_rejects_insufficient_quota(self, hosted_client):
+        """open_quota_reservation raises 429 when count exceeds remaining quota."""
         from fastapi import HTTPException
-        from app.core.auth import decrement_quota
+        from app.core.auth import open_quota_reservation
 
         hosted_client.post("/api/auth/invite", json={
             "invite_code": "TEST-CODE-123",
@@ -613,29 +616,7 @@ class TestDecrementQuota:
         assert user.generation_quota == 5
 
         with pytest.raises(HTTPException) as exc_info:
-            decrement_quota(db, user, count=10)
+            open_quota_reservation(db, user.id, count=10)
         assert exc_info.value.status_code == 429
-
-    def test_try_decrement_atomic(self, hosted_client):
-        """try_decrement_quota atomically decrements and returns bool."""
-        from app.core.auth import try_decrement_quota
-
-        hosted_client.post("/api/auth/invite", json={
-            "invite_code": "TEST-CODE-123",
-            "nickname": "原子扣减",
-            "password": DEFAULT_PASSWORD,
-        })
-
-        db_gen = app.dependency_overrides[get_db]()
-        db = next(db_gen)
-        from app.models import User
-        user = db.query(User).filter(User.nickname == "原子扣减").first()
+        db.refresh(user)
         assert user.generation_quota == 5
-
-        assert try_decrement_quota(db, user.id, count=2) is True
-        db.refresh(user)
-        assert user.generation_quota == 3
-
-        assert try_decrement_quota(db, user.id, count=10) is False
-        db.refresh(user)
-        assert user.generation_quota == 3  # unchanged

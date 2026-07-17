@@ -34,8 +34,12 @@ def hosted_settings(_force_selfhost_settings):  # ensure conftest runs first
         config_mod._settings_instance = prev
 
 
-def test_decrement_quota_is_atomic_across_sessions(hosted_settings):
-    from app.core.auth import decrement_quota
+def test_open_quota_reservation_is_atomic_across_sessions(hosted_settings):
+    import pytest as _pytest
+    from fastapi import HTTPException
+
+    from app.core.auth import open_quota_reservation
+    from app.models import QuotaReservation
 
     Base.metadata.create_all(bind=engine)
     try:
@@ -48,7 +52,7 @@ def test_decrement_quota_is_atomic_across_sessions(hosted_settings):
         user_id = int(user.id)
         s0.close()
 
-        # Two independent sessions both load the same row before decrementing.
+        # Two independent sessions both load the same row before reserving.
         s1 = SessionLocal()
         s2 = SessionLocal()
         try:
@@ -57,9 +61,18 @@ def test_decrement_quota_is_atomic_across_sessions(hosted_settings):
             assert u1.generation_quota == 2
             assert u2.generation_quota == 2
 
-            decrement_quota(s1, u1, count=1)
-            decrement_quota(s2, u2, count=1)
+            r1 = open_quota_reservation(s1, user_id, count=1)
+            r2 = open_quota_reservation(s2, user_id, count=1)
+            assert r1 is not None and r2 is not None and r1 != r2
 
+            s1.refresh(u1)
+            assert u1.generation_quota == 0
+            assert s1.query(QuotaReservation).filter(QuotaReservation.user_id == user_id).count() == 2
+
+            # A third reserve past zero must fail without going negative.
+            with _pytest.raises(HTTPException) as exc_info:
+                open_quota_reservation(s2, user_id, count=1)
+            assert exc_info.value.status_code == 429
             s1.refresh(u1)
             assert u1.generation_quota == 0
         finally:
@@ -67,4 +80,3 @@ def test_decrement_quota_is_atomic_across_sessions(hosted_settings):
             s2.close()
     finally:
         Base.metadata.drop_all(bind=engine)
-

@@ -31,6 +31,7 @@ from app.core.auth import (
     get_current_user_optional,
     get_current_user_or_default,
     issue_user_session,
+    request_is_secure,
     normalize_invite_code,
     reconcile_abandoned_quota_reservations,
     resolve_or_provision_hosted_user_for_identity,
@@ -202,11 +203,6 @@ def resolve_safe_post_login_redirect(value: str | None) -> str:
     return candidate
 
 
-def _request_is_secure(request: Request) -> bool:
-    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip().lower()
-    return forwarded_proto == "https" or request.url.scheme == "https"
-
-
 def _github_oauth_is_configured() -> bool:
     settings = get_settings()
     return bool(settings.github_oauth_client_id.strip() and settings.github_oauth_client_secret.strip())
@@ -233,7 +229,7 @@ def _set_github_oauth_cookie(
         value=value,
         max_age=DEFAULT_OAUTH_STATE_TTL_SECONDS,
         httponly=True,
-        secure=_request_is_secure(request),
+        secure=request_is_secure(request),
         samesite="lax",
         path=GITHUB_OAUTH_CALLBACK_PATH,
     )

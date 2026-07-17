@@ -19,13 +19,12 @@ from app.core.events import ensure_project_start_event, record_event
 from app.core.world.crud import load_novel
 from app.core.world.gen import generate_world_drafts
 from app.core.world.generation_runs import (
-    build_world_generation_request_hash,
     claim_world_generation_run,
     complete_world_generation_run,
     fail_world_generation_run,
 )
 from app.core.world.use_case_errors import WorldUseCaseError, detail_error_from_http_exception
-from app.core.auth import ensure_ai_available, refund_quota, reserve_quota
+from app.core.auth import QuotaScope, ensure_ai_available
 from app.core.llm_semaphore import acquire_llm_slot, release_llm_slot
 from app.models import User
 from app.schemas import WorldGenerateResponse
@@ -41,6 +40,52 @@ def _world_generation_error_from_http_exception(exc: HTTPException) -> tuple[str
         message = str(exc.detail.get("message") or code)
         return code[:64], message
     return "world_generate_failed", str(exc.detail)
+
+
+def _world_generation_failure(
+    exc: Exception,
+    *,
+    db: Session,
+    run_id: int,
+    claim_token: str,
+    extra: dict | None = None,
+) -> Exception:
+    """Mark the durable run failed and translate `exc` into the use-case error.
+
+    Single failure path so the refund/fail/raise invariant cannot drift between
+    exception classes. Returns the exception the caller must raise.
+    """
+    if isinstance(exc, HTTPException):
+        error_code, error_message = _world_generation_error_from_http_exception(exc)
+        fail_world_generation_run(
+            db,
+            run_id=run_id,
+            claim_token=claim_token,
+            error_code=error_code,
+            error_message=error_message,
+        )
+        return detail_error_from_http_exception(exc)
+
+    if isinstance(exc, StructuredOutputParseError):
+        logger.warning("world.generate invalid LLM output", exc_info=True, extra=extra)
+        code, message, status_code = "world_generate_llm_schema_invalid", "LLM schema invalid", 502
+    elif isinstance(exc, LLMUnavailableError):
+        logger.warning("world.generate LLM unavailable", exc_info=True, extra=extra)
+        code, message, status_code = "world_generate_llm_unavailable", "LLM unavailable", 503
+    elif isinstance(exc, IntegrityError):
+        code, message, status_code = "world_generate_conflict", "World generation conflict", 409
+    else:
+        logger.exception("world.generate failed", extra=extra)
+        code, message, status_code = "world_generate_failed", "World generation failed", 500
+
+    fail_world_generation_run(
+        db,
+        run_id=run_id,
+        claim_token=claim_token,
+        error_code=code,
+        error_message=message,
+    )
+    return WorldUseCaseError(code=code, message=message, status_code=status_code)
 
 
 def _resolve_world_generation_billing_source(llm_config: dict | None) -> str | None:
@@ -64,15 +109,11 @@ async def generate_world_from_text(
     generate_world_drafts_fn: Callable[..., Awaitable[WorldGenerateResponse]] | None = None,
     acquire_llm_slot_fn: Callable[[], Awaitable[None]] | None = None,
     release_llm_slot_fn: Callable[[], None] | None = None,
-    reserve_quota_fn: Callable[[Session, int, int], None] | None = None,
-    refund_quota_fn: Callable[[Session, int, int], None] | None = None,
     record_event_fn: Callable[..., None] | None = None,
 ) -> WorldGenerateResponse:
     generation_runner = generate_world_drafts_fn or generate_world_drafts
     acquire_slot = acquire_llm_slot_fn or acquire_llm_slot
     release_slot = release_llm_slot_fn or release_llm_slot
-    reserve_quota_write = reserve_quota_fn or reserve_quota
-    refund_quota_write = refund_quota_fn or refund_quota
     record_generate_event = record_event_fn or record_event
 
     load_novel(novel_id, db)
@@ -81,7 +122,6 @@ async def generate_world_from_text(
         db,
         user_id=current_user.id,
         novel_id=novel_id,
-        request_hash=build_world_generation_request_hash(text=text),
         claim_token=claim_token,
     )
     if not run_claim.owner:
@@ -97,15 +137,12 @@ async def generate_world_from_text(
             billing_source=_resolve_world_generation_billing_source(llm_config),
         )
     except HTTPException as exc:
-        error_code, error_message = _world_generation_error_from_http_exception(exc)
-        fail_world_generation_run(
-            db,
+        raise _world_generation_failure(
+            exc,
+            db=db,
             run_id=run_claim.run_id,
             claim_token=claim_token,
-            error_code=error_code,
-            error_message=error_message,
-        )
-        raise detail_error_from_http_exception(exc) from exc
+        ) from exc
 
     lock = await _get_world_generate_lock(novel_id)
     async with lock:
@@ -120,21 +157,21 @@ async def generate_world_from_text(
             await acquire_slot()
             slot_acquired = True
         except HTTPException as exc:
-            error_code, error_message = _world_generation_error_from_http_exception(exc)
-            fail_world_generation_run(
-                db,
+            raise _world_generation_failure(
+                exc,
+                db=db,
                 run_id=run_claim.run_id,
                 claim_token=claim_token,
-                error_code=error_code,
-                error_message=error_message,
-            )
-            raise detail_error_from_http_exception(exc) from exc
+                extra=extra,
+            ) from exc
 
-        reserved = False
+        # Durable reserve-then-refund: a crash between reserve and refund leaves
+        # an open reservation row that reconciliation refunds, instead of
+        # permanently losing user quota the way a bare decrement would.
+        quota_scope = QuotaScope(db, current_user.id, count=1)
         try:
             try:
-                reserve_quota_write(db, current_user.id, 1)
-                reserved = True
+                quota_scope.reserve()
                 result = await generation_runner(
                     db=db,
                     novel_id=novel_id,
@@ -142,81 +179,17 @@ async def generate_world_from_text(
                     llm_config=llm_config,
                     user_id=current_user.id,
                 )
-            except HTTPException as exc:
-                if reserved:
-                    refund_quota_write(db, current_user.id, 1)
-                error_code, error_message = _world_generation_error_from_http_exception(exc)
-                fail_world_generation_run(
-                    db,
-                    run_id=run_claim.run_id,
-                    claim_token=claim_token,
-                    error_code=error_code,
-                    error_message=error_message,
-                )
-                raise detail_error_from_http_exception(exc) from exc
-            except StructuredOutputParseError as exc:
-                if reserved:
-                    refund_quota_write(db, current_user.id, 1)
-                logger.warning("world.generate invalid LLM output", exc_info=True, extra=extra)
-                fail_world_generation_run(
-                    db,
-                    run_id=run_claim.run_id,
-                    claim_token=claim_token,
-                    error_code="world_generate_llm_schema_invalid",
-                    error_message="LLM schema invalid",
-                )
-                raise WorldUseCaseError(
-                    code="world_generate_llm_schema_invalid",
-                    message="LLM schema invalid",
-                    status_code=502,
-                ) from exc
-            except LLMUnavailableError as exc:
-                if reserved:
-                    refund_quota_write(db, current_user.id, 1)
-                logger.warning("world.generate LLM unavailable", exc_info=True, extra=extra)
-                fail_world_generation_run(
-                    db,
-                    run_id=run_claim.run_id,
-                    claim_token=claim_token,
-                    error_code="world_generate_llm_unavailable",
-                    error_message="LLM unavailable",
-                )
-                raise WorldUseCaseError(
-                    code="world_generate_llm_unavailable",
-                    message="LLM unavailable",
-                    status_code=503,
-                ) from exc
-            except IntegrityError as exc:
-                if reserved:
-                    refund_quota_write(db, current_user.id, 1)
-                fail_world_generation_run(
-                    db,
-                    run_id=run_claim.run_id,
-                    claim_token=claim_token,
-                    error_code="world_generate_conflict",
-                    error_message="World generation conflict",
-                )
-                raise WorldUseCaseError(
-                    code="world_generate_conflict",
-                    message="World generation conflict",
-                    status_code=409,
-                ) from exc
+                quota_scope.charge(1)
             except Exception as exc:
-                if reserved:
-                    refund_quota_write(db, current_user.id, 1)
-                logger.exception("world.generate failed", extra=extra)
-                fail_world_generation_run(
-                    db,
+                raise _world_generation_failure(
+                    exc,
+                    db=db,
                     run_id=run_claim.run_id,
                     claim_token=claim_token,
-                    error_code="world_generate_failed",
-                    error_message="World generation failed",
-                )
-                raise WorldUseCaseError(
-                    code="world_generate_failed",
-                    message="World generation failed",
-                    status_code=500,
+                    extra=extra,
                 ) from exc
+            finally:
+                quota_scope.finalize()
         finally:
             if slot_acquired:
                 release_slot()
@@ -225,7 +198,6 @@ async def generate_world_from_text(
             db,
             run_id=run_claim.run_id,
             claim_token=claim_token,
-            response_payload=result.model_dump(mode="json"),
         )
         ensure_project_start_event(
             db,

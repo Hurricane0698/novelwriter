@@ -111,10 +111,8 @@ _REQUIRED_SCHEMA_COLUMNS: dict[str, set[str]] = {
     },
     "user_events": {"user_id", "event", "created_at"},
     "world_generation_runs": {
-        "request_hash",
         "claim_token",
         "status",
-        "response_payload",
         "error_code",
         "error_message",
         "completed_at",

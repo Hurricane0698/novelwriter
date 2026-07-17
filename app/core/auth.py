@@ -95,7 +95,7 @@ def create_access_token(data: dict) -> str:
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def _request_is_secure(request: Request) -> bool:
+def request_is_secure(request: Request) -> bool:
     forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip().lower()
     return forwarded_proto == "https" or request.url.scheme == "https"
 
@@ -107,7 +107,7 @@ def set_auth_cookie(response: Response, request: Request, token: str) -> None:
         value=token,
         max_age=settings.jwt_expire_minutes * 60,
         httponly=True,
-        secure=_request_is_secure(request),
+        secure=request_is_secure(request),
         samesite="lax",
         path="/",
     )
@@ -688,38 +688,6 @@ def check_generation_quota(
     return current_user
 
 
-def decrement_quota(db: Session, user: User, count: int = 1) -> None:
-    """Decrement generation quota by count. Hosted mode only.
-
-    Call this in the endpoint body after validating num_versions.
-    """
-    settings = get_settings()
-    if settings.deploy_mode == "selfhost":
-        return
-    if count <= 0:
-        return
-
-    result = db.execute(
-        sa.update(User)
-        .where(User.id == user.id, User.generation_quota >= count)
-        .values(generation_quota=User.generation_quota - count)
-    )
-    if result.rowcount <= 0:
-        db.rollback()
-        # Refresh for an accurate "have N" message when the caller passes a stale User object.
-        try:
-            db.refresh(user)
-        except Exception:
-            pass
-        have = getattr(user, "generation_quota", None)
-        _raise_quota_http_error(count=count, have=have if isinstance(have, int) else 0)
-    db.commit()
-    try:
-        db.refresh(user)
-    except Exception:
-        pass
-
-
 def reconcile_abandoned_quota_reservations(db: Session, *, user_id: int | None = None) -> int:
     """Refund open reservations left behind by a dead process.
 
@@ -941,63 +909,3 @@ class QuotaScope:
 
         self.reservation_id = None
         self._active = False
-
-
-def reserve_quota(db: Session, user_id: int, count: int = 1) -> None:
-    """Reserve quota by atomically decrementing `generation_quota`.
-
-    This is intended for non-stream generation endpoints to avoid a race where:
-    - generation succeeds (and writes results) and
-    - quota decrement fails under concurrency (lost update / insufficient quota).
-
-    Callers should `refund_quota()` on failure paths so users only pay for
-    successful generations.
-    """
-    settings = get_settings()
-    if settings.deploy_mode == "selfhost":
-        return
-    if count <= 0:
-        return
-
-    reconcile_abandoned_quota_reservations(db, user_id=user_id)
-
-    ok = try_decrement_quota(db, user_id=user_id, count=count)
-    if not ok:
-        user = db.query(User).filter(User.id == user_id).first()
-        have = getattr(user, "generation_quota", 0)
-        _raise_quota_http_error(count=count, have=have)
-
-
-def refund_quota(db: Session, user_id: int, count: int = 1) -> None:
-    """Refund previously reserved quota (best-effort). Hosted mode only."""
-    settings = get_settings()
-    if settings.deploy_mode == "selfhost":
-        return
-    if count <= 0:
-        return
-
-    db.execute(
-        sa.update(User)
-        .where(User.id == user_id)
-        .values(generation_quota=User.generation_quota + count)
-    )
-    db.commit()
-
-
-def try_decrement_quota(db: Session, user_id: int, count: int = 1) -> bool:
-    """Atomically decrement quota at the SQL level. Returns True on success.
-
-    Unlike decrement_quota(), this never raises — safe to call inside
-    async generators where HTTPException can't propagate cleanly.
-    """
-    settings = get_settings()
-    if settings.deploy_mode == "selfhost":
-        return True
-
-    result = db.execute(
-        sa.update(User)
-        .where(User.id == user_id, User.generation_quota >= count)
-        .values(generation_quota=User.generation_quota - count)
-    )
-    db.commit()
-    return result.rowcount > 0
