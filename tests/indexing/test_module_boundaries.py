@@ -33,3 +33,10 @@ def test_internal_callers_use_precise_state_proto_modules_instead_of_compat_faca
     for relative_path, forbidden in forbidden_imports.items():
         text = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
         assert forbidden not in text, f"{relative_path} should import a precise state-proto module"
+
+
+def test_demo_seed_delegates_state_proto_builds_to_the_worker():
+    text = (REPO_ROOT / "app/core/seed_demo.py").read_text(encoding="utf-8")
+
+    assert "execute_state_proto_build" not in text
+    assert "enqueue_window_index_rebuild_job" in text

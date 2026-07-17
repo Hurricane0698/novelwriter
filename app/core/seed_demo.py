@@ -11,13 +11,9 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
-from app.core.indexing.chapters import load_chapter_texts
-from app.core.indexing.state_proto_executor import execute_state_proto_build
-from app.core.indexing.state_proto_targets import load_state_proto_target_specs
 from app.core.indexing.lifecycle import (
-    mark_window_index_build_succeeded,
-    resolve_window_index_target_revision,
+    enqueue_window_index_rebuild_job,
+    mark_window_index_inputs_changed,
 )
 from app.core.parser import parse_novel_file
 from app.core.world.worldpack_import import import_worldpack_payload
@@ -49,30 +45,18 @@ def is_seeded_demo_novel(novel: Novel | None) -> bool:
     return is_seeded_demo_file_path(getattr(novel, "file_path", None))
 
 
-def _hydrate_demo_state_proto(db: Session, *, novel: Novel) -> None:
-    settings = get_settings()
-    chapters = load_chapter_texts(db, novel.id)
-    if not chapters:
-        raise ValueError(f"Seeded demo novel {novel.id} has no chapter text to index")
-
-    target_revision = resolve_window_index_target_revision(
-        novel,
-        has_source_text=True,
-    )
-    target_specs = load_state_proto_target_specs(db, novel.id)
-    build_output = execute_state_proto_build(
-        chapters=chapters,
-        novel_language=getattr(novel, "language", None),
-        target_specs=target_specs or None,
-        existing_payload=getattr(novel, "window_index", None),
-        settings=settings,
-    )
-    mark_window_index_build_succeeded(
-        novel,
-        index_payload=build_output.index_payload or b"",
-        revision=target_revision,
-    )
-    db.commit()
+def _enqueue_demo_window_index_build(db: Session, *, novel: Novel) -> None:
+    try:
+        target_revision = mark_window_index_inputs_changed(novel)
+        enqueue_window_index_rebuild_job(
+            db,
+            novel_id=novel.id,
+            target_revision=target_revision,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(novel)
 
 
@@ -132,13 +116,7 @@ def seed_demo_novel(db: Session, user: User) -> int | None:
     except Exception:
         logger.exception("seed_demo: worldpack import failed (novel %s)", novel.id)
 
-    try:
-        _hydrate_demo_state_proto(db, novel=novel)
-    except Exception:
-        logger.exception(
-            "seed_demo: demo index hydrate failed (novel %s)",
-            novel.id,
-        )
+    _enqueue_demo_window_index_build(db, novel=novel)
 
     logger.info(
         "seed_demo: created novel %s (%d chapters) for user %s",

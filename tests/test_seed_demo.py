@@ -3,9 +3,9 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-import app.core.seed_demo as seed_demo_module
+import app.core.indexing.lifecycle as indexing_lifecycle_module
 from app.core.auth import hash_password
-from app.core.indexing import NovelIndex
+from app.core.indexing import NovelIndex, run_next_window_index_rebuild_job
 from app.core.seed_demo import (
     DEMO_TITLE,
     DEMO_TXT,
@@ -14,7 +14,15 @@ from app.core.seed_demo import (
     seed_demo_novel,
 )
 from app.database import Base
-from app.models import Chapter, Novel, User, WorldEntity, WorldRelationship, WorldSystem
+from app.models import (
+    Chapter,
+    DerivedAssetJob,
+    Novel,
+    User,
+    WorldEntity,
+    WorldRelationship,
+    WorldSystem,
+)
 
 engine = create_engine("sqlite:///:memory:")
 Base.metadata.create_all(bind=engine)
@@ -61,12 +69,12 @@ def _make_novel_with_chapters(
     return novel
 
 
-def test_seed_creates_novel_worldpack_and_state_proto_index(monkeypatch):
+def test_seed_creates_demo_and_queues_worker_owned_state_proto_index(monkeypatch):
     db = _fresh_db()
     user = _make_user(db)
     _make_novel_with_chapters(db, user, title="primer", chapter_count=5)
 
-    original_execute = seed_demo_module.execute_state_proto_build
+    original_execute = indexing_lifecycle_module.execute_state_proto_build
     seen_target_specs: list[tuple[tuple[str, str], ...]] = []
 
     def _execute_state_proto_build(**kwargs):
@@ -77,7 +85,7 @@ def test_seed_creates_novel_worldpack_and_state_proto_index(monkeypatch):
         return original_execute(**kwargs)
 
     monkeypatch.setattr(
-        seed_demo_module,
+        indexing_lifecycle_module,
         "execute_state_proto_build",
         _execute_state_proto_build,
     )
@@ -85,6 +93,23 @@ def test_seed_creates_novel_worldpack_and_state_proto_index(monkeypatch):
     novel_id = seed_demo_novel(db, user)
 
     assert novel_id is not None
+    assert seen_target_specs == []
+
+    novel = db.query(Novel).filter(Novel.id == novel_id).one()
+    assert novel.window_index_status == "missing"
+    assert novel.window_index_revision == 1
+    assert novel.window_index_built_revision is None
+    assert novel.window_index is None
+
+    job = db.query(DerivedAssetJob).filter(DerivedAssetJob.novel_id == novel_id).one()
+    assert job.status == "queued"
+    assert job.target_revision == novel.window_index_revision
+
+    assert (
+        run_next_window_index_rebuild_job(session_factory=TestingSessionLocal) is True
+    )
+    db.expire_all()
+
     assert len(seen_target_specs) == 1
     assert any(spec_id.startswith("entity:") for spec_id, _ in seen_target_specs[0])
 
