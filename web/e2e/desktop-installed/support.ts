@@ -1,4 +1,4 @@
-import { expect, type Page, type Response } from '@playwright/test'
+import { expect, type ConsoleMessage, type Page, type Response } from '@playwright/test'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
@@ -46,6 +46,26 @@ function isInstalledAsset(url: string): boolean {
   )
 }
 
+// The bootstrap status probe returns 404 (bootstrap_job_not_found) for novels
+// without a bootstrap run; the app maps that response to a normal empty state,
+// but Chromium still logs an unsuppressable resource error for it.
+const HANDLED_MISSING_STATUS_PATHNAME = /^\/api\/novels\/\d+\/world\/bootstrap\/status$/
+
+function isHandledMissingStatusLog(message: ConsoleMessage): boolean {
+  if (!message.text().startsWith('Failed to load resource:') || !message.text().includes('404')) {
+    return false
+  }
+  const url = message.location().url
+  if (!url) return false
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  return parsed.origin === INSTALLED_ORIGIN && HANDLED_MISSING_STATUS_PATHNAME.test(parsed.pathname)
+}
+
 export function installInstalledProductFailureGuard(page: Page) {
   const failures: string[] = []
   const record = (message: string) => {
@@ -55,6 +75,7 @@ export function installInstalledProductFailureGuard(page: Page) {
 
   page.on('console', (message) => {
     if (message.type() !== 'error') return
+    if (isHandledMissingStatusLog(message)) return
     record(`console error: ${message.text()}`)
   })
   page.on('crash', () => {
