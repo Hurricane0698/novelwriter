@@ -10,7 +10,7 @@ from alembic.config import Config
 from sqlalchemy.engine import Engine
 from sqlalchemy.schema import MetaData
 
-from app.database import Base, DATABASE_URL, engine
+from app.database import Base, DATABASE_URL, engine, ensure_sqlite_wal_mode
 from app.models import (  # noqa: F401 - register models with Base.metadata
     BootstrapJob,
     Chapter,
@@ -280,6 +280,7 @@ def ensure_selfhost_database_ready(
     should_upgrade = False
     result = "upgraded"
 
+    ensure_sqlite_wal_mode(db_engine)
     with db_engine.begin() as bind:
         tables = _user_tables(bind)
 

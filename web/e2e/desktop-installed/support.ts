@@ -60,7 +60,16 @@ export async function loginThroughInstalledUi(page: Page) {
   await expect(page.getByTestId('login-form')).toBeVisible()
   await page.getByLabel('用户名').fill(INSTALLED_USERNAME)
   await page.getByLabel('密码').fill(INSTALLED_PASSWORD)
+  const loginResponsePromise = page.waitForResponse((response) => (
+    response.url() === `${INSTALLED_ORIGIN}/api/auth/login`
+    && response.request().method() === 'POST'
+  ))
   await page.getByTestId('login-submit').click()
+  const loginResponse = await loginResponsePromise
+  expect(
+    loginResponse.ok(),
+    `Installed login returned HTTP ${loginResponse.status()}.`,
+  ).toBe(true)
   await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/library`, { timeout: 60_000 })
   await expect(page.getByRole('heading', { name: '我的作品库' })).toBeVisible()
 }

@@ -1,7 +1,9 @@
-import os
 import logging
+import os
 from pathlib import Path
+
 from sqlalchemy import create_engine, event, inspect
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import NullPool
 
@@ -14,6 +16,7 @@ if not DATABASE_URL:
     DATABASE_URL = f"sqlite:///{DATA_DIR}/novels.db"
 
 _is_sqlite = DATABASE_URL.startswith("sqlite")
+_SQLITE_BUSY_TIMEOUT_MILLISECONDS = 5000
 
 if _is_sqlite:
     engine = create_engine(
@@ -23,14 +26,38 @@ if _is_sqlite:
     )
 
     @event.listens_for(engine, "connect")
-    def _set_sqlite_pragma(dbapi_connection, connection_record):
+    def _set_sqlite_connection_pragmas(dbapi_connection, _connection_record):
         cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")
-        cursor.execute("PRAGMA busy_timeout=5000")
-        cursor.close()
+        try:
+            cursor.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MILLISECONDS}")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+        finally:
+            cursor.close()
 else:
     engine = create_engine(DATABASE_URL, pool_size=5, max_overflow=10)
+
+
+def ensure_sqlite_wal_mode(db_engine: Engine = engine) -> None:
+    if db_engine.dialect.name != "sqlite":
+        return
+
+    with db_engine.connect() as connection:
+        current_mode = str(
+            connection.exec_driver_sql("PRAGMA journal_mode").scalar_one()
+        ).casefold()
+        if current_mode == "wal":
+            return
+
+        configured_mode = str(
+            connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one()
+        ).casefold()
+        if configured_mode != "wal":
+            raise RuntimeError(
+                "SQLite refused required WAL journal mode: "
+                f"reported {configured_mode!r}."
+            )
+
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -46,6 +73,7 @@ def get_db():
 def init_db():
     from app.config import get_settings
 
+    ensure_sqlite_wal_mode()
     settings = get_settings()
     if not settings.db_auto_create:
         try:

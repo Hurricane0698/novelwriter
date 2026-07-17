@@ -147,6 +147,8 @@ def test_bootstraps_fresh_database_and_stamps_head(sqlite_engine):
     assert result == "bootstrapped"
     assert "novels" in inspector.get_table_names()
     assert "world_entity_attributes" in inspector.get_table_names()
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode").scalar_one() == "wal"
     assert calls == [("stamp", "head")]
 
 
