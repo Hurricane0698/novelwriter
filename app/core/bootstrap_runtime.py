@@ -30,6 +30,7 @@ from app.core.bootstrap_refinement import (
     sanitize_bootstrap_refinement_result,
 )
 from app.core.indexing.chapters import load_chapter_texts
+from app.core.llm_config import LLM_CONFIG_MISSING_CODE, LlmConfigError, ResolvedLlmConfig
 from app.core.indexing.lifecycle import (
     mark_window_index_build_failed,
     mark_window_index_build_succeeded,
@@ -258,10 +259,15 @@ async def run_bootstrap_refinement(
     *,
     deps: BootstrapRuntimeDeps,
     client: AIClient | None,
-    llm_config: dict | None,
+    llm_config: ResolvedLlmConfig | None,
 ) -> BootstrapRefinementResult:
     if context.mode == BOOTSTRAP_MODE_INDEX_REFRESH:
         return BootstrapRefinementResult()
+    if llm_config is None:
+        raise LlmConfigError(
+            code=LLM_CONFIG_MISSING_CODE,
+            message="Bootstrap refinement requires a resolved LLM configuration.",
+        )
 
     llm_blocking_wait_seconds = float(await deps.acquire_background_llm_slot_blocking() or 0.0)
     current_result = dict(context.job.result or {})

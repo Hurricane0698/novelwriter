@@ -6,10 +6,12 @@ import { AccountCard } from "@/components/settings/AccountCard"
 import { LlmConfigCard } from "@/components/settings/LlmConfigCard"
 import { useAuth } from "@/contexts/AuthContext"
 import { useUiLocale } from "@/contexts/UiLocaleContext"
+import { isHostedRuntime } from "@/lib/runtimeMode"
 
 export default function Settings() {
     const { isLoggedIn } = useAuth()
     const { t } = useUiLocale()
+    const showAccount = isHostedRuntime() && isLoggedIn
 
     return (
         <div className="flex-1 flex flex-col items-center px-4 py-12">
@@ -35,7 +37,7 @@ export default function Settings() {
                 </section>
 
                 {/* Account Section — only when logged in */}
-                {isLoggedIn && (
+                {showAccount && (
                     <section className="flex flex-col gap-4">
                         <span className="text-xs font-semibold tracking-wider text-muted-foreground">
                             {t('settings.section.account')}

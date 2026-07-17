@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.world_support import run_world_operation_async
 from app.core.auth import get_current_user_or_default
 from app.core.llm_request import get_llm_config
+from app.core.llm_config import ResolvedLlmConfig
 from app.core.world.generation_application import generate_world_from_text as generate_world_from_text_use_case
 from app.database import get_db
 from app.models import User
@@ -24,7 +25,7 @@ async def generate_world_from_text(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
-    llm_config: dict | None = Depends(get_llm_config),
+    llm_config: ResolvedLlmConfig = Depends(get_llm_config),
 ):
     return await run_world_operation_async(
         generate_world_from_text_use_case,

@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.ai_client import ai_client
+from app.core.llm_config import ResolvedLlmConfig
 from app.core.world.write import build_relationship_signature, normalize_system_data_for_write
 from app.config import get_settings
 from app.language import resolve_prompt_locale
@@ -628,7 +629,7 @@ async def generate_world_drafts(
     db: Session,
     novel_id: int,
     text: str,
-    llm_config: dict | None = None,
+    llm_config: ResolvedLlmConfig,
     user_id: int | None = None,
 ) -> WorldGenerateResponse:
     """Generate and persist draft world items from free text.
@@ -640,7 +641,6 @@ async def generate_world_drafts(
 
     warnings: list[WorldGenerateWarning] = []
 
-    llm_kwargs = llm_config or {}
     settings = get_settings()
     novel = db.query(Novel).filter(Novel.id == novel_id).first()
     prompt_locale = resolve_prompt_locale(novel_language=getattr(novel, "language", None))
@@ -663,8 +663,8 @@ async def generate_world_drafts(
                 # Structured extraction — low temperature for schema adherence.
                 temperature=0.3,
                 max_tokens=settings.world_generation_chunk_max_tokens,
+                llm_config=llm_config,
                 user_id=user_id,
-                **llm_kwargs,
             )
         )
 

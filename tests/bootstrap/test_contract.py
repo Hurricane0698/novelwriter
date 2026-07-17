@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config import Settings
 from app.core.bootstrap import transition_bootstrap_job
+from app.core.llm_config import LlmConfigValues
 from app.database import Base
 from app.models import BootstrapJob, Chapter, Novel, User
 from app.schemas import (
@@ -28,6 +29,13 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+_LLM_OVERRIDE = LlmConfigValues(
+    base_url="https://example.com/v1",
+    api_key="test-key",
+    model="test-model",
+    provided=True,
+)
+
 
 @pytest.fixture(scope="function")
 def db():
@@ -43,23 +51,35 @@ def db():
 @pytest.fixture
 def world_api(monkeypatch):
     from app.api import world
+    from app.api import world_bootstrap
     from app.core.world import bootstrap_application as bootstrap_app
 
     def _noop_launch_bootstrap_job(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(bootstrap_app, "launch_bootstrap_job", _noop_launch_bootstrap_job)
+    monkeypatch.setattr(
+        bootstrap_app, "launch_bootstrap_job", _noop_launch_bootstrap_job
+    )
+    monkeypatch.setattr(
+        world_bootstrap,
+        "get_settings",
+        lambda: Settings(deploy_mode="selfhost", _env_file=None),
+    )
     return world
 
 
 @pytest.fixture
 def user():
-    return User(id=1, username="tester", hashed_password="x", role="admin", is_active=True)
+    return User(
+        id=1, username="tester", hashed_password="x", role="admin", is_active=True
+    )
 
 
 @pytest.fixture
 def novel(db):
-    item = Novel(title="测试小说", author="作者", file_path="/tmp/test.txt", total_chapters=1)
+    item = Novel(
+        title="测试小说", author="作者", file_path="/tmp/test.txt", total_chapters=1
+    )
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -68,12 +88,16 @@ def novel(db):
 
 @pytest.fixture
 def novel_with_text(db):
-    item = Novel(title="测试小说", author="作者", file_path="/tmp/test.txt", total_chapters=1)
+    item = Novel(
+        title="测试小说", author="作者", file_path="/tmp/test.txt", total_chapters=1
+    )
     db.add(item)
     db.commit()
     db.refresh(item)
 
-    chapter = Chapter(novel_id=item.id, chapter_number=1, title="第一章", content="云澈看向远方。")
+    chapter = Chapter(
+        novel_id=item.id, chapter_number=1, title="第一章", content="云澈看向远方。"
+    )
     db.add(chapter)
     db.commit()
     return item
@@ -114,7 +138,12 @@ def test_bootstrap_job_status_transitions():
 
 
 def test_bootstrap_job_rejects_invalid_transition():
-    job = BootstrapJob(novel_id=1, status="pending", progress={"step": 0, "detail": "queued"}, result={})
+    job = BootstrapJob(
+        novel_id=1,
+        status="pending",
+        progress={"step": 0, "detail": "queued"},
+        result={},
+    )
 
     with pytest.raises(ValueError, match="Invalid bootstrap transition"):
         transition_bootstrap_job(job, "completed")
@@ -165,8 +194,15 @@ def test_bootstrap_serializer_treats_initialized_column_as_single_truth(world_ap
 
 
 def test_bootstrap_initialized_backfill_migration_upgrades_legacy_completed_rows(db):
-    migration_path = Path(__file__).resolve().parents[2] / "alembic" / "versions" / "037_backfill_bootstrap_initialized_column.py"
-    spec = importlib.util.spec_from_file_location("bootstrap_initialized_backfill_037", migration_path)
+    migration_path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic"
+        / "versions"
+        / "037_backfill_bootstrap_initialized_column.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "bootstrap_initialized_backfill_037", migration_path
+    )
     assert spec is not None and spec.loader is not None
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
@@ -176,7 +212,11 @@ def test_bootstrap_initialized_backfill_migration_upgrades_legacy_completed_rows
         initialized=False,
         status="completed",
         progress={"step": 5, "detail": "completed"},
-        result={"entities_found": 2, "relationships_found": 1, "index_refresh_only": False},
+        result={
+            "entities_found": 2,
+            "relationships_found": 1,
+            "index_refresh_only": False,
+        },
     )
     refresh_only_job = BootstrapJob(
         novel_id=2,
@@ -184,7 +224,11 @@ def test_bootstrap_initialized_backfill_migration_upgrades_legacy_completed_rows
         initialized=False,
         status="completed",
         progress={"step": 5, "detail": "completed"},
-        result={"entities_found": 0, "relationships_found": 0, "index_refresh_only": True},
+        result={
+            "entities_found": 0,
+            "relationships_found": 0,
+            "index_refresh_only": True,
+        },
     )
     db.add_all([legacy_completed_job, refresh_only_job])
     db.commit()
@@ -214,7 +258,9 @@ def test_bootstrap_initialized_backfill_migration_upgrades_legacy_completed_rows
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_endpoint_response_contract(world_api, db, novel_with_text, user):
+async def test_bootstrap_endpoint_response_contract(
+    world_api, db, novel_with_text, user
+):
     route_map = {route.path: route for route in world_api.router.routes}
     post_route = route_map["/api/novels/{novel_id}/world/bootstrap"]
     get_route = route_map["/api/novels/{novel_id}/world/bootstrap/status"]
@@ -225,6 +271,7 @@ async def test_bootstrap_endpoint_response_contract(world_api, db, novel_with_te
 
     trigger = await world_api.trigger_bootstrap(
         novel_id=novel_with_text.id,
+        llm_override=_LLM_OVERRIDE,
         body=BootstrapTriggerRequest(),
         db=db,
         current_user=user,
@@ -251,7 +298,9 @@ async def test_bootstrap_endpoint_response_contract(world_api, db, novel_with_te
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_omitted_mode_resolves_to_index_refresh_after_initialization(world_api, db, novel_with_text, user):
+async def test_bootstrap_omitted_mode_resolves_to_index_refresh_after_initialization(
+    world_api, db, novel_with_text, user
+):
     db.add(
         BootstrapJob(
             novel_id=novel_with_text.id,
@@ -259,13 +308,18 @@ async def test_bootstrap_omitted_mode_resolves_to_index_refresh_after_initializa
             initialized=True,
             status="completed",
             progress={"step": 5, "detail": "completed"},
-            result={"entities_found": 2, "relationships_found": 1, "index_refresh_only": False},
+            result={
+                "entities_found": 2,
+                "relationships_found": 1,
+                "index_refresh_only": False,
+            },
         )
     )
     db.commit()
 
     trigger = await world_api.trigger_bootstrap(
         novel_id=novel_with_text.id,
+        llm_override=LlmConfigValues(),
         body=BootstrapTriggerRequest(),
         db=db,
         current_user=user,
@@ -277,14 +331,20 @@ async def test_bootstrap_omitted_mode_resolves_to_index_refresh_after_initializa
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_rejects_initial_mode_after_initialization(world_api, db, novel_with_text, user):
+async def test_bootstrap_rejects_initial_mode_after_initialization(
+    world_api, db, novel_with_text, user
+):
     initialized_job = BootstrapJob(
         novel_id=novel_with_text.id,
         mode="initial",
         initialized=True,
         status="completed",
         progress={"step": 5, "detail": "completed"},
-        result={"entities_found": 2, "relationships_found": 1, "index_refresh_only": False},
+        result={
+            "entities_found": 2,
+            "relationships_found": 1,
+            "index_refresh_only": False,
+        },
     )
     db.add(initialized_job)
     db.commit()
@@ -292,20 +352,24 @@ async def test_bootstrap_rejects_initial_mode_after_initialization(world_api, db
     with pytest.raises(HTTPException) as exc_info:
         await world_api.trigger_bootstrap(
             novel_id=novel_with_text.id,
+            llm_override=_LLM_OVERRIDE,
             body=BootstrapTriggerRequest(mode="initial"),
             db=db,
             current_user=user,
-    )
+        )
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail["code"] == "bootstrap_initial_mode_not_allowed"
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_requires_force_for_reextract_replace_policy(world_api, db, novel_with_text, user):
+async def test_bootstrap_requires_force_for_reextract_replace_policy(
+    world_api, db, novel_with_text, user
+):
     with pytest.raises(HTTPException) as exc_info:
         await world_api.trigger_bootstrap(
             novel_id=novel_with_text.id,
+            llm_override=_LLM_OVERRIDE,
             body=BootstrapTriggerRequest(mode="reextract"),
             db=db,
             current_user=user,
@@ -316,9 +380,12 @@ async def test_bootstrap_requires_force_for_reextract_replace_policy(world_api, 
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_reextract_merge_without_force(world_api, db, novel_with_text, user):
+async def test_bootstrap_reextract_merge_without_force(
+    world_api, db, novel_with_text, user
+):
     response = await world_api.trigger_bootstrap(
         novel_id=novel_with_text.id,
+        llm_override=_LLM_OVERRIDE,
         body=BootstrapTriggerRequest(mode="reextract", draft_policy="merge"),
         db=db,
         current_user=user,
@@ -329,10 +396,13 @@ async def test_bootstrap_reextract_merge_without_force(world_api, db, novel_with
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_rejects_draft_policy_for_non_reextract_mode(world_api, db, novel_with_text, user):
+async def test_bootstrap_rejects_draft_policy_for_non_reextract_mode(
+    world_api, db, novel_with_text, user
+):
     with pytest.raises(HTTPException) as exc_info:
         await world_api.trigger_bootstrap(
             novel_id=novel_with_text.id,
+            llm_override=_LLM_OVERRIDE,
             body=BootstrapTriggerRequest(mode="index_refresh", draft_policy="merge"),
             db=db,
             current_user=user,
@@ -356,6 +426,7 @@ async def test_bootstrap_rejects_running_job(world_api, db, novel_with_text, use
     with pytest.raises(HTTPException) as exc_info:
         await world_api.trigger_bootstrap(
             novel_id=novel_with_text.id,
+            llm_override=_LLM_OVERRIDE,
             body=BootstrapTriggerRequest(),
             db=db,
             current_user=user,
@@ -366,10 +437,20 @@ async def test_bootstrap_rejects_running_job(world_api, db, novel_with_text, use
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_allows_retry_for_stale_running_job(world_api, db, novel_with_text, user, monkeypatch):
+async def test_bootstrap_allows_retry_for_stale_running_job(
+    world_api, db, novel_with_text, user, monkeypatch
+):
     from app.api import world_bootstrap
 
-    monkeypatch.setattr(world_bootstrap, "get_settings", lambda: Settings(bootstrap_stale_job_timeout_seconds=1))
+    monkeypatch.setattr(
+        world_bootstrap,
+        "get_settings",
+        lambda: Settings(
+            deploy_mode="selfhost",
+            bootstrap_stale_job_timeout_seconds=1,
+            _env_file=None,
+        ),
+    )
     stale_time = datetime.now(timezone.utc) - timedelta(minutes=1)
     running_job = BootstrapJob(
         novel_id=novel_with_text.id,
@@ -384,6 +465,7 @@ async def test_bootstrap_allows_retry_for_stale_running_job(world_api, db, novel
 
     response = await world_api.trigger_bootstrap(
         novel_id=novel_with_text.id,
+        llm_override=_LLM_OVERRIDE,
         body=BootstrapTriggerRequest(),
         db=db,
         current_user=user,
@@ -396,10 +478,13 @@ async def test_bootstrap_allows_retry_for_stale_running_job(world_api, db, novel
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_concurrent_trigger_is_serialized(world_api, db, novel_with_text, user):
+async def test_bootstrap_concurrent_trigger_is_serialized(
+    world_api, db, novel_with_text, user
+):
     async def _trigger():
         return await world_api.trigger_bootstrap(
             novel_id=novel_with_text.id,
+            llm_override=_LLM_OVERRIDE,
             body=BootstrapTriggerRequest(),
             db=db,
             current_user=user,
@@ -421,6 +506,7 @@ async def test_bootstrap_rejects_empty_text_novel(world_api, db, novel, user):
     with pytest.raises(HTTPException) as exc_info:
         await world_api.trigger_bootstrap(
             novel_id=novel.id,
+            llm_override=_LLM_OVERRIDE,
             body=BootstrapTriggerRequest(),
             db=db,
             current_user=user,

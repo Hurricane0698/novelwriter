@@ -5,6 +5,8 @@
 
 import pytest
 
+from tests.copilot.runtime_support import TEST_LLM_CONFIG
+
 class TestWorkspaceResume:
     """Verify that an interrupted run's workspace is inherited and resumed,
     not restarted from scratch."""
@@ -146,7 +148,7 @@ class TestWorkspaceResume:
         original_close = db.close
         monkeypatch.setattr(db, "close", lambda: None)
 
-        await execute_copilot_run(run2.run_id, novel.id, 1, None)
+        await execute_copilot_run(run2.run_id, novel.id, 1, TEST_LLM_CONFIG)
 
         assert captured["inherited_workspace"] is None
         assert captured["prior_messages"] == [
@@ -209,7 +211,7 @@ class TestWorkspaceResume:
         original_close = db.close
         monkeypatch.setattr(db, "close", lambda: None)
 
-        await execute_copilot_run(run2.run_id, novel.id, 1, None)
+        await execute_copilot_run(run2.run_id, novel.id, 1, TEST_LLM_CONFIG)
 
         assert captured["prompt"] == "新问题"
         assert captured["inherited_workspace"] is None

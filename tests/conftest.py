@@ -33,7 +33,13 @@ def _force_selfhost_settings():
     import app.config as config_mod
     from app.config import Settings
 
-    config_mod._settings_instance = Settings(deploy_mode="selfhost", _env_file=None)
+    config_mod._settings_instance = Settings(
+        deploy_mode="selfhost",
+        openai_base_url="https://example.com/v1",
+        openai_api_key="test-key",
+        openai_model="test-model",
+        _env_file=None,
+    )
     yield
 
 

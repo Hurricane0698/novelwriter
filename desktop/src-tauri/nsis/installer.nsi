@@ -4,7 +4,8 @@
 ; Deliberate deviations:
 ; - current-user installs are fixed at $LOCALAPPDATA\NovWr\app.
 ; - current-user installs do not restore or expose a custom install directory.
-; - uninstall never offers or performs application-data deletion.
+; - uninstall preserves novels, logs, and runtime state.
+; - direct uninstall removes the DPAPI-backed LLM configuration; installer replacement preserves it.
 
 Unicode true
 ManifestDPIAware true
@@ -80,6 +81,7 @@ ${StrLoc}
 
 Var PassiveMode
 Var UpdateMode
+Var PreserveCredentials
 Var NoShortcutMode
 Var WixMode
 Var OldMainBinaryName
@@ -316,8 +318,6 @@ Function PageReinstallUpdateSelection
   ${EndIf}
 FunctionEnd
 Function PageLeaveReinstall
-  ${NSD_GetState} $R2 $R1
-
   ; If migrating from Wix, always uninstall
   ${If} $WixMode = 1
     Goto reinst_uninstall
@@ -327,6 +327,20 @@ Function PageLeaveReinstall
   ${If} $UpdateMode = 1
     Goto reinst_done
   ${EndIf}
+
+  ; Passive replacement has no radio controls. Make its behavior explicit:
+  ; uninstall the current app tree while preserving the credential file.
+  ${If} $PassiveMode = 1
+    !if "${ALLOWDOWNGRADES}" == "false"
+      ${If} $R0 = -1
+        SetErrorLevel 1
+        Quit
+      ${EndIf}
+    !endif
+    Goto reinst_uninstall
+  ${EndIf}
+
+  ${NSD_GetState} $R2 $R1
 
   ; $R0 holds whether same(0)/upgrading(1)/downgrading(-1) version
   ; $R1 holds the radio buttons state:
@@ -363,6 +377,7 @@ Function PageLeaveReinstall
       ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""
       ReadRegStr $R1 SHCTX "${UNINSTKEY}" "UninstallString"
       ${IfThen} $UpdateMode = 1 ${|} StrCpy $R1 "$R1 /UPDATE" ${|} ; append /UPDATE
+      StrCpy $R1 "$R1 /PRESERVECREDENTIALS" ; installer replacement must retain local credentials
       ${IfThen} $PassiveMode = 1 ${|} StrCpy $R1 "$R1 /P" ${|} ; append /P
       StrCpy $R1 "$R1 _?=$4" ; append uninstall directory
       ExecWait '$R1' $0
@@ -748,6 +763,11 @@ Function un.onInit
   ${IfNot} ${Errors}
     StrCpy $UpdateMode 1
   ${EndIf}
+
+  ${GetOptions} $CMDLINE "/PRESERVECREDENTIALS" $PreserveCredentials
+  ${IfNot} ${Errors}
+    StrCpy $PreserveCredentials 1
+  ${EndIf}
 FunctionEnd
 
 Section Uninstall
@@ -838,6 +858,12 @@ Section Uninstall
   ${If} $UpdateMode <> 1
     DeleteRegKey SHCTX "${MANUPRODUCTKEY}"
     DeleteRegKey /ifempty SHCTX "${MANUKEY}"
+  ${EndIf}
+
+  ; Credentials belong to the desktop installation lifecycle, not the novel database.
+  ${If} $UpdateMode <> 1
+  ${AndIf} $PreserveCredentials <> 1
+    Delete "$LOCALAPPDATA\${PRODUCTNAME}\llm-config.json"
   ${EndIf}
 
   ; Removes the Autostart entry for ${PRODUCTNAME} from the HKCU Run key if it exists.

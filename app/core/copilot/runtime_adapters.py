@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Callable
 
 import app.core.llm_semaphore as llm_semaphore_mod
+from app.core.llm_config import ResolvedLlmConfig
 from . import execution_runtime as execution_runtime_mod
 from . import prompting as prompting_mod
 from . import run_state as run_state_mod
@@ -29,7 +30,7 @@ async def run_tool_loop(
     novel_id: int,
     session_data: dict,
     prompt: str,
-    llm_config: dict | None,
+    llm_config: ResolvedLlmConfig,
     user_id: int,
     snapshot,
     scenario: str,
@@ -53,7 +54,6 @@ async def run_tool_loop(
         tool_load_scope_snapshot=_tool_load_scope_snapshot,
         persist_workspace=run_store_mod.persist_running_workspace,
         renew_run_lease=run_store_mod.renew_run_lease,
-        extract_llm_kwargs=run_state_mod.extract_llm_kwargs,
         parse_llm_response=run_state_mod.parse_llm_response,
         evidence_from_workspace=workspace_mod.evidence_from_workspace,
         lease_lost_error_factory=RunLeaseLostError,
@@ -86,7 +86,7 @@ async def run_one_shot(
     session_data: dict,
     turn_intent: str,
     prompt: str,
-    llm_config: dict | None,
+    llm_config: ResolvedLlmConfig,
     user_id: int,
     *,
     run_id: str = "",

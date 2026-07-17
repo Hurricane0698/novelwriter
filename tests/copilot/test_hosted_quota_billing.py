@@ -5,8 +5,17 @@
 
 import pytest
 
+from app.core.llm_config import ResolvedLlmConfig
 from app.models import CopilotRun, QuotaReservation
 from tests.copilot.runtime_support import TestingSessionLocal
+
+_SELFHOST_BILLING_CONFIG = ResolvedLlmConfig(
+    base_url="https://example.com/v1",
+    api_key="key",
+    model="model",
+    billing_source_hint="selfhost",
+    source="selfhost_settings",
+)
 
 class TestHostedQuotaBilling:
     def test_run_create_reserves_quota_and_links_reservation(self, hosted_client, db, novel, hosted_user, monkeypatch):
@@ -122,7 +131,12 @@ class TestHostedQuotaBilling:
         monkeypatch.setattr("app.core.copilot.runtime_adapters.run_tool_loop", fake_run_tool_loop)
         monkeypatch.setattr("app.core.copilot.suggestions.compile_suggestions", lambda *_args, **_kwargs: [])
 
-        await execute_copilot_run(run.run_id, novel.id, hosted_user.id, llm_config={"billing_source_hint": "selfhost"})
+        await execute_copilot_run(
+            run.run_id,
+            novel.id,
+            hosted_user.id,
+            llm_config=_SELFHOST_BILLING_CONFIG,
+        )
 
         db.expire_all()
         run = db.query(CopilotRun).filter(CopilotRun.run_id == run.run_id).one()
@@ -157,7 +171,12 @@ class TestHostedQuotaBilling:
         monkeypatch.setattr("app.core.copilot.runtime_adapters.run_tool_loop", broken_tool_loop)
         monkeypatch.setattr("app.core.copilot.runtime_adapters.run_one_shot", broken_one_shot)
 
-        await execute_copilot_run(run.run_id, novel.id, hosted_user.id, llm_config={"billing_source_hint": "selfhost"})
+        await execute_copilot_run(
+            run.run_id,
+            novel.id,
+            hosted_user.id,
+            llm_config=_SELFHOST_BILLING_CONFIG,
+        )
 
         db.expire_all()
         run = db.query(CopilotRun).filter(CopilotRun.run_id == run.run_id).one()

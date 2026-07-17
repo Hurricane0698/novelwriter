@@ -5,6 +5,7 @@ import { useUiLocale } from "@/contexts/UiLocaleContext"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { NwButton } from "@/components/ui/nw-button"
+import { isHostedRuntime } from "@/lib/runtimeMode"
 
 export type NavbarProps = {
     compact?: boolean
@@ -26,6 +27,7 @@ export function Navbar({
     const { t } = useUiLocale()
     const { pathname } = useLocation()
     const isLanding = pathname === "/"
+    const isHosted = isHostedRuntime()
 
     const navPositionClass =
         position === "fixed" ? "fixed inset-x-0 top-0 z-50" : "w-full"
@@ -73,7 +75,7 @@ export function Navbar({
                 )}
                 {rightContent ?? (
                     <div className="flex items-center gap-4">
-                        {isLoggedIn && user ? (
+                        {isHosted ? (isLoggedIn && user ? (
                             <Link to="/settings">
                                 <Avatar className="h-8 w-8 transition-opacity hover:opacity-80">
                                     <AvatarFallback>{user.username[0]?.toUpperCase()}</AvatarFallback>
@@ -87,7 +89,15 @@ export function Navbar({
                             >
                                 <Link to="/login">{t('navbar.login')}</Link>
                             </NwButton>
-                        )}
+                        )) : isLanding ? (
+                            <NwButton
+                                asChild
+                                variant="glass"
+                                className="hidden md:inline-flex rounded-full bg-transparent px-5 py-1.5 text-sm font-medium backdrop-blur-none"
+                            >
+                                <Link to="/library">{t('navbar.library')}</Link>
+                            </NwButton>
+                        ) : null}
                     </div>
                 )}
             </div>

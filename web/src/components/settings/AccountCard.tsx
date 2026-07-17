@@ -5,8 +5,7 @@ import { useUiLocale } from "@/contexts/UiLocaleContext"
 import { api } from "@/services/api"
 import { NwButton } from "@/components/ui/nw-button"
 import { FeedbackForm, type FeedbackAnswers } from "@/components/feedback/FeedbackForm"
-
-const IS_HOSTED = (import.meta.env.VITE_DEPLOY_MODE || "selfhost") === "hosted"
+import { isHostedRuntime } from "@/lib/runtimeMode"
 
 export function AccountCard() {
     const { user, logout, refreshQuota } = useAuth()
@@ -14,7 +13,7 @@ export function AccountCard() {
     const [showForm, setShowForm] = useState(false)
     const [submitting, setSubmitting] = useState(false)
 
-    if (!user) return null
+    if (!isHostedRuntime() || !user) return null
 
     const displayName = user.nickname || user.username
     const initial = displayName[0]?.toUpperCase() ?? "U"
@@ -55,34 +54,29 @@ export function AccountCard() {
                     <span className="text-[13px]">{displayName}</span>
                 </div>
 
-                {/* Quota & feedback — hosted mode only */}
-                {IS_HOSTED && (
-                    <>
-                        <div className="flex items-center justify-between">
-                            <span className="text-[13px] text-muted-foreground">{t('settings.account.remainingQuota')}</span>
-                            <span className={`text-[13px] font-mono ${user.generation_quota <= 0 ? 'text-[hsl(var(--color-danger))]' : ''}`}>
-                                {user.generation_quota}
-                            </span>
-                        </div>
+                <div className="flex items-center justify-between">
+                    <span className="text-[13px] text-muted-foreground">{t('settings.account.remainingQuota')}</span>
+                    <span className={`text-[13px] font-mono ${user.generation_quota <= 0 ? 'text-[hsl(var(--color-danger))]' : ''}`}>
+                        {user.generation_quota}
+                    </span>
+                </div>
 
-                        {!user.feedback_submitted && (
-                            <>
-                                <div className="h-px bg-[var(--nw-glass-bg-hover)]" />
-                                <div className="flex flex-col gap-2">
-                                    <span className="text-[13px] text-muted-foreground">
-                                        {t('settings.account.feedbackReward')}
-                                    </span>
-                                    <NwButton
-                                        variant="glass"
-                                        onClick={() => setShowForm(true)}
-                                        className="h-9 rounded-lg text-sm"
-                                    >
-                                        <MessageSquarePlus className="h-4 w-4 mr-2" />
-                                        {t('settings.account.submitFeedback')}
-                                    </NwButton>
-                                </div>
-                            </>
-                        )}
+                {!user.feedback_submitted && (
+                    <>
+                        <div className="h-px bg-[var(--nw-glass-bg-hover)]" />
+                        <div className="flex flex-col gap-2">
+                            <span className="text-[13px] text-muted-foreground">
+                                {t('settings.account.feedbackReward')}
+                            </span>
+                            <NwButton
+                                variant="glass"
+                                onClick={() => setShowForm(true)}
+                                className="h-9 rounded-lg text-sm"
+                            >
+                                <MessageSquarePlus className="h-4 w-4 mr-2" />
+                                {t('settings.account.submitFeedback')}
+                            </NwButton>
+                        </div>
                     </>
                 )}
 

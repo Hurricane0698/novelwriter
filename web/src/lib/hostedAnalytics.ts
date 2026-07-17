@@ -1,4 +1,5 @@
 import { api } from '@/services/api'
+import { isHostedRuntime } from '@/lib/runtimeMode'
 
 export type HostedAnalyticsEventName =
   | 'acquisition_landing_view'
@@ -38,7 +39,7 @@ export interface HostedAnalyticsContext {
 const STORAGE_KEY = 'novwr_hosted_writer_beta_analytics_v1'
 
 function isHostedDeployMode() {
-  return (import.meta.env.VITE_DEPLOY_MODE || 'selfhost') === 'hosted'
+  return isHostedRuntime()
 }
 
 function normalizeString(value: unknown, maxLength = 240): string | undefined {

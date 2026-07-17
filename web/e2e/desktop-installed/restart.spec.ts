@@ -1,18 +1,24 @@
 import { test } from '@playwright/test'
 import {
+  assertDesktopLanding,
+  assertDesktopLlmConfigRestored,
   assertSeededDemoVisible,
   assertUploadedNovelVisible,
+  enterLibraryThroughDesktopLanding,
   installInstalledProductFailureGuard,
-  loginThroughInstalledUi,
   readInstalledProductState,
+  testDesktopLlmConnection,
 } from './support'
 
-test('overwrite install preserves the uploaded novel and seeded demo', async ({ page }) => {
+test('overwrite install preserves and reuses encrypted LLM config', async ({ page }) => {
   const failureGuard = installInstalledProductFailureGuard(page)
   const state = await readInstalledProductState()
 
-  await loginThroughInstalledUi(page)
+  await assertDesktopLanding(page)
+  await enterLibraryThroughDesktopLanding(page)
   await assertSeededDemoVisible(page)
   await assertUploadedNovelVisible(page, state)
+  await assertDesktopLlmConfigRestored(page)
+  await testDesktopLlmConnection(page)
   failureGuard.assertClean()
 })

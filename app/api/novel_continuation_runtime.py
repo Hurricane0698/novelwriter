@@ -19,7 +19,6 @@ from app.core.auth import (
     QuotaScope,
     ensure_ai_available,
     reconcile_abandoned_quota_reservations,
-    resolve_generation_billing_source,
 )
 from app.core.continuation_postcheck import postcheck_continuation
 from app.core.continuation_runs import (
@@ -39,6 +38,7 @@ from app.core.continuation_runs import (
 from app.core.events import record_event
 from app.core.generator import continue_novel, continue_novel_stream
 from app.core.llm_semaphore import acquire_llm_slot, release_llm_slot
+from app.core.llm_config import ResolvedLlmConfig
 from app.core.prose_check import prose_check_continuation
 from app.models import Continuation, User
 from app.schemas import ContinueDebugSummary, ContinueRequest, ContinueResponse
@@ -257,10 +257,10 @@ def _raise_if_continuation_run_still_running(
 def _maybe_prepare_continuation_quota(
     *,
     db: Session,
-    request: Request,
     current_user: User,
+    billing_source: str,
 ) -> None:
-    ensure_ai_available(db, billing_source=resolve_generation_billing_source(request))
+    ensure_ai_available(db, billing_source=billing_source)
     if reconcile_abandoned_quota_reservations(db, user_id=current_user.id) > 0:
         try:
             db.refresh(current_user)
@@ -371,12 +371,16 @@ async def _prepare_runtime_context(
     db: Session,
     novel_id: int,
     req: ContinueRequest,
-    request: Request,
     current_user: User,
     resolution: _ContinuationRunResolution,
+    billing_source: str,
 ) -> _ContinuationContext:
     try:
-        _maybe_prepare_continuation_quota(db=db, request=request, current_user=current_user)
+        _maybe_prepare_continuation_quota(
+            db=db,
+            current_user=current_user,
+            billing_source=billing_source,
+        )
         return await run_in_threadpool(
             _prepare_continuation_context,
             db,
@@ -457,7 +461,7 @@ async def handle_continue_request(
     req: ContinueRequest,
     request: Request,
     current_user: User,
-    llm_config: dict[str, Any] | None,
+    llm_config: ResolvedLlmConfig,
 ) -> ContinueResponse:
     run_resolution = await _resolve_continuation_run(
         db=db,
@@ -483,9 +487,9 @@ async def handle_continue_request(
         db=db,
         novel_id=novel_id,
         req=req,
-        request=request,
         current_user=current_user,
         resolution=run_resolution,
+        billing_source=llm_config.billing_source_hint,
     )
 
     quota = QuotaScope(db, current_user.id, count=int(req.num_versions or 1))
@@ -583,7 +587,7 @@ async def handle_continue_stream_request(
     req: ContinueRequest,
     request: Request,
     current_user: User,
-    llm_config: dict[str, Any] | None,
+    llm_config: ResolvedLlmConfig,
 ) -> StreamingResponse:
     run_resolution = await _resolve_continuation_run(
         db=db,
@@ -610,9 +614,9 @@ async def handle_continue_stream_request(
         db=db,
         novel_id=novel_id,
         req=req,
-        request=request,
         current_user=current_user,
         resolution=run_resolution,
+        billing_source=llm_config.billing_source_hint,
     )
 
     request_id = getattr(request.state, "request_id", None)

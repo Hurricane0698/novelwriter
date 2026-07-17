@@ -18,6 +18,7 @@ from app.core.bootstrap import (
     run_bootstrap_job,
 )
 from app.core.indexing.window_index import NovelIndex
+from app.core.llm_config import ResolvedLlmConfig
 from app.database import Base
 from app.models import BootstrapJob, Chapter, Novel, WorldEntity, WorldRelationship
 
@@ -28,6 +29,14 @@ engine = create_engine(
     poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+_LLM_CONFIG = ResolvedLlmConfig(
+    base_url="https://example.com/v1",
+    api_key="k",
+    model="m",
+    billing_source_hint="selfhost",
+    source="selfhost_settings",
+)
 
 
 @pytest.fixture(scope="function")
@@ -104,7 +113,7 @@ async def test_refine_candidates_with_llm_calls_client_once():
         {"Alice": 5, "Bob": 3},
         [("Alice", "Bob", 2)],
         client=fake_client,
-        llm_config={"base_url": "https://example.com/v1", "api_key": "k", "model": "m"},
+        llm_config=_LLM_CONFIG,
         max_candidates=10,
         temperature=0.3,
         user_id=123,
@@ -113,9 +122,7 @@ async def test_refine_candidates_with_llm_calls_client_once():
     assert isinstance(result, BootstrapRefinementResult)
     assert fake_client.calls == 1
     assert (fake_client.last_kwargs or {}).get("user_id") == 123
-    assert (fake_client.last_kwargs or {}).get("base_url") == "https://example.com/v1"
-    assert (fake_client.last_kwargs or {}).get("api_key") == "k"
-    assert (fake_client.last_kwargs or {}).get("model") == "m"
+    assert (fake_client.last_kwargs or {}).get("llm_config") == _LLM_CONFIG
     assert result.entities[0].name == "Alice"
 
 
@@ -130,6 +137,7 @@ async def test_refine_candidates_with_llm_filters_pairs_to_shortlisted_candidate
             ("Alice", "Carol", 10),
         ],
         client=fake_client,
+        llm_config=_LLM_CONFIG,
         max_candidates=2,
     )
 
@@ -148,6 +156,7 @@ async def test_refine_candidates_with_llm_uses_tighter_default_prompt_candidate_
         importance,
         [],
         client=fake_client,
+        llm_config=_LLM_CONFIG,
         max_candidates=200,
     )
 
@@ -184,6 +193,7 @@ async def test_refine_candidates_with_llm_retries_with_narrower_prompt_after_tru
         importance,
         pairs,
         client=fake_client,
+        llm_config=_LLM_CONFIG,
         max_candidates=200,
     )
 
@@ -228,7 +238,7 @@ async def test_run_bootstrap_job_persists_index_entities_and_relationships_engli
         session_factory=TestingSessionLocal,
         client=fake_client,
         user_id=777,
-        llm_config={"base_url": "https://example.com/v1", "api_key": "k", "model": "m"},
+        llm_config=_LLM_CONFIG,
     )
 
     db.expire_all()
@@ -244,9 +254,7 @@ async def test_run_bootstrap_job_persists_index_entities_and_relationships_engli
     assert float(refreshed_job.result["llm_blocking_wait_seconds"]) >= 0.0
     assert refreshed_novel.window_index is not None
     assert (fake_client.last_kwargs or {}).get("user_id") == 777
-    assert (fake_client.last_kwargs or {}).get("base_url") == "https://example.com/v1"
-    assert (fake_client.last_kwargs or {}).get("api_key") == "k"
-    assert (fake_client.last_kwargs or {}).get("model") == "m"
+    assert (fake_client.last_kwargs or {}).get("llm_config") == _LLM_CONFIG
 
     restored_index = NovelIndex.from_msgpack(refreshed_novel.window_index)
     assert "Alice" in restored_index.entity_windows
@@ -289,7 +297,12 @@ async def test_run_bootstrap_job_keeps_mention_only_entities_in_refinement_promp
         }
     )
 
-    await run_bootstrap_job(job.id, session_factory=TestingSessionLocal, client=fake_client)
+    await run_bootstrap_job(
+        job.id,
+        session_factory=TestingSessionLocal,
+        client=fake_client,
+        llm_config=_LLM_CONFIG,
+    )
 
     prompt = (fake_client.last_kwargs or {}).get("prompt") or ""
     assert "- Alice:" in prompt
@@ -331,7 +344,12 @@ async def test_run_bootstrap_job_persists_entities_and_relationships_chinese(db)
         }
     )
 
-    await run_bootstrap_job(job.id, session_factory=TestingSessionLocal, client=fake_client)
+    await run_bootstrap_job(
+        job.id,
+        session_factory=TestingSessionLocal,
+        client=fake_client,
+        llm_config=_LLM_CONFIG,
+    )
 
     db.expire_all()
     refreshed_job = db.query(BootstrapJob).filter(BootstrapJob.id == job.id).first()
@@ -387,7 +405,12 @@ async def test_run_bootstrap_job_defers_state_proto_build_until_world_entities_e
 
     monkeypatch.setattr(bootstrap_module, "execute_state_proto_build", _build)
 
-    await run_bootstrap_job(job.id, session_factory=TestingSessionLocal, client=fake_client)
+    await run_bootstrap_job(
+        job.id,
+        session_factory=TestingSessionLocal,
+        client=fake_client,
+        llm_config=_LLM_CONFIG,
+    )
 
     assert len(seen_target_specs) == 2
     assert seen_target_specs[0] == ()
@@ -443,7 +466,12 @@ async def test_run_bootstrap_job_builds_state_proto_before_refinement_in_hosted_
 
     monkeypatch.setattr(bootstrap_module, "execute_state_proto_build", _build)
 
-    await run_bootstrap_job(job.id, session_factory=TestingSessionLocal, client=fake_client)
+    await run_bootstrap_job(
+        job.id,
+        session_factory=TestingSessionLocal,
+        client=fake_client,
+        llm_config=_LLM_CONFIG,
+    )
 
     assert len(seen_target_specs) == 2
     assert seen_target_specs[0] == ()
@@ -476,7 +504,12 @@ async def test_run_bootstrap_job_fails_fast_without_rust_state_proto(db, monkeyp
 
     monkeypatch.setattr(bootstrap_module, "execute_state_proto_build", _build)
 
-    summary = await run_bootstrap_job(job.id, session_factory=TestingSessionLocal, client=_FakeAIClient())
+    summary = await run_bootstrap_job(
+        job.id,
+        session_factory=TestingSessionLocal,
+        client=_FakeAIClient(),
+        llm_config=_LLM_CONFIG,
+    )
 
     assert summary is None
     db.expire_all()
@@ -530,7 +563,12 @@ async def test_bootstrap_dedupes_canonical_relationship_labels(db):
         }
     )
 
-    await run_bootstrap_job(job.id, session_factory=TestingSessionLocal, client=fake_client)
+    await run_bootstrap_job(
+        job.id,
+        session_factory=TestingSessionLocal,
+        client=fake_client,
+        llm_config=_LLM_CONFIG,
+    )
 
     relationships = db.query(WorldRelationship).filter(WorldRelationship.novel_id == novel.id).all()
     assert len(relationships) == 1
@@ -555,7 +593,12 @@ async def test_run_bootstrap_job_captures_non_parse_failure(db):
     db.commit()
 
     failing_client = _FakeAIClient(error=RuntimeError("LLM unavailable"))
-    await run_bootstrap_job(job.id, session_factory=TestingSessionLocal, client=failing_client)
+    await run_bootstrap_job(
+        job.id,
+        session_factory=TestingSessionLocal,
+        client=failing_client,
+        llm_config=_LLM_CONFIG,
+    )
 
     db.expire_all()
     refreshed_job = db.query(BootstrapJob).filter(BootstrapJob.id == job.id).first()
@@ -590,7 +633,12 @@ async def test_run_bootstrap_job_captures_parse_failure(db):
 
     parse_error = StructuredOutputParseError(max_retries=3)
     failing_client = _FakeAIClient(error=parse_error)
-    await run_bootstrap_job(job.id, session_factory=TestingSessionLocal, client=failing_client)
+    await run_bootstrap_job(
+        job.id,
+        session_factory=TestingSessionLocal,
+        client=failing_client,
+        llm_config=_LLM_CONFIG,
+    )
 
     db.expire_all()
     refreshed_job = db.query(BootstrapJob).filter(BootstrapJob.id == job.id).first()
@@ -628,7 +676,12 @@ async def test_run_bootstrap_job_captures_timeout_failure(db, monkeypatch):
     )
 
     hanging_client = _FakeAIClient(delay_seconds=2.0)
-    await run_bootstrap_job(job.id, session_factory=TestingSessionLocal, client=hanging_client)
+    await run_bootstrap_job(
+        job.id,
+        session_factory=TestingSessionLocal,
+        client=hanging_client,
+        llm_config=_LLM_CONFIG,
+    )
 
     db.expire_all()
     refreshed_job = db.query(BootstrapJob).filter(BootstrapJob.id == job.id).first()
@@ -699,7 +752,12 @@ async def test_run_bootstrap_job_index_refresh_only_updates_window_index(db):
         }
     )
 
-    await run_bootstrap_job(job.id, session_factory=TestingSessionLocal, client=fake_client)
+    await run_bootstrap_job(
+        job.id,
+        session_factory=TestingSessionLocal,
+        client=fake_client,
+        llm_config=_LLM_CONFIG,
+    )
 
     db.expire_all()
     refreshed_job = db.query(BootstrapJob).filter(BootstrapJob.id == job.id).first()
@@ -798,7 +856,12 @@ async def test_run_bootstrap_job_reextract_replace_cleans_bootstrap_drafts_only(
         }
     )
 
-    await run_bootstrap_job(job.id, session_factory=TestingSessionLocal, client=fake_client)
+    await run_bootstrap_job(
+        job.id,
+        session_factory=TestingSessionLocal,
+        client=fake_client,
+        llm_config=_LLM_CONFIG,
+    )
 
     db.expire_all()
     refreshed_job = db.query(BootstrapJob).filter(BootstrapJob.id == job.id).first()

@@ -10,6 +10,7 @@ import { NwButton } from '@/components/ui/nw-button'
 import { homeHeroStats } from '@/components/home/homeContent'
 import { HeroGraphBg } from '@/components/home/HeroGraphBg'
 import { HeroVisual } from '@/components/home/HeroVisual'
+import { isHostedRuntime } from '@/lib/runtimeMode'
 
 const staggerContainer = {
   hidden: {},
@@ -23,7 +24,7 @@ const fadeUp = {
 export function HeroSection() {
   const { isLoggedIn } = useAuth()
   const { t } = useUiLocale()
-  const startDestination = isLoggedIn ? '/library' : '/login'
+  const startDestination = isHostedRuntime() && !isLoggedIn ? '/login' : '/library'
   const demoDestination = '/demo'
 
   return (
@@ -69,6 +70,7 @@ export function HeroSection() {
             >
               <Link
                 to={demoDestination}
+                data-testid="home-demo"
                 onClick={() => {
                   void trackHostedAnalyticsEvent('acquisition_cta_click', {
                     meta: { cta: 'hero_demo', destination: demoDestination },
@@ -86,6 +88,7 @@ export function HeroSection() {
             >
               <Link
                 to={startDestination}
+                data-testid="home-start-writing"
                 onClick={() => {
                   void trackHostedAnalyticsEvent('acquisition_cta_click', {
                     meta: { cta: 'hero_start', destination: startDestination },

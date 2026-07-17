@@ -5,6 +5,7 @@ import logging
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 from app.config import get_settings
+from app.core.llm_config import ResolvedLlmConfig
 from app.core.safety_fuses import (
     ensure_ai_available_fresh_session,
     token_usage_recording_disabled,
@@ -62,8 +63,9 @@ _COST_TABLE = {
 }
 _DEFAULT_COST = (0.5, 3)
 _BILLING_SOURCE_HOSTED = "hosted"
-_BILLING_SOURCE_BYOK = "byok"
 _BILLING_SOURCE_SELFHOST = "selfhost"
+_PROVIDER_REQUEST_FAILED_MESSAGE = "LLM provider request failed"
+_TOOL_CALL_UNSUPPORTED_MESSAGE = "LLM provider does not support tool calling"
 
 
 def _estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
@@ -74,30 +76,6 @@ def _estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> fl
     input_rate = configured_input if configured_input > 0 else default_input_rate
     output_rate = configured_output if configured_output > 0 else default_output_rate
     return (prompt_tokens * input_rate + completion_tokens * output_rate) / 1_000_000
-
-
-def _resolve_billing_source(
-    billing_source_hint: str | None,
-    *,
-    using_request_override: bool,
-) -> str:
-    normalized_hint = (billing_source_hint or "").strip().lower()
-
-    if normalized_hint == _BILLING_SOURCE_HOSTED:
-        return _BILLING_SOURCE_HOSTED
-
-    settings = get_settings()
-    if normalized_hint == _BILLING_SOURCE_BYOK:
-        if using_request_override:
-            return _BILLING_SOURCE_BYOK
-        return _BILLING_SOURCE_HOSTED if settings.deploy_mode == "hosted" else _BILLING_SOURCE_SELFHOST
-
-    if normalized_hint == _BILLING_SOURCE_SELFHOST:
-        return _BILLING_SOURCE_SELFHOST
-
-    if settings.deploy_mode == "hosted":
-        return _BILLING_SOURCE_BYOK if using_request_override else _BILLING_SOURCE_HOSTED
-    return _BILLING_SOURCE_SELFHOST
 
 
 def _record_usage(model: str, prompt_tokens: int, completion_tokens: int,
@@ -186,88 +164,78 @@ def _tool_call_unsupported(exc: Exception) -> bool:
     )
 
 
+def _log_provider_failure(
+    *,
+    operation: str,
+    attempt: int | None = None,
+    max_attempts: int | None = None,
+) -> None:
+    metadata: dict[str, Any] = {"llm_operation": operation}
+    if attempt is not None:
+        metadata["llm_attempt"] = attempt
+    if max_attempts is not None:
+        metadata["llm_max_attempts"] = max_attempts
+    logger.warning(_PROVIDER_REQUEST_FAILED_MESSAGE, extra=metadata)
+
+
+def _create_openai_client(llm_config: ResolvedLlmConfig) -> AsyncOpenAI:
+    try:
+        return AsyncOpenAI(
+            base_url=llm_config.base_url,
+            api_key=llm_config.api_key,
+        )
+    except Exception:
+        _log_provider_failure(operation="client_initialization")
+    raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
+
+
+async def _create_completion(
+    client: AsyncOpenAI,
+    *,
+    operation: str,
+    request_kwargs: dict[str, Any],
+) -> Any:
+    try:
+        return await client.chat.completions.create(**request_kwargs)
+    except Exception:
+        _log_provider_failure(operation=operation)
+    raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
+
+
 class AIClient:
     """
-    Multi-model AI client supporting role-based model routing.
-
-    All providers are accessed via the OpenAI-compatible SDK.
-    Per-request overrides (base_url, api_key, model) take precedence over env config.
+    OpenAI-compatible client that consumes an already-resolved runtime config.
     """
-
-    @property
-    def settings(self):
-        """Fetch settings lazily to support hot-reload of .env values."""
-        return get_settings()
-
-    def _get_config(self, role: AgentRole = "default") -> dict:
-        """Get API configuration from runtime settings."""
-        _ = role
-        settings = self.settings
-        if settings.deploy_mode == "hosted":
-            base_url = settings.hosted_llm_base_url or settings.openai_base_url
-            api_key = settings.hosted_llm_api_key or settings.openai_api_key
-            model = settings.hosted_llm_model or settings.openai_model
-        else:
-            base_url = settings.openai_base_url
-            api_key = settings.openai_api_key
-            model = settings.openai_model
-        if base_url.endswith("/chat/completions"):
-            base_url = base_url[: -len("/chat/completions")]
-        base_url = base_url.rstrip("/")
-        return {
-            "base_url": base_url,
-            "api_key": api_key,
-            "model": model,
-        }
-
-    def _resolve_config(
-        self,
-        base_url: str | None = None,
-        api_key: str | None = None,
-        model: str | None = None,
-    ) -> dict:
-        """Resolve LLM config: use per-request values if all 3 provided, else env fallback."""
-        if base_url and api_key and model:
-            if base_url.endswith("/chat/completions"):
-                base_url = base_url[: -len("/chat/completions")]
-            base_url = base_url.rstrip("/")
-            return {"base_url": base_url, "api_key": api_key, "model": model}
-        return self._get_config()
 
     async def generate(
         self,
         prompt: str,
+        *,
+        llm_config: ResolvedLlmConfig,
         system_prompt: str = "You are a professional web novel writer.",
         max_tokens: int = 2000,
         temperature: float = 0.8,
         role: AgentRole = "default",
-        base_url: str | None = None,
-        api_key: str | None = None,
-        model: str | None = None,
-        billing_source_hint: str | None = None,
         user_id: int | None = None,
     ) -> str:
-        usage_billing_source = _resolve_billing_source(
-            billing_source_hint,
-            using_request_override=bool(base_url and api_key and model),
-        )
+        usage_billing_source = llm_config.billing_source_hint
         ensure_ai_available_fresh_session(billing_source=usage_billing_source)
-        config = self._resolve_config(base_url, api_key, model)
-        client = AsyncOpenAI(
-            base_url=config["base_url"],
-            api_key=config["api_key"],
-        )
-        response = await client.chat.completions.create(
-            model=config["model"],
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=max_tokens,
-            temperature=temperature,
+        client = _create_openai_client(llm_config)
+        response = await _create_completion(
+            client,
+            operation="generate",
+            request_kwargs={
+                "model": llm_config.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            },
         )
         if response.usage:
-            _record_usage(config["model"], response.usage.prompt_tokens,
+            _record_usage(llm_config.model, response.usage.prompt_tokens,
                           response.usage.completion_tokens, node_name=role, user_id=user_id,
                           billing_source=usage_billing_source)
         finish_reason = getattr(response.choices[0], "finish_reason", None)
@@ -276,36 +244,27 @@ class AIClient:
                 "generate truncated (max_tokens=%s, finish_reason=%s)",
                 max_tokens,
                 finish_reason,
-                extra={"base_url": config["base_url"], "model": config["model"]},
+                extra={"base_url": llm_config.base_url, "model": llm_config.model},
             )
         return response.choices[0].message.content or ""
 
     async def generate_stream(
         self,
         prompt: str,
+        *,
+        llm_config: ResolvedLlmConfig,
         system_prompt: str = "You are a professional web novel writer.",
         max_tokens: int = 2000,
         temperature: float = 0.8,
         role: AgentRole = "default",
-        base_url: str | None = None,
-        api_key: str | None = None,
-        model: str | None = None,
-        billing_source_hint: str | None = None,
         user_id: int | None = None,
     ):
         """Yield content chunks from streaming LLM response."""
-        usage_billing_source = _resolve_billing_source(
-            billing_source_hint,
-            using_request_override=bool(base_url and api_key and model),
-        )
+        usage_billing_source = llm_config.billing_source_hint
         ensure_ai_available_fresh_session(billing_source=usage_billing_source)
-        config = self._resolve_config(base_url, api_key, model)
-        client = AsyncOpenAI(
-            base_url=config["base_url"],
-            api_key=config["api_key"],
-        )
+        client = _create_openai_client(llm_config)
         request_kwargs = {
-            "model": config["model"],
+            "model": llm_config.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
@@ -314,6 +273,9 @@ class AIClient:
             "temperature": temperature,
             "stream": True,
         }
+        stream: Any = None
+        retry_without_stream_options = False
+        provider_request_failed = False
         try:
             # Provider-dependent; some OpenAI-compatible gateways 400 on unknown params.
             stream = await client.chat.completions.create(
@@ -321,32 +283,49 @@ class AIClient:
                 stream_options={"include_usage": True},
             )
         except Exception as exc:
-            if not _stream_options_unsupported(exc):
-                raise
+            retry_without_stream_options = _stream_options_unsupported(exc)
+            provider_request_failed = not retry_without_stream_options
+
+        if provider_request_failed:
+            _log_provider_failure(operation="generate_stream_create")
+            raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
+
+        if retry_without_stream_options:
             logger.warning(
                 "Streaming include_usage unsupported; retrying without stream_options",
-                exc_info=True,
-                extra={"base_url": config["base_url"], "model": config["model"]},
+                extra={"llm_operation": "generate_stream_create"},
             )
-            stream = await client.chat.completions.create(**request_kwargs)
+            stream = await _create_completion(
+                client,
+                operation="generate_stream_fallback_create",
+                request_kwargs=request_kwargs,
+            )
         prompt_tokens: int | None = None
         completion_tokens: int | None = None
         finish_reason: str | None = None
-        async for chunk in stream:
-            usage = getattr(chunk, "usage", None)
-            if usage:
-                try:
-                    prompt_tokens = int(usage.prompt_tokens)
-                    completion_tokens = int(usage.completion_tokens)
-                except Exception:
-                    pass
-            if chunk.choices:
-                finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
-                if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+        stream_iteration_failed = False
+        try:
+            async for chunk in stream:
+                usage = getattr(chunk, "usage", None)
+                if usage:
+                    try:
+                        prompt_tokens = int(usage.prompt_tokens)
+                        completion_tokens = int(usage.completion_tokens)
+                    except Exception:
+                        pass
+                if chunk.choices:
+                    finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+        except Exception:
+            stream_iteration_failed = True
+
+        if stream_iteration_failed:
+            _log_provider_failure(operation="generate_stream_iterate")
+            raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
         if prompt_tokens is not None and completion_tokens is not None:
             _record_usage(
-                config["model"],
+                llm_config.model,
                 prompt_tokens,
                 completion_tokens,
                 node_name=role,
@@ -358,20 +337,18 @@ class AIClient:
                 "generate_stream truncated (max_tokens=%s, finish_reason=%s)",
                 max_tokens,
                 finish_reason,
-                extra={"base_url": config["base_url"], "model": config["model"]},
+                extra={"base_url": llm_config.base_url, "model": llm_config.model},
             )
 
     async def generate_with_tools(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
+        *,
+        llm_config: ResolvedLlmConfig,
         max_tokens: int = 4000,
         temperature: float = 0.4,
         role: AgentRole = "default",
-        base_url: str | None = None,
-        api_key: str | None = None,
-        model: str | None = None,
-        billing_source_hint: str | None = None,
         user_id: int | None = None,
         tool_choice: str | None = None,
     ) -> ToolLLMResponse:
@@ -379,19 +356,12 @@ class AIClient:
 
         Raises ToolCallUnsupportedError if the provider rejects the tools parameter.
         """
-        usage_billing_source = _resolve_billing_source(
-            billing_source_hint,
-            using_request_override=bool(base_url and api_key and model),
-        )
+        usage_billing_source = llm_config.billing_source_hint
         ensure_ai_available_fresh_session(billing_source=usage_billing_source)
-        config = self._resolve_config(base_url, api_key, model)
-        client = AsyncOpenAI(
-            base_url=config["base_url"],
-            api_key=config["api_key"],
-        )
+        client = _create_openai_client(llm_config)
 
         request_kwargs: dict[str, Any] = {
-            "model": config["model"],
+            "model": llm_config.model,
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
@@ -401,16 +371,25 @@ class AIClient:
         if tool_choice is not None:
             request_kwargs["tool_choice"] = tool_choice
 
+        response: Any = None
+        provider_error_kind: Literal["tool_unsupported", "request_failed"] | None = None
         try:
             response = await client.chat.completions.create(**request_kwargs)
         except Exception as exc:
             if _tool_call_unsupported(exc):
-                raise ToolCallUnsupportedError(str(exc)) from exc
-            raise
+                provider_error_kind = "tool_unsupported"
+            else:
+                provider_error_kind = "request_failed"
+
+        if provider_error_kind == "tool_unsupported":
+            raise ToolCallUnsupportedError(_TOOL_CALL_UNSUPPORTED_MESSAGE) from None
+        if provider_error_kind == "request_failed":
+            _log_provider_failure(operation="generate_with_tools")
+            raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
 
         if response.usage:
             _record_usage(
-                config["model"],
+                llm_config.model,
                 response.usage.prompt_tokens,
                 response.usage.completion_tokens,
                 node_name=role,
@@ -443,15 +422,13 @@ class AIClient:
         self,
         prompt: str,
         response_model: Type[T],
+        *,
+        llm_config: ResolvedLlmConfig,
         system_prompt: str = "You are a professional web novel writer.",
         max_tokens: int = 2000,
         temperature: float = 0.7,
         role: AgentRole = "default",
         max_retries: int = 3,
-        base_url: str | None = None,
-        api_key: str | None = None,
-        model: str | None = None,
-        billing_source_hint: str | None = None,
         user_id: int | None = None,
     ) -> T:
         """
@@ -461,16 +438,9 @@ class AIClient:
             StructuredOutputParseError: If structured output cannot be parsed after retries
             LLMUnavailableError: If the LLM request fails after retries
         """
-        usage_billing_source = _resolve_billing_source(
-            billing_source_hint,
-            using_request_override=bool(base_url and api_key and model),
-        )
+        usage_billing_source = llm_config.billing_source_hint
         ensure_ai_available_fresh_session(billing_source=usage_billing_source)
-        config = self._resolve_config(base_url, api_key, model)
-        client = AsyncOpenAI(
-            base_url=config["base_url"],
-            api_key=config["api_key"],
-        )
+        client = _create_openai_client(llm_config)
 
         schema_json = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
         structured_system = (
@@ -478,14 +448,12 @@ class AIClient:
             f"You MUST respond with valid JSON matching this schema:\n{schema_json}"
         )
 
-        last_request_error: Exception | None = None
-        last_parse_error: Exception | None = None
         saw_response = False
 
         for attempt in range(max_retries):
             try:
                 response = await client.chat.completions.create(
-                    model=config["model"],
+                    model=llm_config.model,
                     messages=[
                         {"role": "system", "content": structured_system},
                         {"role": "user", "content": prompt},
@@ -494,21 +462,18 @@ class AIClient:
                     temperature=temperature,
                     response_format={"type": "json_object"},
                 )
-            except Exception as e:
-                last_request_error = e
-                logger.warning(
-                    "generate_structured request failed (attempt %s/%s)",
-                    attempt + 1,
-                    max_retries,
-                    exc_info=True,
-                    extra={"base_url": config["base_url"], "model": config["model"]},
+            except Exception:
+                _log_provider_failure(
+                    operation="generate_structured",
+                    attempt=attempt + 1,
+                    max_attempts=max_retries,
                 )
                 continue
 
             saw_response = True
             if response.usage:
                 _record_usage(
-                    config["model"],
+                    llm_config.model,
                     response.usage.prompt_tokens,
                     response.usage.completion_tokens,
                     node_name=role,
@@ -527,7 +492,7 @@ class AIClient:
                     finish_reason,
                     len(raw),
                     response_id,
-                    extra={"base_url": config["base_url"], "model": config["model"]},
+                    extra={"base_url": llm_config.base_url, "model": llm_config.model},
                 )
                 raise StructuredOutputParseError(
                     max_retries=1,
@@ -539,8 +504,7 @@ class AIClient:
 
             try:
                 return response_model.model_validate_json(raw)
-            except Exception as e:
-                last_parse_error = e
+            except Exception as exc:
                 logger.warning(
                     "generate_structured parse failed (attempt %s/%s, finish_reason=%s, content_len=%s, response_id=%s)",
                     attempt + 1,
@@ -548,16 +512,18 @@ class AIClient:
                     finish_reason,
                     len(raw),
                     response_id,
-                    exc_info=True,
-                    extra={"base_url": config["base_url"], "model": config["model"]},
+                    extra={
+                        "base_url": llm_config.base_url,
+                        "model": llm_config.model,
+                        "parse_error_type": type(exc).__name__,
+                    },
                 )
                 continue
 
-        if saw_response and last_parse_error is not None:
-            raise StructuredOutputParseError(max_retries=max_retries, last_error=last_parse_error) from last_parse_error
+        if saw_response:
+            raise StructuredOutputParseError(max_retries=max_retries) from None
 
-        err = last_request_error or last_parse_error
-        raise LLMUnavailableError(f"LLM request failed after {max_retries} retries") from err
+        raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
 
 
 ai_client = AIClient()

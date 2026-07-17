@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy.orm import Session, object_session
 
 from app.core.ai_client import AIClient
+from app.core.llm_config import ResolvedLlmConfig
 from app.core.auth import settle_quota_reservation
 from app.core.copilot.messages import CopilotTextKey, get_copilot_text
 from app.core.job_runtime import (
@@ -281,19 +282,6 @@ def check_stale_run(run: CopilotRun) -> bool:
     return True
 
 
-def extract_llm_kwargs(llm_config: dict[str, Any] | None) -> dict[str, Any]:
-    """Extract LLM kwargs from config dict."""
-    kwargs: dict[str, Any] = {}
-    if llm_config:
-        kwargs["base_url"] = llm_config.get("base_url")
-        kwargs["api_key"] = llm_config.get("api_key")
-        kwargs["model"] = llm_config.get("model")
-        kwargs["billing_source_hint"] = llm_config.get(
-            "billing_source_hint", "selfhost"
-        )
-    return kwargs
-
-
 def fail_run(
     db: Session,
     run: CopilotRun,
@@ -314,19 +302,18 @@ def fail_run(
 async def call_copilot_llm(
     system_prompt: str,
     user_prompt: str,
-    llm_config: dict[str, Any] | None,
+    llm_config: ResolvedLlmConfig,
     user_id: int,
 ) -> str:
     client = AIClient()
-    kwargs = extract_llm_kwargs(llm_config)
     return await client.generate(
         prompt=user_prompt,
+        llm_config=llm_config,
         system_prompt=system_prompt,
         max_tokens=4000,
         temperature=0.4,
         role="default",
         user_id=user_id,
-        **kwargs,
     )
 
 

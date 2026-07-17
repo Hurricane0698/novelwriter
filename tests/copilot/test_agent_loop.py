@@ -5,7 +5,7 @@
 
 import pytest
 
-from tests.copilot.runtime_support import noop_coro as _noop_coro
+from tests.copilot.runtime_support import TEST_LLM_CONFIG, noop_coro as _noop_coro
 
 class TestAgentLoop:
     @pytest.fixture
@@ -60,7 +60,7 @@ class TestAgentLoop:
             return db
 
         parsed, tool_evidence, workspace = await _run_tool_loop(
-            test_db_factory, novel.id, session_data, prompt, None, 1, snapshot, scenario, evidence, "task_query",
+            test_db_factory, novel.id, session_data, prompt, TEST_LLM_CONFIG, 1, snapshot, scenario, evidence, "task_query",
         )
         assert parsed["answer"] == "张三是主角"
         assert workspace.tool_call_count >= 1
@@ -110,7 +110,7 @@ class TestAgentLoop:
             return db
 
         parsed, tool_evidence, workspace = await _run_tool_loop(
-            test_db_factory, novel.id, session_data, prompt, None, 1, snapshot, scenario, evidence, "task_query",
+            test_db_factory, novel.id, session_data, prompt, TEST_LLM_CONFIG, 1, snapshot, scenario, evidence, "task_query",
         )
 
         # The find tool actually executed despite the leaked text-form call,
@@ -159,7 +159,7 @@ class TestAgentLoop:
         monkeypatch.setattr("app.core.llm_semaphore.release_llm_slot", lambda: None)
 
         parsed, _, workspace = await _run_tool_loop(
-            lambda: db, novel.id, session_data, prompt, None, 1, snapshot, scenario, evidence, "task_query",
+            lambda: db, novel.id, session_data, prompt, TEST_LLM_CONFIG, 1, snapshot, scenario, evidence, "task_query",
         )
 
         assert parsed["answer"] == "done"
@@ -229,7 +229,7 @@ class TestAgentLoop:
             novel.id,
             session_data,
             "补完张三",
-            None,
+            TEST_LLM_CONFIG,
             1,
             snapshot,
             scenario,
@@ -333,7 +333,7 @@ class TestAgentLoop:
             novel.id,
             session_data,
             prompt,
-            None,
+            TEST_LLM_CONFIG,
             1,
             snapshot,
             scenario,
@@ -392,7 +392,7 @@ class TestAgentLoop:
             return db
 
         parsed, _, workspace = await _run_tool_loop(
-            test_db_factory, novel.id, session_data, prompt, None, 1, snapshot, scenario, evidence, "task_query",
+            test_db_factory, novel.id, session_data, prompt, TEST_LLM_CONFIG, 1, snapshot, scenario, evidence, "task_query",
         )
         assert parsed["answer"] == "预算用尽"
 
@@ -442,7 +442,7 @@ class TestAgentLoop:
             return db
 
         await _run_tool_loop(
-            test_db_factory, novel.id, session_data, prompt, None, 1, snapshot, scenario, evidence, "task_query",
+            test_db_factory, novel.id, session_data, prompt, TEST_LLM_CONFIG, 1, snapshot, scenario, evidence, "task_query",
             run_id="test-persist-run",
         )
         assert len(persist_calls) >= 1
@@ -484,7 +484,7 @@ class TestAgentLoop:
                 "display_title": "张三",
             },
             "你好",
-            None,
+            TEST_LLM_CONFIG,
             1,
             snapshot,
             scenario,

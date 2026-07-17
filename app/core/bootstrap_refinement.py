@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from app.core import bootstrap_text_fallback
 from app.core.ai_client import AIClient, StructuredOutputParseError, get_client
 from app.core.indexing.builder import ChapterText
+from app.core.llm_config import ResolvedLlmConfig
 from app.core.indexing.state_proto_runtime import StateProtoIndex
 from app.core.indexing.zh_name_rules import (
     get_zh_name_trailing_noise_chars,
@@ -727,7 +728,7 @@ async def refine_candidates_with_llm(
     max_candidates: int = DEFAULT_MAX_CANDIDATES,
     temperature: float = DEFAULT_LLM_TEMPERATURE,
     client: AIClient | None = None,
-    llm_config: dict | None = None,
+    llm_config: ResolvedLlmConfig,
     user_id: int | None = None,
     novel_language: str | None = None,
 ) -> BootstrapRefinementResult:
@@ -735,7 +736,6 @@ async def refine_candidates_with_llm(
         return BootstrapRefinementResult()
 
     prompt_locale = resolve_prompt_locale(novel_language=novel_language)
-    llm_kwargs = llm_config or {}
     ai = client or get_client()
     prompt_candidate_limit = max(
         1,
@@ -767,8 +767,8 @@ async def refine_candidates_with_llm(
                 temperature=temperature,
                 max_tokens=DEFAULT_LLM_MAX_TOKENS,
                 role="editor",
+                llm_config=llm_config,
                 user_id=user_id,
-                **llm_kwargs,
             )
         except StructuredOutputParseError as exc:
             if not _is_truncation_parse_error(exc):

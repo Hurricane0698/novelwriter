@@ -5,8 +5,17 @@
 
 import pytest
 
+from app.core.llm_config import ResolvedLlmConfig
 from app.models import CopilotRun, CopilotSession
 from tests.copilot.runtime_support import TestingSessionLocal
+
+_LLM_CONFIG = ResolvedLlmConfig(
+    base_url="https://example.com/v1",
+    api_key="key",
+    model="model",
+    billing_source_hint="selfhost",
+    source="selfhost_settings",
+)
 
 class TestPromptContracts:
     def test_run_create_keeps_quick_action_prefix_out_of_response_prompt(self, client, db, novel, monkeypatch):
@@ -70,7 +79,7 @@ class TestPromptContracts:
         monkeypatch.setattr("app.core.copilot.runtime_adapters.run_tool_loop", fake_run_tool_loop)
         monkeypatch.setattr("app.core.copilot.suggestions.compile_suggestions", lambda *_args, **_kwargs: [])
 
-        await execute_copilot_run(run.run_id, novel.id, 1, llm_config={"billing_source_hint": "selfhost"})
+        await execute_copilot_run(run.run_id, novel.id, 1, llm_config=_LLM_CONFIG)
 
         db.expire_all()
         run = db.query(CopilotRun).filter(CopilotRun.run_id == run.run_id).one()
@@ -123,7 +132,7 @@ class TestPromptContracts:
         monkeypatch.setattr(db_mod, "SessionLocal", TestingSessionLocal)
         monkeypatch.setattr("app.core.copilot.scope.load_scope_snapshot", fail_after_capturing_context)
 
-        await execute_copilot_run(run.run_id, novel.id, 1, llm_config={"billing_source_hint": "selfhost"})
+        await execute_copilot_run(run.run_id, novel.id, 1, llm_config=_LLM_CONFIG)
 
         db.expire_all()
         run = db.query(CopilotRun).filter(CopilotRun.run_id == run.run_id).one()

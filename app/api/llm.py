@@ -1,30 +1,199 @@
-"""LLM test endpoint — validate user-supplied API config."""
+"""Desktop LLM configuration and provider capability probes."""
 
+from collections.abc import Awaitable, Callable
 import json
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.core.auth import get_current_user_or_default
+from app.config import Settings, get_settings
 from app.core.ai_client import (
     _record_usage,
-    _resolve_billing_source,
     _stream_options_unsupported,
 )
-from app.core.llm_request import get_llm_config, read_llm_override
+from app.core.auth import get_current_user_or_default
+from app.core.llm_config import (
+    LLM_CONFIG_API_KEY_INVALID_CODE,
+    LLM_CONFIG_API_KEY_INVALID_MESSAGE,
+    LLM_CONFIG_DESKTOP_ONLY_CODE,
+    LlmConfigError,
+    delete_desktop_llm_config,
+    get_desktop_llm_config_store,
+    load_desktop_llm_config,
+    save_desktop_llm_config,
+)
+from app.core.llm_request import get_llm_config
 from app.core.safety_fuses import ensure_ai_available
+from app.database import get_db
+from app.schemas import (
+    DesktopLlmConfigPutRequest,
+    DesktopLlmConfigResponse,
+    LlmProbeCapabilitiesResponse,
+    LlmProbeResponse,
+)
 
-router = APIRouter(prefix="/api/llm", tags=["llm"])
+_DESKTOP_APP_ORIGIN = "http://127.0.0.1:8000"
+_DESKTOP_ORIGIN_FORBIDDEN_CODE = "desktop_origin_forbidden"
+_DESKTOP_API_KEY_REQUIRED_CODE = "desktop_llm_api_key_required"
+_LLM_REQUEST_INVALID_CODE = "llm_request_invalid"
+_LLM_REQUEST_INVALID_MESSAGE = "LLM request validation failed."
+_PROBE_COMPATIBLE_CODE = "llm_probe_compatible"
+_PROBE_CONNECTION_FAILED_CODE = "llm_probe_connection_failed"
+_PROBE_CAPABILITY_MISMATCH_CODE = "llm_probe_capability_mismatch"
 
 
-def _probe_error_message(exc: Exception) -> str:
-    text = str(exc).strip()
-    if not text:
-        return type(exc).__name__
-    return text
+def _validation_error_targets_api_key(exc: RequestValidationError) -> bool:
+    for error in exc.errors():
+        location = error.get("loc", ())
+        if any(
+            isinstance(part, str) and part.replace("_", "").casefold() == "apikey"
+            for part in location
+        ):
+            return True
+    return False
+
+
+class _SanitizedLlmValidationRoute(APIRoute):
+    def get_route_handler(self) -> Callable[[Request], Awaitable[Response]]:
+        original_handler = super().get_route_handler()
+
+        async def sanitized_handler(request: Request) -> Response:
+            try:
+                return await original_handler(request)
+            except RequestValidationError as exc:
+                api_key_error = _validation_error_targets_api_key(exc)
+                return JSONResponse(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    content={
+                        "detail": {
+                            "code": (
+                                LLM_CONFIG_API_KEY_INVALID_CODE
+                                if api_key_error
+                                else _LLM_REQUEST_INVALID_CODE
+                            ),
+                            "message": (
+                                LLM_CONFIG_API_KEY_INVALID_MESSAGE
+                                if api_key_error
+                                else _LLM_REQUEST_INVALID_MESSAGE
+                            ),
+                        }
+                    },
+                )
+
+        return sanitized_handler
+
+
+router = APIRouter(
+    prefix="/api/llm",
+    tags=["llm"],
+    route_class=_SanitizedLlmValidationRoute,
+)
+
+
+def _raise_llm_config_error(exc: LlmConfigError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+def _require_desktop_runtime(settings: Settings) -> None:
+    if settings.runtime_mode != "desktop":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": LLM_CONFIG_DESKTOP_ONLY_CODE,
+                "message": "Desktop LLM configuration is available only in desktop mode.",
+            },
+        )
+
+
+def _require_desktop_origin(request: Request) -> None:
+    if request.headers.get("origin") != _DESKTOP_APP_ORIGIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": _DESKTOP_ORIGIN_FORBIDDEN_CODE,
+                "message": "Desktop credential changes require the desktop app origin.",
+            },
+        )
+
+
+def _desktop_config_response(stored) -> DesktopLlmConfigResponse:
+    if stored is None:
+        return DesktopLlmConfigResponse(
+            configured=False,
+            base_url="",
+            model="",
+            api_key_configured=False,
+        )
+    return DesktopLlmConfigResponse(
+        configured=True,
+        base_url=stored.base_url,
+        model=stored.model,
+        api_key_configured=True,
+    )
+
+
+@router.get("/config", response_model=DesktopLlmConfigResponse)
+def get_desktop_llm_config() -> DesktopLlmConfigResponse:
+    settings = get_settings()
+    _require_desktop_runtime(settings)
+    try:
+        stored = load_desktop_llm_config(get_desktop_llm_config_store(settings))
+    except LlmConfigError as exc:
+        _raise_llm_config_error(exc)
+    return _desktop_config_response(stored)
+
+
+@router.put("/config", response_model=DesktopLlmConfigResponse)
+def put_desktop_llm_config(
+    body: DesktopLlmConfigPutRequest,
+    request: Request,
+) -> DesktopLlmConfigResponse:
+    settings = get_settings()
+    _require_desktop_runtime(settings)
+    _require_desktop_origin(request)
+    try:
+        store = get_desktop_llm_config_store(settings)
+        if body.api_key is not None:
+            api_key = body.api_key.get_secret_value()
+        else:
+            existing = load_desktop_llm_config(store)
+            api_key = existing.api_key if existing is not None else ""
+        if not api_key:
+            raise LlmConfigError(
+                code=_DESKTOP_API_KEY_REQUIRED_CODE,
+                message="API key is required when configuring a desktop model for the first time.",
+            )
+        saved = save_desktop_llm_config(
+            store,
+            base_url=body.base_url,
+            api_key=api_key,
+            model=body.model,
+        )
+    except LlmConfigError as exc:
+        _raise_llm_config_error(exc)
+    return DesktopLlmConfigResponse(
+        configured=True,
+        base_url=saved.base_url,
+        model=saved.model,
+        api_key_configured=True,
+    )
+
+
+@router.delete("/config", status_code=status.HTTP_204_NO_CONTENT)
+def remove_desktop_llm_config(request: Request) -> Response:
+    settings = get_settings()
+    _require_desktop_runtime(settings)
+    _require_desktop_origin(request)
+    try:
+        delete_desktop_llm_config(get_desktop_llm_config_store(settings))
+    except LlmConfigError as exc:
+        _raise_llm_config_error(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 async def _probe_stream_support(client: AsyncOpenAI, model: str) -> None:
@@ -61,61 +230,38 @@ async def _probe_json_mode_support(client: AsyncOpenAI, model: str) -> None:
         raise ValueError("JSON mode response is not an object")
 
 
-def _build_capability_error(capabilities: dict[str, bool], errors: dict[str, str]) -> str:
-    missing: list[str] = []
-    if not capabilities["stream"]:
-        missing.append("流式输出（续写）")
-    if not capabilities["json_mode"]:
-        missing.append("JSON 模式（世界生成 / Bootstrap）")
-
-    if not missing:
-        return errors.get("basic") or "连接失败"
-
-    missing_text = "、".join(missing)
-    detail_parts = [errors[key] for key in ("stream", "json_mode") if errors.get(key)]
-    detail = f"；详情：{'；'.join(detail_parts)}" if detail_parts else ""
-    return f"基础连接成功，但当前模型/接口不支持 {missing_text}{detail}"
-
-
-@router.post("/test")
+@router.post("/test", response_model=LlmProbeResponse)
 async def test_llm_connection(
     request: Request,
     _user=Depends(get_current_user_or_default),
     db: Session = Depends(get_db),
 ):
-    """Send a minimal completion request to validate LLM config from headers."""
+    """Probe the exact configuration that application AI calls will use."""
+    settings = get_settings()
+    if settings.runtime_mode == "desktop":
+        _require_desktop_origin(request)
     config = get_llm_config(request)
-    if not config or not config.get("base_url") or not config.get("api_key") or not config.get("model"):
-        raise HTTPException(status_code=400, detail="Missing LLM config headers (X-LLM-Base-Url, X-LLM-Api-Key, X-LLM-Model)")
-
-    using_request_override = read_llm_override(request).is_complete()
-    billing_source = _resolve_billing_source(
-        config.get("billing_source_hint"),
-        using_request_override=using_request_override,
-    )
+    billing_source = config.billing_source_hint
     ensure_ai_available(db, billing_source=billing_source)
 
-    base_url = config["base_url"]
-    if base_url.endswith("/chat/completions"):
-        base_url = base_url[: -len("/chat/completions")]
-    base_url = base_url.rstrip("/")
-
-    client = AsyncOpenAI(
-        base_url=base_url,
-        api_key=config["api_key"],
-        timeout=10.0,
-    )
-
     start = time.perf_counter()
-    capabilities = {"basic": False, "stream": False, "json_mode": False}
-    errors: dict[str, str] = {}
+    capabilities = LlmProbeCapabilitiesResponse(
+        basic=False,
+        stream=False,
+        json_mode=False,
+    )
     try:
+        client = AsyncOpenAI(
+            base_url=config.base_url,
+            api_key=config.api_key,
+            timeout=10.0,
+        )
         response = await client.chat.completions.create(
-            model=config["model"],
+            model=config.model,
             messages=[{"role": "user", "content": "hi"}],
             max_tokens=1,
         )
-        capabilities["basic"] = True
+        capabilities.basic = True
         usage = getattr(response, "usage", None)
         if usage is not None:
             try:
@@ -125,7 +271,7 @@ async def test_llm_connection(
                 pass
             else:
                 _record_usage(
-                    config["model"],
+                    config.model,
                     prompt_tokens,
                     completion_tokens,
                     endpoint="/api/llm/test",
@@ -134,37 +280,34 @@ async def test_llm_connection(
                     billing_source=billing_source,
                 )
         latency_ms = round((time.perf_counter() - start) * 1000)
-    except Exception as e:
-        errors["basic"] = _probe_error_message(e)
-        return {
-            "ok": False,
-            "model": config["model"],
-            "latency_ms": round((time.perf_counter() - start) * 1000),
-            "capabilities": capabilities,
-            "error": f"基础连接失败：{errors['basic']}",
-        }
+    except Exception:
+        return LlmProbeResponse(
+            code=_PROBE_CONNECTION_FAILED_CODE,
+            model=config.model,
+            latency_ms=round((time.perf_counter() - start) * 1000),
+            capabilities=capabilities,
+        )
 
     try:
-        await _probe_stream_support(client, config["model"])
-        capabilities["stream"] = True
-    except Exception as e:
-        errors["stream"] = _probe_error_message(e)
+        await _probe_stream_support(client, config.model)
+        capabilities.stream = True
+    except Exception:
+        pass
 
     try:
-        await _probe_json_mode_support(client, config["model"])
-        capabilities["json_mode"] = True
-    except Exception as e:
-        errors["json_mode"] = _probe_error_message(e)
+        await _probe_json_mode_support(client, config.model)
+        capabilities.json_mode = True
+    except Exception:
+        pass
 
-    ok = all(capabilities.values())
-    payload = {
-        "ok": ok,
-        "model": config["model"],
-        "latency_ms": latency_ms,
-        "capabilities": capabilities,
-    }
-    if ok:
-        payload["message"] = "连接与应用兼容性检测通过"
-    else:
-        payload["error"] = _build_capability_error(capabilities, errors)
-    return payload
+    code = (
+        _PROBE_COMPATIBLE_CODE
+        if capabilities.stream and capabilities.json_mode
+        else _PROBE_CAPABILITY_MISMATCH_CODE
+    )
+    return LlmProbeResponse(
+        code=code,
+        model=config.model,
+        latency_ms=latency_ms,
+        capabilities=capabilities,
+    )

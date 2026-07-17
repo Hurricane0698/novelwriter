@@ -18,6 +18,7 @@ from typing import Any, Awaitable, Callable
 from sqlalchemy.orm import Session
 
 from app.core.ai_client import ToolCallUnsupportedError
+from app.core.llm_config import ResolvedLlmConfig
 from app.core.copilot.prompt_contract import PromptBuild
 from app.core.copilot.prompting import (
     apply_quick_action_prompt,
@@ -55,7 +56,7 @@ class OneShotDeps:
     release_llm_slot: Callable[[], None]
     renew_run_lease: Callable[..., bool]
     call_copilot_llm: Callable[
-        [str, str, dict[str, Any] | None, int], Awaitable[str]
+        [str, str, ResolvedLlmConfig, int], Awaitable[str]
     ] = call_copilot_llm
     parse_llm_response: Callable[[str], dict[str, Any]] = parse_llm_response
     build_system_prompt: Callable[
@@ -126,7 +127,7 @@ async def run_one_shot(
     session_data: dict[str, Any],
     turn_intent: str,
     prompt: str,
-    llm_config: dict[str, Any] | None,
+    llm_config: ResolvedLlmConfig,
     user_id: int,
     run_id: str = "",
     worker_id: str = "",
@@ -166,7 +167,7 @@ async def _run_with_degradation(
     session_data: dict[str, Any],
     turn_intent: str,
     prompt: str,
-    llm_config: dict[str, Any] | None,
+    llm_config: ResolvedLlmConfig,
     user_id: int,
     run_id: str,
     worker_id: str,
@@ -255,7 +256,7 @@ async def execute_copilot_run(
     run_id: str,
     novel_id: int,
     user_id: int,
-    llm_config: dict[str, Any] | None,
+    llm_config: ResolvedLlmConfig,
 ) -> None:
     """Execute one copilot run while keeping the root module as facade."""
     from app.database import SessionLocal

@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { PerformanceModeProvider } from '@/contexts/PerformanceModeContext'
 import { UiLocaleProvider } from '@/contexts/UiLocaleContext'
 import { PageShell } from '@/components/layout/PageShell'
+import { isHostedRuntime } from '@/lib/runtimeMode'
 
 const Home = lazy(() => import('@/pages/Home'))
 const Login = lazy(() => import('@/pages/Login'))
@@ -44,15 +45,21 @@ function Layout() {
   )
 }
 
-function RequireAuth() {
+export function RequireAuth() {
   const { isLoggedIn, isLoading } = useAuth()
   const location = useLocation()
 
+  if (!isHostedRuntime()) return <Outlet />
   if (isLoading) return null
   if (!isLoggedIn) {
     return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
   }
   return <Outlet />
+}
+
+function LoginRoute() {
+  if (!isHostedRuntime()) return <Navigate to="/" replace />
+  return <Login />
 }
 
 export default function App() {
@@ -91,7 +98,7 @@ export default function App() {
                     </Route>
                   </Route>
                   {/* Login (standalone) */}
-                  <Route path="/login" element={<Login />} />
+                  <Route path="/login" element={<LoginRoute />} />
                 </Routes>
               </Suspense>
             </AuthProvider>

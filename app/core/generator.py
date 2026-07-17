@@ -23,6 +23,7 @@ from app.core.text import PromptKey, get_prompt
 from app.core.text.snippets import SnippetKey, get_snippet
 from app.config import get_settings, resolve_context_chapters
 from app.core.chapter_numbering import get_next_missing_chapter_number, load_recent_chapters
+from app.core.llm_config import ResolvedLlmConfig
 from app.language import resolve_prompt_locale
 from app.language_policy import get_language_policy
 
@@ -269,7 +270,8 @@ async def continue_novel(
     world_context: str | None = None,
     narrative_constraints: str | None = None,
     world_debug_summary: dict | None = None,
-    llm_config: dict | None = None,
+    *,
+    llm_config: ResolvedLlmConfig,
     temperature: float | None = None,
     user_id: int | None = None,
 ) -> List[Continuation]:
@@ -309,9 +311,7 @@ async def continue_novel(
 
     # Generate continuations
     continuations = []
-    llm_kwargs = llm_config or {}
-    if temperature is not None:
-        llm_kwargs["temperature"] = temperature
+    generation_temperature = 0.8 if temperature is None else temperature
     for i in range(num_versions):
         logger.info(f"Generating continuation {i+1}/{num_versions} for novel {novel_id}")
 
@@ -319,8 +319,9 @@ async def continue_novel(
             prompt=generation_prompt,
             system_prompt=system_prompt,
             max_tokens=effective_max_tokens,
+            temperature=generation_temperature,
+            llm_config=llm_config,
             user_id=user_id,
-            **llm_kwargs,
         )
 
         content = _sanitize_continuation_content(content)
@@ -354,7 +355,8 @@ async def continue_novel_stream(
     world_context: str | None = None,
     narrative_constraints: str | None = None,
     world_debug_summary: dict | None = None,
-    llm_config: dict | None = None,
+    *,
+    llm_config: ResolvedLlmConfig,
     request_id: str | None = None,
     temperature: float | None = None,
     user_id: int | None = None,
@@ -375,9 +377,7 @@ async def continue_novel_stream(
     next_chapter = build_info["next_chapter"]
     novel_language = build_info.get("novel_language")
     system_prompt = build_info["system_prompt"]
-    llm_kwargs = llm_config or {}
-    if temperature is not None:
-        llm_kwargs["temperature"] = temperature
+    generation_temperature = 0.8 if temperature is None else temperature
 
     def _error_event(*, code: str, message: str, message_key: str | None = None, variant: int | None = None) -> dict:
         event: dict = {"type": "error", "code": code, "message": message}
@@ -404,8 +404,9 @@ async def continue_novel_stream(
             prompt=generation_prompt,
             system_prompt=system_prompt,
             max_tokens=effective_max_tokens,
+            temperature=generation_temperature,
+            llm_config=llm_config,
             user_id=user_id,
-            **llm_kwargs,
         ):
             full_content += chunk
             yield {"type": "token", "variant": 0, "content": chunk}
@@ -461,8 +462,9 @@ async def continue_novel_stream(
                     prompt=generation_prompt,
                     system_prompt=system_prompt,
                     max_tokens=effective_max_tokens,
+                    temperature=generation_temperature,
+                    llm_config=llm_config,
                     user_id=user_id,
-                    **llm_kwargs,
                 )
 
                 content = _sanitize_continuation_content(content)

@@ -1,12 +1,21 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type Page, type Response } from '@playwright/test'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 export const INSTALLED_ORIGIN = 'http://127.0.0.1:8000'
 export const INSTALLED_NOVEL_TITLE = 'NovWr Desktop Installed Smoke'
 
-const INSTALLED_USERNAME = 'desktop-installed'
-const INSTALLED_PASSWORD = 'desktop-installed'
+function requiredEnvironmentValue(name: string): string {
+  const value = process.env[name]?.trim()
+  if (!value) {
+    throw new Error(`${name} must be set for the installed desktop test.`)
+  }
+  return value
+}
+
+export const INSTALLED_LLM_BASE_URL = requiredEnvironmentValue('NOVWR_DESKTOP_E2E_LLM_BASE_URL')
+export const INSTALLED_LLM_API_KEY = requiredEnvironmentValue('NOVWR_DESKTOP_E2E_LLM_API_KEY')
+export const INSTALLED_LLM_MODEL = requiredEnvironmentValue('NOVWR_DESKTOP_E2E_LLM_MODEL')
 
 export interface InstalledProductState {
   novelId: number
@@ -55,23 +64,94 @@ export function installInstalledProductFailureGuard(page: Page) {
   }
 }
 
-export async function loginThroughInstalledUi(page: Page) {
+export async function assertDesktopLanding(page: Page) {
+  await page.goto('/')
+  await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/`)
+  await expect(page.getByTestId('home-start-writing')).toBeVisible()
+}
+
+export async function assertDesktopLoginRouteRemoved(page: Page) {
   await page.goto('/login')
-  await expect(page.getByTestId('login-form')).toBeVisible()
-  await page.getByLabel('用户名').fill(INSTALLED_USERNAME)
-  await page.getByLabel('密码').fill(INSTALLED_PASSWORD)
-  const loginResponsePromise = page.waitForResponse((response) => (
-    response.url() === `${INSTALLED_ORIGIN}/api/auth/login`
-    && response.request().method() === 'POST'
-  ))
-  await page.getByTestId('login-submit').click()
-  const loginResponse = await loginResponsePromise
-  expect(
-    loginResponse.ok(),
-    `Installed login returned HTTP ${loginResponse.status()}.`,
-  ).toBe(true)
+  await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/`)
+  await expect(page.getByTestId('home-start-writing')).toBeVisible()
+}
+
+export async function enterLibraryThroughDesktopLanding(page: Page) {
+  await page.getByTestId('home-start-writing').click()
   await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/library`, { timeout: 60_000 })
   await expect(page.getByTestId('library-create-novel')).toBeVisible()
+}
+
+function isLlmConfigResponse(response: Response, method: string) {
+  return response.url() === `${INSTALLED_ORIGIN}/api/llm/config`
+    && response.request().method() === method
+}
+
+function isLlmTestResponse(response: Response) {
+  return response.url() === `${INSTALLED_ORIGIN}/api/llm/test`
+    && response.request().method() === 'POST'
+}
+
+export async function saveDesktopLlmConfig(page: Page) {
+  const loadResponsePromise = page.waitForResponse((response) => isLlmConfigResponse(response, 'GET'))
+  await page.goto('/settings')
+  const loadResponse = await loadResponsePromise
+  expect(loadResponse.ok(), `Desktop LLM config load returned HTTP ${loadResponse.status()}.`).toBe(true)
+
+  const baseUrlInput = page.locator('#llm-base-url')
+  const apiKeyInput = page.locator('#llm-api-key')
+  const modelInput = page.locator('#llm-model')
+  await expect(baseUrlInput).toHaveValue('')
+  await expect(apiKeyInput).toHaveValue('')
+  await expect(modelInput).toHaveValue('')
+
+  await baseUrlInput.fill(INSTALLED_LLM_BASE_URL)
+  await apiKeyInput.fill(INSTALLED_LLM_API_KEY)
+  await modelInput.fill(INSTALLED_LLM_MODEL)
+
+  const saveButton = page.getByTestId('llm-config-save')
+  await expect(saveButton).toBeEnabled()
+  const saveResponsePromise = page.waitForResponse((response) => isLlmConfigResponse(response, 'PUT'))
+  await saveButton.click()
+  const saveResponse = await saveResponsePromise
+  expect(saveResponse.ok(), `Desktop LLM config save returned HTTP ${saveResponse.status()}.`).toBe(true)
+
+  await expect(page.getByTestId('llm-config-result')).toBeVisible()
+  await expect(baseUrlInput).toHaveValue(INSTALLED_LLM_BASE_URL)
+  await expect(apiKeyInput).toHaveValue('')
+  await expect(modelInput).toHaveValue(INSTALLED_LLM_MODEL)
+  await expect(page.getByTestId('llm-api-key-configured')).toBeVisible()
+}
+
+export async function assertDesktopLlmConfigRestored(page: Page) {
+  const loadResponsePromise = page.waitForResponse((response) => isLlmConfigResponse(response, 'GET'))
+  await page.goto('/settings')
+  const loadResponse = await loadResponsePromise
+  expect(loadResponse.ok(), `Desktop LLM config reload returned HTTP ${loadResponse.status()}.`).toBe(true)
+
+  await expect(page.locator('#llm-base-url')).toHaveValue(INSTALLED_LLM_BASE_URL)
+  await expect(page.locator('#llm-api-key')).toHaveValue('')
+  await expect(page.locator('#llm-model')).toHaveValue(INSTALLED_LLM_MODEL)
+  await expect(page.getByTestId('llm-api-key-configured')).toBeVisible()
+}
+
+export async function testDesktopLlmConnection(page: Page) {
+  const testButton = page.getByTestId('llm-config-test')
+  await expect(testButton).toBeEnabled()
+  const testResponsePromise = page.waitForResponse(isLlmTestResponse)
+  await testButton.click()
+  const testResponse = await testResponsePromise
+  expect(testResponse.ok(), `Desktop LLM connection test returned HTTP ${testResponse.status()}.`).toBe(true)
+  expect(await testResponse.json()).toMatchObject({
+    ok: true,
+    model: INSTALLED_LLM_MODEL,
+    capabilities: {
+      basic: true,
+      stream: true,
+      json_mode: true,
+    },
+  })
+  await expect(page.getByTestId('llm-config-result')).toContainText('连接与应用兼容性检测通过')
 }
 
 export async function assertSeededDemoVisible(page: Page) {

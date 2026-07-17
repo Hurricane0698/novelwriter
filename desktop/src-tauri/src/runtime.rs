@@ -33,11 +33,14 @@ const FORCED_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const PROCESS_MONITOR_INTERVAL: Duration = Duration::from_secs(1);
 const STATIC_ROOT_MARKER: &str = "<div id=\"root\">";
 const SHUTDOWN_EVENT_ENVIRONMENT_KEY: &str = "NOVWR_DESKTOP_SHUTDOWN_EVENT";
+const LLM_CONFIG_PATH_ENVIRONMENT_KEY: &str = "NOVWR_DESKTOP_LLM_CONFIG_PATH";
 
-const MODEL_CREDENTIAL_ENVIRONMENT_KEYS: [&str; 6] = [
+// OPENAI_LOG can emit complete prompts to stderr, which desktop persists on disk.
+const LLM_ENVIRONMENT_KEYS_TO_REMOVE: [&str; 7] = [
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
     "OPENAI_MODEL",
+    "OPENAI_LOG",
     "HOSTED_LLM_API_KEY",
     "HOSTED_LLM_BASE_URL",
     "HOSTED_LLM_MODEL",
@@ -436,6 +439,10 @@ fn runtime_environment(paths: &AppPaths, jwt_secret: &str) -> EnvironmentDelta {
         .with_set("NOVWR_DESKTOP_DATA_DIR", paths.data.as_os_str())
         .with_set("NOVWR_DESKTOP_JWT_SECRET", jwt_secret)
         .with_set(
+            LLM_CONFIG_PATH_ENVIRONMENT_KEY,
+            paths.llm_config.as_os_str(),
+        )
+        .with_set(
             "BOOTSTRAP_STALE_JOB_TIMEOUT_SECONDS",
             PERSISTENT_JOB_STALE_TIMEOUT_SECONDS.to_string(),
         )
@@ -447,7 +454,7 @@ fn runtime_environment(paths: &AppPaths, jwt_secret: &str) -> EnvironmentDelta {
             "INGEST_JOB_STALE_TIMEOUT_SECONDS",
             PERSISTENT_JOB_STALE_TIMEOUT_SECONDS.to_string(),
         );
-    for name in MODEL_CREDENTIAL_ENVIRONMENT_KEYS {
+    for name in LLM_ENVIRONMENT_KEYS_TO_REMOVE {
         environment.remove(name);
     }
     environment
@@ -594,16 +601,21 @@ mod tests {
     }
 
     #[test]
-    fn desktop_urls_and_model_credential_boundary_are_fixed() {
+    fn desktop_urls_and_llm_environment_boundary_are_fixed() {
         assert_eq!(APP_URL, "http://127.0.0.1:8000/");
         assert_eq!(HEALTH_URL, "http://127.0.0.1:8000/api/health");
         assert_eq!(LOCAL_BIND_ADDRESS, "127.0.0.1:8000");
         assert_eq!(
-            MODEL_CREDENTIAL_ENVIRONMENT_KEYS,
+            LLM_CONFIG_PATH_ENVIRONMENT_KEY,
+            "NOVWR_DESKTOP_LLM_CONFIG_PATH"
+        );
+        assert_eq!(
+            LLM_ENVIRONMENT_KEYS_TO_REMOVE,
             [
                 "OPENAI_API_KEY",
                 "OPENAI_BASE_URL",
                 "OPENAI_MODEL",
+                "OPENAI_LOG",
                 "HOSTED_LLM_API_KEY",
                 "HOSTED_LLM_BASE_URL",
                 "HOSTED_LLM_MODEL",

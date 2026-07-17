@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_novel_access
@@ -35,6 +35,7 @@ from app.core.copilot.session_runtime import list_session_runs
 from app.core.copilot.suggestions import dismiss_suggestions
 from app.core.events import record_event
 from app.core.llm_request import get_llm_config
+from app.core.llm_config import ResolvedLlmConfig
 from app.database import get_db
 from app.models import Novel, User
 from app.schemas import (
@@ -138,9 +139,9 @@ async def run_create(
     novel_id: int,
     session_id: str,
     body: CopilotRunCreateRequest,
-    request: Request,
     novel: Novel = Depends(verify_novel_access),
     user: User = Depends(check_generation_quota),
+    llm_config: ResolvedLlmConfig = Depends(get_llm_config),
     db: Session = Depends(get_db),
 ):
     """Create a new copilot run.
@@ -169,9 +170,6 @@ async def run_create(
     except CopilotError as exc:
         _handle_copilot_error(exc)
         return  # unreachable, silences type checker
-
-    # Resolve LLM config before spawning background task
-    llm_config = get_llm_config(request)
 
     # Spawn background execution
     asyncio.create_task(

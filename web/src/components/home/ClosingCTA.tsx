@@ -12,6 +12,7 @@ import { StageShell } from '@/components/home/StageShell'
 import { ScreenshotStageAsset } from '@/components/home/ScreenshotStageAsset'
 import { homeScreenshotAssets } from '@/components/home/homeScreenshotAssets'
 import { sceneManifest } from '@/components/home/screenshotManifest'
+import { isHostedRuntime } from '@/lib/runtimeMode'
 
 /**
  * Closing CTA — rich composition with product preview.
@@ -26,7 +27,7 @@ export function ClosingCTA() {
   const ref = useRef<HTMLDivElement>(null)
   const inView = useInView(ref, { once: true, amount: 0.2 })
   const prefersReducedMotion = useReducedMotion()
-  const startDestination = isLoggedIn ? '/library' : '/login'
+  const startDestination = isHostedRuntime() && !isLoggedIn ? '/login' : '/library'
   const demoDestination = '/demo'
   const shouldAnimateAmbient = inView && !prefersReducedMotion
 

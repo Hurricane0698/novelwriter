@@ -3,7 +3,7 @@
 /* eslint-disable react-refresh/only-export-components */
 
 import { useEffect, useState } from "react"
-import { Link, useLocation, useNavigate } from "react-router-dom"
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom"
 import { Github } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/contexts/AuthContext"
@@ -15,12 +15,9 @@ import { buildInviteAnalyticsPayload, captureHostedAttributionFromLocation, trac
 import { translateUiMessage, type UiLocale } from "@/lib/uiMessages"
 import { NwButton } from "@/components/ui/nw-button"
 import { ApiError, api } from "@/services/api"
+import { isHostedRuntime } from "@/lib/runtimeMode"
 
 const DEFAULT_POST_LOGIN_DESTINATION = "/library"
-
-function isHostedDeployMode(): boolean {
-    return (import.meta.env.VITE_DEPLOY_MODE || "selfhost") === "hosted"
-}
 
 function resolveSafeClientRedirect(value: string | null | undefined): string {
     const candidate = (value || "").trim()
@@ -91,7 +88,7 @@ function getActivationValidationField(detail: unknown): Exclude<ActivationErrorF
 }
 
 export default function Login() {
-    const isHosted = isHostedDeployMode()
+    const isHosted = isHostedRuntime()
     const { locale, t } = useUiLocale()
 
     // Hosted mode fields
@@ -101,10 +98,6 @@ export default function Login() {
     const [nickname, setNickname] = useState("")
     const [hostedPassword, setHostedPassword] = useState("")
     const [activationErrors, setActivationErrors] = useState<ActivationErrors>({})
-
-    // Selfhost mode fields
-    const [username, setUsername] = useState("")
-    const [password, setPassword] = useState("")
 
     const [isLoading, setIsLoading] = useState(false)
     const [githubLoginEnabled, setGithubLoginEnabled] = useState(false)
@@ -167,32 +160,27 @@ export default function Login() {
 
         setIsLoading(true)
         try {
-            if (isHosted) {
-                if (hostedAuthMode === 'activate') {
-                    setActivationErrors({})
-                    if (!inviteCode || !nickname || !hostedPassword) return
-                    if (hostedPassword.trim().length < 8) {
-                        setActivationFieldError('password', t('login.hosted.password.minLengthError'))
-                        return
-                    }
-                    void trackHostedAnalyticsEvent('invite_gate_submit', {
-                        meta: { method: 'invite' },
-                    })
-                    await activateInvite(inviteCode, nickname, hostedPassword, buildInviteAnalyticsPayload())
-                } else {
-                    if (!nickname || !hostedPassword) return
-                    await login(nickname, hostedPassword)
+            if (hostedAuthMode === 'activate') {
+                setActivationErrors({})
+                if (!inviteCode || !nickname || !hostedPassword) return
+                if (hostedPassword.trim().length < 8) {
+                    setActivationFieldError('password', t('login.hosted.password.minLengthError'))
+                    return
                 }
+                void trackHostedAnalyticsEvent('invite_gate_submit', {
+                    meta: { method: 'invite' },
+                })
+                await activateInvite(inviteCode, nickname, hostedPassword, buildInviteAnalyticsPayload())
             } else {
-                if (!username || !password) return
-                await login(username, password)
+                if (!nickname || !hostedPassword) return
+                await login(nickname, hostedPassword)
             }
             navigate(postLoginDestination, { replace: true })
         } catch (err) {
             if (err instanceof ApiError) {
                 const requestIdSuffix = err.requestId ? t('login.requestIdSuffix', { requestId: err.requestId }) : ""
 
-                if (isHosted && hostedAuthMode === 'activate') {
+                if (hostedAuthMode === 'activate') {
                     if (err.status === 403) {
                         setActivationFieldError('inviteCode', `${t('login.alert.invalidInvite.description')}${requestIdSuffix}`)
                         return
@@ -228,7 +216,7 @@ export default function Login() {
                     }
                     setActivationFieldError('form', `${t('login.hosted.activation.genericError')}${requestIdSuffix}`)
                     return
-                } else if (isHosted && err.status === 503 && err.code === "hosted_user_cap_reached") {
+                } else if (err.status === 503 && err.code === "hosted_user_cap_reached") {
                     await alert({ title: t('login.alert.signupBlocked.title'), description: `${t('login.alert.signupBlocked.description')}${requestIdSuffix}` })
                 } else if (err.status === 401) {
                     await alert({ title: t('login.alert.invalidCredentials.title'), description: `${t('login.alert.invalidCredentials.description')}${requestIdSuffix}` })
@@ -246,7 +234,7 @@ export default function Login() {
                 return
             }
 
-            if (isHosted && hostedAuthMode === 'activate') {
+            if (hostedAuthMode === 'activate') {
                 setActivationFieldError('form', t('login.hosted.activation.networkError'))
             } else {
                 await alert({
@@ -259,6 +247,8 @@ export default function Login() {
         }
     }
 
+    if (!isHosted) return <Navigate to="/" replace />
+
     return (
         <div className="min-h-screen grid items-center justify-center relative overflow-hidden">
             <AnimatedBackground />
@@ -268,9 +258,7 @@ export default function Login() {
                 <div className="flex flex-col gap-3 w-full">
                     <span className="font-mono text-[28px] font-bold text-foreground">NovWr</span>
                     <span className="font-sans text-[15px] text-muted-foreground">
-                        {isHosted
-                            ? t(githubLoginEnabled ? 'login.header.hosted' : 'login.header.hostedInviteOnly')
-                            : t('login.header.selfhost')}
+                        {t(githubLoginEnabled ? 'login.header.hosted' : 'login.header.hostedInviteOnly')}
                     </span>
                 </div>
 
@@ -282,8 +270,7 @@ export default function Login() {
 
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="flex flex-col gap-5 w-full" data-testid="login-form">
-                    {isHosted ? (
-                        <>
+                    <>
                             {githubLoginEnabled ? (
                                 <>
                                     <NwButton
@@ -446,37 +433,7 @@ export default function Login() {
                                     </div>
                                 ) : null}
                             </div>
-                        </>
-                    ) : (
-                        <>
-                            <div className="flex flex-col gap-1.5 w-full">
-                                <label className="text-sm font-medium leading-none" htmlFor="username">
-                                    {t('login.username.label')}
-                                </label>
-                                <Input
-                                    id="username"
-                                    type="text"
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                    className="border-[var(--nw-glass-border)] bg-transparent rounded-lg h-10 focus-visible:ring-2 focus-visible:ring-accent"
-                                    required
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5 w-full">
-                                <label className="text-sm font-medium leading-none" htmlFor="password">
-                                    {t('login.password.label')}
-                                </label>
-                                <Input
-                                    id="password"
-                                    type="password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="border-[var(--nw-glass-border)] bg-transparent rounded-lg h-10 focus-visible:ring-2 focus-visible:ring-accent"
-                                    required
-                                />
-                            </div>
-                        </>
-                    )}
+                    </>
 
                     <NwButton
                         type="submit"
@@ -487,11 +444,9 @@ export default function Login() {
                     >
                         {isLoading
                             ? t('login.submit.loading')
-                            : isHosted
-                                ? hostedAuthMode === 'activate'
-                                    ? t('login.submit.activate')
-                                    : t('login.submit.hostedLogin')
-                                : t('login.submit.selfhost')}
+                            : hostedAuthMode === 'activate'
+                                ? t('login.submit.activate')
+                                : t('login.submit.hostedLogin')}
                     </NwButton>
 
                     <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-1 text-xs text-muted-foreground">

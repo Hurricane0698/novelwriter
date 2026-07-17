@@ -2,7 +2,6 @@
 import React, { createContext, useContext, useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
-import { clearLlmConfig } from '@/lib/llmConfigStore';
 
 interface User {
     id: number;
@@ -103,7 +102,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } finally {
             await queryClient.cancelQueries();
             queryClient.clear();
-            clearLlmConfig();
             setUser(null);
             setIsLoading(false);
         }

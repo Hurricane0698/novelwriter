@@ -13,7 +13,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.config import Settings
 from app.database import Base, get_db
+from app.core.llm_config import ResolvedLlmConfig
 from app.models import Novel, TokenUsage, User, WorldGenerationRun
 
 
@@ -23,6 +25,17 @@ engine = create_engine(
     poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def _hosted_settings(**overrides) -> Settings:
+    return Settings(
+        deploy_mode="hosted",
+        hosted_llm_base_url="https://hosted.example/v1",
+        hosted_llm_api_key="hosted-key",
+        hosted_llm_model="hosted-model",
+        _env_file=None,
+        **overrides,
+    )
 
 
 @pytest.fixture(scope="function")
@@ -39,10 +52,8 @@ def db():
 @pytest.fixture(scope="function")
 def hosted_settings(_force_selfhost_settings):  # ensure conftest runs first
     import app.config as config_mod
-    from app.config import Settings
-
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(deploy_mode="hosted", _env_file=None)
+    config_mod._settings_instance = _hosted_settings()
     try:
         yield
     finally:
@@ -191,7 +202,6 @@ def test_generate_world_duplicate_click_beats_quota_exhaustion(client, db, hoste
 
 def test_generate_world_does_not_reclaim_old_running_row_on_timeout(client, db, hosted_user, novel, monkeypatch):
     import app.config as config_mod
-    from app.config import Settings
     from app.core.world import generation_application as generation_app
 
     before = hosted_user.generation_quota
@@ -209,10 +219,8 @@ def test_generate_world_does_not_reclaim_old_running_row_on_timeout(client, db, 
     db.commit()
 
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(
-        deploy_mode="hosted",
+    config_mod._settings_instance = _hosted_settings(
         generation_run_stale_timeout_seconds=1,
-        _env_file=None,
     )
     try:
         monkeypatch.setattr(
@@ -312,12 +320,11 @@ def test_generate_world_rejects_byok_when_ai_budget_hard_stop_is_reached(
     monkeypatch,
 ):
     import app.config as config_mod
-    from app.config import Settings
     from app.core.world import generation_application as generation_app
     from app.schemas import WorldGenerateResponse
 
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
+    config_mod._settings_instance = _hosted_settings(ai_hard_stop_usd=1.0)
     try:
         db.add(
             TokenUsage(
@@ -398,7 +405,13 @@ async def test_generate_world_records_setting_import_project_start_and_success_e
         text="这是一段足够长的世界观设定文本。",
         db=db,
         current_user=hosted_user,
-        llm_config=None,
+        llm_config=ResolvedLlmConfig(
+            base_url="https://hosted.example/v1",
+            api_key="hosted-key",
+            model="hosted-model",
+            billing_source_hint="hosted",
+            source="hosted_settings",
+        ),
         generate_world_drafts_fn=_runner,
         acquire_llm_slot_fn=_acquire,
         release_llm_slot_fn=lambda: None,

@@ -15,6 +15,12 @@ from app.core.bootstrap_contract import (
     is_stale_running_job,
 )
 from app.core.indexing.chapters import has_non_empty_chapter_text
+from app.core.llm_config import (
+    LLM_CONFIG_INCOMPLETE_CODE,
+    LLM_CONFIG_MISSING_CODE,
+    LlmConfigError,
+    resolve_llm_config,
+)
 from app.core.world.bootstrap_state import is_bootstrap_initialized
 from app.models import BootstrapJob, Novel, NovelIngestJob
 
@@ -23,18 +29,13 @@ logger = logging.getLogger(__name__)
 def _auto_bootstrap_llm_ready(settings: Settings) -> bool:
     if bool(getattr(settings, "ai_manual_disable", False)):
         return False
-
-    deploy_mode = str(getattr(settings, "deploy_mode", "") or "").strip().lower()
-    if deploy_mode == "hosted":
-        base_url = getattr(settings, "hosted_llm_base_url", None) or getattr(settings, "openai_base_url", None)
-        api_key = getattr(settings, "hosted_llm_api_key", None) or getattr(settings, "openai_api_key", None)
-        model = getattr(settings, "hosted_llm_model", None) or getattr(settings, "openai_model", None)
-    else:
-        base_url = getattr(settings, "openai_base_url", None)
-        api_key = getattr(settings, "openai_api_key", None)
-        model = getattr(settings, "openai_model", None)
-
-    return all(str(value or "").strip() for value in (base_url, api_key, model))
+    try:
+        resolve_llm_config(settings=settings)
+    except LlmConfigError as exc:
+        if exc.code in {LLM_CONFIG_MISSING_CODE, LLM_CONFIG_INCOMPLETE_CODE}:
+            return False
+        raise
+    return True
 
 
 def ensure_ingest_bootstrap_job(

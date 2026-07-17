@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.bootstrap import BootstrapRunSummary
+from app.core.llm_config import ResolvedLlmConfig
 from app.core.world import bootstrap_application as bootstrap_app
 
 
@@ -31,7 +32,13 @@ async def test_run_bootstrap_background_job_records_completion_event():
         99,
         session_factory=lambda: session,
         user_id=7,
-        llm_config={"model": "x"},
+        llm_config=ResolvedLlmConfig(
+            base_url="https://example.com/v1",
+            api_key="key",
+            model="x",
+            billing_source_hint="selfhost",
+            source="selfhost_settings",
+        ),
         bootstrap_runner=_bootstrap_runner,
         record_event_fn=lambda db, user_id, event, novel_id=None, meta=None: recorded.append(
             {

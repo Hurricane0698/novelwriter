@@ -14,6 +14,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.llm_config import BillingSource
 from app.database import SessionLocal
 from app.models import TokenUsage, User
 
@@ -21,7 +22,6 @@ logger = logging.getLogger(__name__)
 
 _HOSTED_SIGNUP_LOCK_KEY = 0x4E4F5657
 _BILLING_SOURCE_HOSTED = "hosted"
-_BILLING_SOURCE_BYOK = "byok"
 
 
 def _detail(code: str, message: str, **extra: object) -> dict[str, object]:
@@ -108,14 +108,10 @@ def get_total_estimated_ai_spend_usd(db: Session) -> float:
         return 0.0
 
 
-def _is_byok_billing_source(billing_source: str | None) -> bool:
-    return (billing_source or "").strip().lower() == _BILLING_SOURCE_BYOK
-
-
 def get_ai_unavailable_detail(
     db: Session,
     *,
-    billing_source: str | None = None,
+    billing_source: BillingSource | None = None,
 ) -> dict[str, object] | None:
     settings = get_settings()
 
@@ -127,9 +123,6 @@ def get_ai_unavailable_detail(
             "ai_manually_disabled",
             "AI features are temporarily disabled by the server operator.",
         )
-
-    if _is_byok_billing_source(billing_source):
-        return None
 
     hard_stop_usd = float(settings.ai_hard_stop_usd or 0.0)
     if hard_stop_usd <= 0:
@@ -161,7 +154,7 @@ def get_ai_unavailable_detail(
     )
 
 
-def ensure_ai_available(db: Session, *, billing_source: str | None = None) -> None:
+def ensure_ai_available(db: Session, *, billing_source: BillingSource | None = None) -> None:
     detail = get_ai_unavailable_detail(db, billing_source=billing_source)
     if detail is None:
         return
@@ -171,7 +164,7 @@ def ensure_ai_available(db: Session, *, billing_source: str | None = None) -> No
         headers={"Retry-After": "300"},
     )
 
-def ensure_ai_available_fresh_session(*, billing_source: str | None = None) -> None:
+def ensure_ai_available_fresh_session(*, billing_source: BillingSource | None = None) -> None:
     """Out-of-band guard for background tasks and shared AI clients."""
     db = SessionLocal()
     try:

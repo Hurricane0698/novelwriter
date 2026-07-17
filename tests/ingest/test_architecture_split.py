@@ -21,6 +21,7 @@ from app.core.bootstrap import (
     build_bootstrap_trigger_result,
 )
 from app.core.indexing import run_next_window_index_rebuild_job
+from app.core.llm_config import ResolvedLlmConfig
 from app.core.world import bootstrap_application as bootstrap_app
 from app.config import Settings
 from app.database import Base, get_db
@@ -179,7 +180,13 @@ def test_ingest_job_queues_auto_bootstrap_when_selfhost_llm_is_configured(db, tm
 
     observed: list[dict[str, object]] = []
 
-    async def _runner(job_id: int, *, session_factory, user_id=None, llm_config=None):
+    async def _runner(
+        job_id: int,
+        *,
+        session_factory,
+        llm_config: ResolvedLlmConfig,
+        user_id=None,
+    ):
         observed.append(
             {
                 "job_id": job_id,
@@ -196,7 +203,13 @@ def test_ingest_job_queues_auto_bootstrap_when_selfhost_llm_is_configured(db, tm
     ) is True
     assert observed[0]["job_id"] == bootstrap_job.id
     assert observed[0]["user_id"] == user.id
-    assert observed[0]["llm_config"] is None
+    assert observed[0]["llm_config"] == ResolvedLlmConfig(
+        base_url="https://api.openai.com/v1",
+        api_key="sk-test",
+        model="gpt-4o-mini",
+        billing_source_hint="selfhost",
+        source="selfhost_settings",
+    )
 
 
 def test_selfhost_worker_skips_manual_bootstrap_jobs_to_preserve_request_scoped_byok(db, tmp_path, user):
@@ -218,7 +231,13 @@ def test_selfhost_worker_skips_manual_bootstrap_jobs_to_preserve_request_scoped_
 
     observed: list[int] = []
 
-    async def _runner(job_id: int, *, session_factory, user_id=None, llm_config=None):
+    async def _runner(
+        job_id: int,
+        *,
+        session_factory,
+        llm_config: ResolvedLlmConfig,
+        user_id=None,
+    ):
         _ = (session_factory, user_id, llm_config)
         observed.append(job_id)
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { UiLocaleProvider } from '@/contexts/UiLocaleContext'
 
 const {
@@ -56,6 +56,11 @@ vi.mock('@/services/api', () => ({
 import Login, { getOAuthErrorMessage, getPostLoginDestination } from '@/pages/Login'
 import { ApiError } from '@/services/api'
 
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location-path">{location.pathname}</div>
+}
+
 describe('Login', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -79,6 +84,25 @@ describe('Login', () => {
     expect(getPostLoginDestination({ from: '//evil.example/phish' })).toBe('/library')
     expect(getPostLoginDestination(null, '?redirect_to=%2Fworld%2F7')).toBe('/world/7')
     expect(getPostLoginDestination(null, '?redirect_to=https%3A%2F%2Fevil.example')).toBe('/library')
+  })
+
+  it.each(['desktop', 'selfhost'] as const)('redirects the local %s login route back to the landing page', async (runtimeMode) => {
+    vi.stubEnv('VITE_DEPLOY_MODE', runtimeMode)
+
+    render(
+      <UiLocaleProvider>
+        <MemoryRouter initialEntries={['/login']}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<LocationProbe />} />
+          </Routes>
+        </MemoryRouter>
+      </UiLocaleProvider>,
+    )
+
+    expect(await screen.findByTestId('location-path')).toHaveTextContent('/')
+    expect(getAuthOptionsMock).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('login-form')).toBeNull()
   })
 
   it('maps GitHub OAuth callback errors to user-facing copy', () => {

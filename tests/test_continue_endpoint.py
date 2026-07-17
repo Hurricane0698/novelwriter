@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.core.llm_config import ResolvedLlmConfig
 from app.database import Base, get_db
 from app.core.text import PromptKey
 from app.models import (
@@ -431,14 +432,15 @@ class TestContinueStreamEndpoint:
         done = next(e for e in events if e["type"] == "done")
         assert done["continuation_ids"] == [done0["continuation_id"], done1["continuation_id"]]
 
-        # BYOK headers are passed through to both streaming and non-streaming generation calls.
-        assert captured.get("stream_kwargs", {}).get("base_url") == "https://user.example.com/v1"
-        assert captured.get("stream_kwargs", {}).get("api_key") == "user-key"
-        assert captured.get("stream_kwargs", {}).get("model") == "user-model"
-
-        assert captured.get("kwargs", {}).get("base_url") == "https://user.example.com/v1"
-        assert captured.get("kwargs", {}).get("api_key") == "user-key"
-        assert captured.get("kwargs", {}).get("model") == "user-model"
+        expected = ResolvedLlmConfig(
+            base_url="https://user.example.com/v1",
+            api_key="user-key",
+            model="user-model",
+            billing_source_hint="selfhost",
+            source="selfhost_request",
+        )
+        assert captured.get("stream_kwargs", {}).get("llm_config") == expected
+        assert captured.get("kwargs", {}).get("llm_config") == expected
 
     def test_stream_sets_no_store_and_unbuffered_transport_headers(self, client, novel):
         c, _ = client
@@ -552,8 +554,7 @@ class TestTemperaturePassthrough:
             json={"num_versions": 1, "context_chapters": 2},
         )
         assert resp.status_code == 200
-        # temperature should NOT appear in kwargs when not provided
-        assert "temperature" not in captured["kwargs"]
+        assert captured["kwargs"]["temperature"] == 0.8
 
     def test_temperature_validation_rejects_out_of_range(self, client, novel):
         c, _ = client

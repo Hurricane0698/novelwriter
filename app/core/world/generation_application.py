@@ -26,6 +26,7 @@ from app.core.world.generation_runs import (
 from app.core.world.use_case_errors import WorldUseCaseError, detail_error_from_http_exception
 from app.core.auth import QuotaScope, ensure_ai_available
 from app.core.llm_semaphore import acquire_llm_slot, release_llm_slot
+from app.core.llm_config import ResolvedLlmConfig
 from app.models import User
 from app.schemas import WorldGenerateResponse
 
@@ -88,23 +89,13 @@ def _world_generation_failure(
     return WorldUseCaseError(code=code, message=message, status_code=status_code)
 
 
-def _resolve_world_generation_billing_source(llm_config: dict | None) -> str | None:
-    if not isinstance(llm_config, dict):
-        return None
-    hint = llm_config.get("billing_source_hint")
-    if not isinstance(hint, str):
-        return None
-    normalized = hint.strip().lower()
-    return normalized or None
-
-
 async def generate_world_from_text(
     novel_id: int,
     *,
     text: str,
     db: Session,
     current_user: User,
-    llm_config: dict | None,
+    llm_config: ResolvedLlmConfig,
     request_id: str | None = None,
     generate_world_drafts_fn: Callable[..., Awaitable[WorldGenerateResponse]] | None = None,
     acquire_llm_slot_fn: Callable[[], Awaitable[None]] | None = None,
@@ -134,7 +125,7 @@ async def generate_world_from_text(
     try:
         ensure_ai_available(
             db,
-            billing_source=_resolve_world_generation_billing_source(llm_config),
+            billing_source=llm_config.billing_source_hint,
         )
     except HTTPException as exc:
         raise _world_generation_failure(

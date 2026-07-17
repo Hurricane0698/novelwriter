@@ -21,6 +21,7 @@ _RUNTIME_ENV_NAMES = (
     "SCNGS_DATA_DIR",
     "DATABASE_URL",
     "JWT_SECRET_KEY",
+    *desktop_runtime._LLM_ENVIRONMENT_KEYS_TO_REMOVE,
 )
 
 
@@ -57,6 +58,10 @@ def _configure_desktop_environment(
 
     monkeypatch.setenv("NOVWR_DESKTOP_DATA_DIR", str(data_dir))
     monkeypatch.setenv("NOVWR_DESKTOP_JWT_SECRET", _JWT_SECRET)
+    monkeypatch.setenv(
+        "NOVWR_DESKTOP_LLM_CONFIG_PATH",
+        str(tmp_path / "llm-config.json"),
+    )
     monkeypatch.setenv(
         "NOVWR_DESKTOP_SHUTDOWN_EVENT",
         "Local\\io.github.hurricane0698.novwr.test.shutdown",
@@ -121,6 +126,44 @@ def test_runtime_rejects_relative_or_missing_data_directory(
         desktop_runtime.main(["worker"])
 
 
+def test_runtime_rejects_desktop_llm_config_outside_data_parent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    data_dir, _runtime_root = _configure_desktop_environment(monkeypatch, tmp_path)
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    monkeypatch.setenv(
+        "NOVWR_DESKTOP_LLM_CONFIG_PATH",
+        str(other_dir / "llm-config.json"),
+    )
+
+    with pytest.raises(
+        desktop_runtime.DesktopRuntimeError,
+        match="NOVWR_DESKTOP_LLM_CONFIG_PATH must be",
+    ):
+        desktop_runtime.main(["worker"])
+
+    assert data_dir.parent == tmp_path.resolve()
+
+
+def test_runtime_rejects_wrong_desktop_llm_config_filename(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    _configure_desktop_environment(monkeypatch, tmp_path)
+    monkeypatch.setenv(
+        "NOVWR_DESKTOP_LLM_CONFIG_PATH",
+        str(tmp_path / "credentials.json"),
+    )
+
+    with pytest.raises(
+        desktop_runtime.DesktopRuntimeError,
+        match="NOVWR_DESKTOP_LLM_CONFIG_PATH must be",
+    ):
+        desktop_runtime.main(["worker"])
+
+
 @pytest.mark.parametrize(
     "secret",
     ("short", "CHANGE-ME-IN-PRODUCTION", "   "),
@@ -145,6 +188,8 @@ def test_bootstrap_uses_bundled_alembic_config_and_existing_bootstrap(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
+    for name in desktop_runtime._LLM_ENVIRONMENT_KEYS_TO_REMOVE:
+        monkeypatch.setenv(name, "must-not-reach-desktop-runtime")
     data_dir, runtime_root = _configure_desktop_environment(
         monkeypatch,
         tmp_path,
@@ -174,6 +219,11 @@ def test_bootstrap_uses_bundled_alembic_config_and_existing_bootstrap(
     assert os.environ["SCNGS_DATA_DIR"] == str(data_dir)
     assert os.environ["DATABASE_URL"] == database_url
     assert os.environ["JWT_SECRET_KEY"] == _JWT_SECRET
+    assert os.environ["NOVWR_DESKTOP_LLM_CONFIG_PATH"] == str(
+        data_dir.parent / "llm-config.json"
+    )
+    for name in desktop_runtime._LLM_ENVIRONMENT_KEYS_TO_REMOVE:
+        assert name not in os.environ
     assert calls == [
         {
             "db_engine": engine,

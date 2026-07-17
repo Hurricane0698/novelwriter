@@ -18,6 +18,13 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.config import reload_settings
+from app.core.llm_config import (
+    LLM_CONFIG_INCOMPLETE_CODE,
+    LLM_CONFIG_MISSING_CODE,
+    LlmConfigError,
+    resolve_llm_config,
+)
 from app.database import Base
 from app.models import (
     Chapter,
@@ -48,11 +55,12 @@ _TestSession = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
 def _has_llm_config() -> bool:
     try:
-        from app.config import reload_settings
-        s = reload_settings()
-        return bool(s.openai_api_key and s.openai_base_url and s.openai_model)
-    except Exception:
-        return False
+        resolve_llm_config(settings=reload_settings())
+    except LlmConfigError as exc:
+        if exc.code in {LLM_CONFIG_MISSING_CODE, LLM_CONFIG_INCOMPLETE_CODE}:
+            return False
+        raise
+    return True
 
 
 if not _RUN_E2E_LLM:
@@ -229,9 +237,8 @@ def jtw_world(db):
 async def _run_copilot(db, novel, mode, scope, context, prompt, locale="zh"):
     """Run a full copilot execution against the real LLM.
 
-    Key insight: we pass explicit llm_config from settings instead of
-    relying on the hosted-mode resolution path. This avoids the need to
-    patch SessionLocal (which breaks safety fuses that create their own sessions).
+    The canonical resolver supplies the same typed config used by application
+    requests and background workers.
 
     The test DB *is* the real SessionLocal for this test — we just need to
     make execute_copilot_run find its run/session/novel in our test DB.
@@ -241,20 +248,12 @@ async def _run_copilot(db, novel, mode, scope, context, prompt, locale="zh"):
         execute_copilot_run,
         open_or_reuse_session,
     )
-    from app.config import reload_settings
     import app.database as db_mod
 
     session, _ = open_or_reuse_session(db, novel.id, 1, mode, scope, context, locale, "")
     run = create_run(db, session, 1, prompt)
 
-    settings = reload_settings()  # Fresh load to get .env values
-    llm_config = {
-        "base_url": settings.hosted_llm_base_url or settings.openai_base_url,
-        "api_key": settings.hosted_llm_api_key or settings.openai_api_key,
-        "model": settings.hosted_llm_model or settings.openai_model,
-        "billing_source_hint": "selfhost",  # Skip hosted budget checks in test
-    }
-    assert llm_config["api_key"], "No API key found in settings"
+    llm_config = resolve_llm_config(settings=reload_settings())
 
     # Patch SessionLocal to return our test DB session (non-closeable).
     orig_sl = db_mod.SessionLocal

@@ -12,8 +12,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, StaticPool
 from sqlalchemy.orm import sessionmaker
 
+from app.config import Settings
 from app.database import Base, get_db
 from app.core.text import PromptKey
+from app.core.llm_config import ResolvedLlmConfig
 from app.models import Novel, WorldEntity, WorldRelationship, WorldSystem, User
 
 
@@ -23,6 +25,17 @@ engine = create_engine(
     poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def _selfhost_settings(**overrides) -> Settings:
+    return Settings(
+        deploy_mode="selfhost",
+        openai_base_url="https://example.com/v1",
+        openai_api_key="test-key",
+        openai_model="test-model",
+        _env_file=None,
+        **overrides,
+    )
 
 
 @pytest.fixture(scope="function")
@@ -171,6 +184,13 @@ async def test_generate_world_drafts_uses_novel_language_for_prompt_locale(db, n
         db=db,
         novel_id=novel.id,
         text="This world setting text is intentionally long enough to trigger the generation path.",
+        llm_config=ResolvedLlmConfig(
+            base_url="https://example.com/v1",
+            api_key="key",
+            model="model",
+            billing_source_hint="selfhost",
+            source="selfhost_settings",
+        ),
     )
 
     assert result.entities_created == 0
@@ -412,9 +432,13 @@ def test_generate_world_forwards_byok_headers(client, novel, monkeypatch):
     )
     assert resp.status_code == 200
     kwargs = mock.call_args.kwargs
-    assert kwargs["base_url"] == "https://example.com/v1"
-    assert kwargs["api_key"] == "test-key"
-    assert kwargs["model"] == "test-model"
+    assert kwargs["llm_config"] == ResolvedLlmConfig(
+        base_url="https://example.com/v1",
+        api_key="test-key",
+        model="test-model",
+        billing_source_hint="selfhost",
+        source="selfhost_request",
+    )
 
 
 def test_generate_world_rejects_partial_byok_headers(client, novel, monkeypatch):
@@ -528,7 +552,6 @@ def test_generate_world_does_not_delete_bootstrap_drafts(client, db, novel, monk
 
 def test_generate_world_chunks_long_text_and_merges_results(client, db, novel, monkeypatch):
     import app.config as config_mod
-    from app.config import Settings
     from app.core.ai_client import ai_client
     from app.core.world.gen import (
         WorldGenEntity,
@@ -539,12 +562,11 @@ def test_generate_world_chunks_long_text_and_merges_results(client, db, novel, m
     )
 
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(
+    config_mod._settings_instance = _selfhost_settings(
         world_generation_chunk_chars=15,
         world_generation_chunk_overlap_chars=0,
         world_generation_max_chunks=3,
         world_generation_chunk_max_tokens=1234,
-        _env_file=None,
     )
     try:
         mock = AsyncMock(
@@ -608,17 +630,15 @@ def test_generate_world_chunks_long_text_and_merges_results(client, db, novel, m
 
 def test_generate_world_chunks_merge_hierarchy_systems(client, db, novel, monkeypatch):
     import app.config as config_mod
-    from app.config import Settings
     from app.core.ai_client import ai_client
     from app.core.world.gen import WorldGenLLMOutput, WorldGenSystem, WorldGenSystemItem
 
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(
+    config_mod._settings_instance = _selfhost_settings(
         world_generation_chunk_chars=12,
         world_generation_chunk_overlap_chars=0,
         world_generation_max_chunks=2,
         world_generation_chunk_max_tokens=777,
-        _env_file=None,
     )
     try:
         mock = AsyncMock(
@@ -670,17 +690,15 @@ def test_generate_world_chunks_merge_hierarchy_systems(client, db, novel, monkey
 
 def test_generate_world_chunks_downgrade_conflicting_system_shapes_to_list(client, db, novel, monkeypatch):
     import app.config as config_mod
-    from app.config import Settings
     from app.core.ai_client import ai_client
     from app.core.world.gen import WorldGenLLMOutput, WorldGenSystem, WorldGenSystemItem
 
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(
+    config_mod._settings_instance = _selfhost_settings(
         world_generation_chunk_chars=12,
         world_generation_chunk_overlap_chars=0,
         world_generation_max_chunks=2,
         world_generation_chunk_max_tokens=777,
-        _env_file=None,
     )
     try:
         mock = AsyncMock(

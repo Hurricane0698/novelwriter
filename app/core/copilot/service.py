@@ -5,9 +5,8 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from sqlalchemy.orm import Session
+from app.core.llm_config import ResolvedLlmConfig
 
 from . import runtime_adapters as runtime_adapters_mod
 from . import runtime_lookup as runtime_lookup_mod
@@ -99,7 +98,7 @@ async def execute_copilot_run(
     run_id: str,
     novel_id: int,
     user_id: int,
-    llm_config: dict[str, Any] | None,
+    llm_config: ResolvedLlmConfig,
 ) -> None:
     hooks = ExecutionHooks(
         derive_scenario=runtime_scenario_mod.derive_scenario,

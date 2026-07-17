@@ -1,4 +1,5 @@
-import { getLlmConfig } from '@/lib/llmConfigStore'
+import { getSelfhostLlmConfig } from '@/lib/selfhostLlmConfigStore'
+import { isSelfhostRuntime } from '@/lib/runtimeMode'
 
 // NOTE: use nullish coalescing so `VITE_API_URL=""` stays empty (same-origin in Docker).
 export const BASE_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')
@@ -9,10 +10,6 @@ const NON_RETRIABLE_503_CODES = new Set([
   'ai_budget_meter_unavailable',
 ])
 
-function isHostedDeployMode(): boolean {
-  return (import.meta.env.VITE_DEPLOY_MODE || 'selfhost') === 'hosted'
-}
-
 export function isNonRetriable503Code(code: string | undefined): boolean {
   return !!code && NON_RETRIABLE_503_CODES.has(code)
 }
@@ -21,12 +18,46 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+function assertHeaderValuePreserved(
+  name: string,
+  value: string,
+  code: 'llm_base_url_invalid' | 'llm_api_key_invalid',
+  message: string,
+): void {
+  let serializedValue: string | null
+  try {
+    const probe = new Headers()
+    probe.set(name, value)
+    serializedValue = probe.get(name)
+  } catch {
+    serializedValue = null
+  }
+  if (serializedValue !== value) {
+    throw new ApiError(400, 'HTTP 400', {
+      code,
+      detail: { code, message },
+    })
+  }
+}
+
 export function llmHeaders(): HeadersInit {
-  if (isHostedDeployMode()) {
+  if (!isSelfhostRuntime()) {
     return {}
   }
   const headers: Record<string, string> = {}
-  const { baseUrl, apiKey, model } = getLlmConfig()
+  const { baseUrl, apiKey, model } = getSelfhostLlmConfig()
+  assertHeaderValuePreserved(
+    'X-LLM-Base-Url',
+    baseUrl,
+    'llm_base_url_invalid',
+    'LLM base URL cannot be represented unchanged in an HTTP header.',
+  )
+  assertHeaderValuePreserved(
+    'X-LLM-Api-Key',
+    apiKey,
+    'llm_api_key_invalid',
+    'LLM API key cannot be represented unchanged in an HTTP header.',
+  )
   if (baseUrl) headers['X-LLM-Base-Url'] = baseUrl
   if (apiKey) headers['X-LLM-Api-Key'] = apiKey
   if (model) headers['X-LLM-Model'] = model

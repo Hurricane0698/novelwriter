@@ -1,19 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError, copilotApi, streamContinuation, worldApi } from '@/services/api'
 import { llmHeaders } from '@/services/apiClient'
-import { clearLlmConfig, setLlmConfig } from '@/lib/llmConfigStore'
+import { clearSelfhostLlmConfig, setSelfhostLlmConfig } from '@/lib/selfhostLlmConfigStore'
 
 describe('api service', () => {
   beforeEach(() => {
     vi.unstubAllEnvs()
     vi.stubEnv('VITE_DEPLOY_MODE', 'selfhost')
     vi.restoreAllMocks()
-    clearLlmConfig()
+    clearSelfhostLlmConfig()
   })
 
   afterEach(() => {
     vi.unstubAllEnvs()
-    clearLlmConfig()
+    clearSelfhostLlmConfig()
   })
 
   it('getNovels fetches and parses response', async () => {
@@ -237,7 +237,7 @@ describe('api service', () => {
   })
 
   it('does not attach BYOK LLM headers to non-LLM endpoints', async () => {
-    setLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
+    setSelfhostLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
 
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response('[]', { status: 200 })) // api.getNovels
@@ -260,9 +260,9 @@ describe('api service', () => {
     expect(headers2['X-LLM-Model']).toBeUndefined()
   })
 
-  it('omits BYOK LLM headers on hosted LLM endpoints', async () => {
-    vi.stubEnv('VITE_DEPLOY_MODE', 'hosted')
-    setLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
+  it.each(['hosted', 'desktop'] as const)('omits selfhost BYOK headers on %s LLM endpoints', async (runtimeMode) => {
+    vi.stubEnv('VITE_DEPLOY_MODE', runtimeMode)
+    setSelfhostLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
 
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ continuations: [], debug: {} }), { status: 200 }))
@@ -285,13 +285,81 @@ describe('api service', () => {
 
   it('llmHeaders exposes BYOK config in selfhost mode', async () => {
     vi.stubEnv('VITE_DEPLOY_MODE', 'selfhost')
-    clearLlmConfig()
-    setLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
+    clearSelfhostLlmConfig()
+    setSelfhostLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
 
     const headers = llmHeaders() as Record<string, string>
     expect(headers['X-LLM-Base-Url']).toBe('http://example.com/v1')
     expect(headers['X-LLM-Api-Key']).toBe('sk-test')
     expect(headers['X-LLM-Model']).toBe('m')
+  })
+
+  it.each([
+    {
+      field: 'base URL',
+      config: { baseUrl: ' https://example.com/v1 ', apiKey: 'sk-sensitive-value', model: 'm' },
+      code: 'llm_base_url_invalid',
+    },
+    {
+      field: 'API key',
+      config: { baseUrl: 'https://example.com/v1', apiKey: ' sk-sensitive-value ', model: 'm' },
+      code: 'llm_api_key_invalid',
+    },
+    {
+      field: 'API key encoding',
+      config: { baseUrl: 'https://example.com/v1', apiKey: 'sk-sensitive\u200bvalue', model: 'm' },
+      code: 'llm_api_key_invalid',
+    },
+  ])('rejects selfhost $field changes before Fetch can normalize or reject them', async ({ config, code }) => {
+    setSelfhostLlmConfig(config)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    expect.assertions(5)
+    try {
+      await api.testLlmConnection()
+      throw new Error('Expected api.testLlmConnection() to reject invalid selfhost config')
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError)
+      const apiError = error as ApiError
+      expect(apiError.status).toBe(400)
+      expect(apiError.code).toBe(code)
+      expect(JSON.stringify(apiError.detail)).not.toContain(config.apiKey)
+    }
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('uses the desktop LLM config API without exposing a saved key in responses', async () => {
+    vi.stubEnv('VITE_DEPLOY_MODE', 'desktop')
+    const configured = {
+      configured: true,
+      base_url: 'https://example.com/v1',
+      model: 'desktop-model',
+      api_key_configured: true,
+    }
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(configured), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(configured), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    await expect(api.getLlmConfig()).resolves.toEqual(configured)
+    await expect(api.updateLlmConfig({
+      base_url: configured.base_url,
+      model: configured.model,
+      api_key: 'desktop-secret',
+    })).resolves.toEqual(configured)
+    await expect(api.clearLlmConfig()).resolves.toBeUndefined()
+
+    expect(fetchSpy.mock.calls[0][0]).toBe('/api/llm/config')
+    expect(fetchSpy.mock.calls[1][1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({
+        base_url: configured.base_url,
+        model: configured.model,
+        api_key: 'desktop-secret',
+      }),
+    })
+    expect(fetchSpy.mock.calls[2][1]).toMatchObject({ method: 'DELETE' })
+    expect(configured).not.toHaveProperty('api_key')
   })
 
   it('tags non-stream continuation fallback requests for backend analytics', async () => {
@@ -310,9 +378,9 @@ describe('api service', () => {
     expect(headers['X-Novwr-Continuation-Request-ID']).toBe('req-123')
   })
 
-  it('streamContinuation omits BYOK LLM headers in hosted mode', async () => {
-    vi.stubEnv('VITE_DEPLOY_MODE', 'hosted')
-    setLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
+  it.each(['hosted', 'desktop'] as const)('streamContinuation omits BYOK LLM headers in %s mode', async (runtimeMode) => {
+    vi.stubEnv('VITE_DEPLOY_MODE', runtimeMode)
+    setSelfhostLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
 
     const ndjson = '{"type":"start","variant":0,"total_variants":1}\n{"type":"done","continuation_ids":[1]}\n'
     const encoder = new TextEncoder()
@@ -339,9 +407,9 @@ describe('api service', () => {
     expect(headers['X-Novwr-Continuation-Request-ID']).toBe('req-456')
   })
 
-  it('triggerBootstrap omits BYOK LLM headers in hosted mode', async () => {
-    vi.stubEnv('VITE_DEPLOY_MODE', 'hosted')
-    setLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
+  it.each(['hosted', 'desktop'] as const)('triggerBootstrap omits BYOK LLM headers in %s mode', async (runtimeMode) => {
+    vi.stubEnv('VITE_DEPLOY_MODE', runtimeMode)
+    setSelfhostLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(

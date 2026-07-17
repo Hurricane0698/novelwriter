@@ -31,7 +31,7 @@ def db():
         Base.metadata.drop_all(bind=engine)
 
 
-def test_hosted_spend_sum_excludes_byok_usage(db):
+def test_hosted_spend_sum_excludes_selfhost_usage(db):
     db.add_all(
         [
             TokenUsage(
@@ -41,7 +41,7 @@ def test_hosted_spend_sum_excludes_byok_usage(db):
                 completion_tokens=10,
                 total_tokens=20,
                 cost_estimate=4.5,
-                billing_source="byok",
+                billing_source="selfhost",
                 node_name="writer",
             ),
             TokenUsage(
@@ -61,7 +61,7 @@ def test_hosted_spend_sum_excludes_byok_usage(db):
     assert get_total_estimated_ai_spend_usd(db) == pytest.approx(0.75)
 
 
-def test_hosted_budget_hard_stop_is_skipped_for_byok_requests(db):
+def test_hosted_budget_hard_stop_applies_to_hosted_generation(db):
     prev = config_mod._settings_instance
     config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
     try:
@@ -79,16 +79,18 @@ def test_hosted_budget_hard_stop_is_skipped_for_byok_requests(db):
         )
         db.commit()
 
-        assert get_ai_unavailable_detail(db, billing_source="byok") is None
+        detail = get_ai_unavailable_detail(db, billing_source="hosted")
+        assert detail is not None
+        assert detail["code"] == "ai_budget_hard_stop"
     finally:
         config_mod._settings_instance = prev
 
 
-def test_hosted_manual_disable_still_blocks_byok_requests(db):
+def test_hosted_manual_disable_blocks_hosted_generation(db):
     prev = config_mod._settings_instance
     config_mod._settings_instance = Settings(deploy_mode="hosted", ai_manual_disable=True, _env_file=None)
     try:
-        detail = get_ai_unavailable_detail(db, billing_source="byok")
+        detail = get_ai_unavailable_detail(db, billing_source="hosted")
         assert detail is not None
         assert detail["code"] == "ai_manually_disabled"
     finally:

@@ -6,8 +6,18 @@
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.core.llm_config import ResolvedLlmConfig
+
 engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+TEST_LLM_CONFIG = ResolvedLlmConfig(
+    base_url="https://example.com/v1",
+    api_key="test-key",
+    model="test-model",
+    billing_source_hint="selfhost",
+    source="selfhost_settings",
+)
 
 
 async def noop_coro():

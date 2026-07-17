@@ -2,17 +2,23 @@ import { expect, test } from '@playwright/test'
 import { waitForInitialNovelReady } from '../fixtures/novel-ready'
 import {
   INSTALLED_NOVEL_TITLE,
+  assertDesktopLanding,
+  assertDesktopLoginRouteRemoved,
   assertSeededDemoVisible,
   assertUploadedNovelVisible,
+  enterLibraryThroughDesktopLanding,
   installInstalledProductFailureGuard,
-  loginThroughInstalledUi,
+  saveDesktopLlmConfig,
+  testDesktopLlmConnection,
   writeInstalledProductState,
 } from './support'
 
-test('first installed launch imports a worker-backed novel', async ({ page }) => {
+test('first installed launch imports a novel and verifies encrypted LLM config', async ({ page }) => {
   const failureGuard = installInstalledProductFailureGuard(page)
 
-  await loginThroughInstalledUi(page)
+  await assertDesktopLanding(page)
+  await assertDesktopLoginRouteRemoved(page)
+  await enterLibraryThroughDesktopLanding(page)
   await assertSeededDemoVisible(page)
 
   const fileChooserPromise = page.waitForEvent('filechooser')
@@ -39,6 +45,8 @@ test('first installed launch imports a worker-backed novel', async ({ page }) =>
   await page.goto('/library')
   await assertSeededDemoVisible(page)
   await assertUploadedNovelVisible(page, state)
+  await saveDesktopLlmConfig(page)
+  await testDesktopLlmConnection(page)
   await writeInstalledProductState(state)
   failureGuard.assertClean()
 })

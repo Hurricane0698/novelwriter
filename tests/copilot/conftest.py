@@ -48,7 +48,13 @@ def hosted_settings(_force_selfhost_settings):  # ensure conftest runs first
     from app.config import Settings
 
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(deploy_mode="hosted", _env_file=None)
+    config_mod._settings_instance = Settings(
+        deploy_mode="hosted",
+        hosted_llm_base_url="https://hosted.example/v1",
+        hosted_llm_api_key="hosted-key",
+        hosted_llm_model="hosted-model",
+        _env_file=None,
+    )
     try:
         yield
     finally:
@@ -138,6 +144,8 @@ def systems(db, novel):
 @pytest.fixture
 def client(db):
     from app.api import copilot as copilot_api, world
+    from app.core.llm_config import ResolvedLlmConfig
+    from app.core.llm_request import get_llm_config
 
     test_app = FastAPI()
     test_app.include_router(copilot_api.router)
@@ -155,6 +163,13 @@ def client(db):
     test_app.dependency_overrides[get_current_user] = lambda: fake_user
     test_app.dependency_overrides[get_current_user_or_default] = lambda: fake_user
     test_app.dependency_overrides[check_generation_quota] = lambda: fake_user
+    test_app.dependency_overrides[get_llm_config] = lambda: ResolvedLlmConfig(
+        base_url="https://example.com/v1",
+        api_key="key",
+        model="model",
+        billing_source_hint="selfhost",
+        source="selfhost_settings",
+    )
 
     with TestClient(test_app) as c:
         yield c
@@ -166,6 +181,8 @@ def hosted_client(db, hosted_user, monkeypatch):
     import app.core.auth as auth_core
     from app.api import copilot as copilot_api, world
     from app.core.auth import get_current_user, get_current_user_or_default
+    from app.core.llm_config import ResolvedLlmConfig
+    from app.core.llm_request import get_llm_config
 
     test_app = FastAPI()
     test_app.include_router(copilot_api.router)
@@ -180,6 +197,13 @@ def hosted_client(db, hosted_user, monkeypatch):
     test_app.dependency_overrides[get_db] = override_get_db
     test_app.dependency_overrides[get_current_user] = lambda: hosted_user
     test_app.dependency_overrides[get_current_user_or_default] = lambda: hosted_user
+    test_app.dependency_overrides[get_llm_config] = lambda: ResolvedLlmConfig(
+        base_url="https://hosted.example/v1",
+        api_key="hosted-key",
+        model="hosted-model",
+        billing_source_hint="hosted",
+        source="hosted_settings",
+    )
     monkeypatch.setattr(auth_core, "ensure_ai_available", lambda *args, **kwargs: None)
 
     with TestClient(test_app) as c:

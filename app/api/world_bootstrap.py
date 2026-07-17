@@ -6,10 +6,15 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.world_support import run_world_operation, run_world_operation_async, serialize_bootstrap_job
+from app.api.world_support import (
+    run_world_operation,
+    run_world_operation_async,
+    serialize_bootstrap_job,
+)
 from app.config import get_settings
 from app.core.auth import get_current_user_or_default
-from app.core.llm_request import get_llm_config
+from app.core.llm_config import LlmConfigValues
+from app.core.llm_request import read_llm_override
 from app.core.world.bootstrap_application import (
     get_bootstrap_status as get_bootstrap_status_use_case,
     trigger_bootstrap as trigger_bootstrap_use_case,
@@ -24,7 +29,7 @@ router = APIRouter()
 @router.post("/bootstrap", response_model=BootstrapJobResponse, status_code=202)
 async def trigger_bootstrap(
     novel_id: int,
-    llm_config: dict | None = Depends(get_llm_config),
+    llm_override: LlmConfigValues = Depends(read_llm_override),
     body: BootstrapTriggerRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
@@ -35,7 +40,7 @@ async def trigger_bootstrap(
         body=body,
         db=db,
         current_user=current_user,
-        llm_config=llm_config,
+        llm_override=llm_override,
         settings=get_settings(),
     )
     return serialize_bootstrap_job(job)

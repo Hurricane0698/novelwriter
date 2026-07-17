@@ -83,7 +83,14 @@ def test_bootstrap_rejects_when_ai_budget_hard_stop_is_reached(client, monkeypat
     c, db, user, novel = client
 
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
+    config_mod._settings_instance = Settings(
+        deploy_mode="hosted",
+        hosted_llm_base_url="https://hosted.example/v1",
+        hosted_llm_api_key="hosted-key",
+        hosted_llm_model="hosted-model",
+        ai_hard_stop_usd=1.0,
+        _env_file=None,
+    )
     try:
         db.add(
             Chapter(
@@ -128,7 +135,14 @@ def test_bootstrap_rejects_byok_when_ai_budget_hard_stop_is_reached(
     c, db, user, novel = client
 
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
+    config_mod._settings_instance = Settings(
+        deploy_mode="hosted",
+        hosted_llm_base_url="https://hosted.example/v1",
+        hosted_llm_api_key="hosted-key",
+        hosted_llm_model="hosted-model",
+        ai_hard_stop_usd=1.0,
+        _env_file=None,
+    )
     try:
         db.add(
             TokenUsage(

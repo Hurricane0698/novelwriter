@@ -6,18 +6,20 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { buildDemoStudioPath, findSeededDemoNovel } from '@/lib/demoProject'
 import { buildNovelListQueryOptions } from '@/lib/novelListQuery'
+import { isHostedRuntime } from '@/lib/runtimeMode'
 
 export function DemoEntryPage() {
   const location = useLocation()
   const { isLoggedIn, isLoading } = useAuth()
+  const isHosted = isHostedRuntime()
   const { data: novels, isLoading: novelsLoading, isError } = useQuery({
     ...buildNovelListQueryOptions(),
-    enabled: isLoggedIn,
+    enabled: !isHosted || isLoggedIn,
   })
 
-  if (isLoading) return null
+  if (isHosted && isLoading) return null
 
-  if (!isLoggedIn) {
+  if (isHosted && !isLoggedIn) {
     return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
   }
 

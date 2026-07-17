@@ -166,7 +166,11 @@ class TestHostedByokRejection:
         from app.core.auth import get_current_user_or_default
         import app.core.llm_request as llm_request
 
-        monkeypatch.setattr(llm_request, "get_settings", lambda: MagicMock(deploy_mode="hosted"))
+        monkeypatch.setattr(
+            llm_request,
+            "get_settings",
+            lambda: MagicMock(deploy_mode="hosted", runtime_mode="hosted"),
+        )
 
         app = _make_app(db, llm_api.router)
         app.dependency_overrides[get_current_user_or_default] = lambda: User(
@@ -192,7 +196,11 @@ class TestHostedByokRejection:
         from app.core.auth import get_current_user_or_default
         import app.core.llm_request as llm_request
 
-        monkeypatch.setattr(llm_request, "get_settings", lambda: MagicMock(deploy_mode="selfhost"))
+        monkeypatch.setattr(
+            llm_request,
+            "get_settings",
+            lambda: MagicMock(deploy_mode="selfhost", runtime_mode="selfhost"),
+        )
 
         response = MagicMock(usage=None)
         mock_client = MagicMock()
@@ -225,7 +233,7 @@ class TestHostedByokRejection:
         with TestClient(app) as c:
             resp = c.post("/api/llm/test", headers=headers)
         assert resp.status_code == 200
-        assert resp.json()["ok"] is True
+        assert resp.json()["code"] == "llm_probe_compatible"
         assert resp.json()["capabilities"] == {"basic": True, "stream": True, "json_mode": True}
 
     def test_hosted_llm_test_records_server_owned_usage(self, db, monkeypatch):
@@ -272,7 +280,7 @@ class TestHostedByokRejection:
                 resp = c.post("/api/llm/test")
 
             assert resp.status_code == 200
-            assert resp.json()["ok"] is True
+            assert resp.json()["code"] == "llm_probe_compatible"
 
             row = db.query(TokenUsage).order_by(TokenUsage.id.desc()).first()
             assert row is not None
@@ -324,9 +332,10 @@ class TestHostedByokRejection:
 
         assert resp.status_code == 200
         payload = resp.json()
-        assert payload["ok"] is False
+        assert payload["code"] == "llm_probe_capability_mismatch"
         assert payload["capabilities"] == {"basic": True, "stream": True, "json_mode": False}
-        assert "JSON 模式" in payload["error"]
+        assert "message" not in payload
+        assert "error" not in payload
 
     def test_llm_test_reports_stream_incompatibility(self, db, monkeypatch):
         from app.api import llm as llm_api
@@ -363,9 +372,10 @@ class TestHostedByokRejection:
 
         assert resp.status_code == 200
         payload = resp.json()
-        assert payload["ok"] is False
+        assert payload["code"] == "llm_probe_capability_mismatch"
         assert payload["capabilities"] == {"basic": True, "stream": False, "json_mode": True}
-        assert "流式输出" in payload["error"]
+        assert "message" not in payload
+        assert "error" not in payload
 
     def test_llm_test_retries_stream_probe_without_stream_options(self, db, monkeypatch):
         from app.api import llm as llm_api
@@ -410,7 +420,7 @@ class TestHostedByokRejection:
 
         assert resp.status_code == 200
         payload = resp.json()
-        assert payload["ok"] is True
+        assert payload["code"] == "llm_probe_compatible"
         assert payload["capabilities"] == {"basic": True, "stream": True, "json_mode": True}
 
     def test_hosted_llm_test_rejects_byok_when_hosted_budget_hard_stop_is_reached(
@@ -481,7 +491,11 @@ class TestHostedByokRejection:
         from app.core.auth import get_current_user_or_default
         import app.core.llm_request as llm_request
 
-        monkeypatch.setattr(llm_request, "get_settings", lambda: MagicMock(deploy_mode="selfhost"))
+        monkeypatch.setattr(
+            llm_request,
+            "get_settings",
+            lambda: MagicMock(deploy_mode="selfhost", runtime_mode="selfhost"),
+        )
         monkeypatch.setattr(llm_api, "AsyncOpenAI", lambda **kwargs: (_ for _ in ()).throw(AssertionError("should not call provider")))
 
         app = _make_app(db, llm_api.router)

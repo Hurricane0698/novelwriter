@@ -6,7 +6,7 @@
 import pytest
 
 from app.models import CopilotRun
-from tests.copilot.runtime_support import noop_coro as _noop_coro
+from tests.copilot.runtime_support import TEST_LLM_CONFIG, noop_coro as _noop_coro
 
 class TestLeaseRecovery:
     @pytest.mark.asyncio
@@ -41,7 +41,7 @@ class TestLeaseRecovery:
         original_close = db.close
         monkeypatch.setattr(db, "close", lambda: None)
 
-        await execute_copilot_run(run.run_id, novel.id, 1, None)
+        await execute_copilot_run(run.run_id, novel.id, 1, TEST_LLM_CONFIG)
 
         db.refresh(run)
         assert run.status == "interrupted"
@@ -97,7 +97,7 @@ class TestLeaseRecovery:
         monkeypatch.setattr("app.core.llm_semaphore.release_llm_slot", lambda: None)
 
         parsed, final_ev, workspace = await _run_tool_loop(
-            lambda: db, novel.id, session_data, "继续", None, 1,
+            lambda: db, novel.id, session_data, "继续", TEST_LLM_CONFIG, 1,
             snapshot, scenario, evidence, "task_query",
             inherited_workspace=prev_ws.to_dict(),
         )
@@ -167,7 +167,7 @@ class TestLeaseRecovery:
             novel.id,
             session_data,
             "继续",
-            None,
+            TEST_LLM_CONFIG,
             1,
             snapshot,
             scenario,
@@ -231,7 +231,7 @@ class TestLeaseRecovery:
             novel.id,
             session_data,
             "继续分析张三和宗门的联系",
-            None,
+            TEST_LLM_CONFIG,
             1,
             snapshot,
             scenario,
@@ -294,7 +294,7 @@ class TestLeaseRecovery:
         monkeypatch.setattr("app.core.llm_semaphore.release_llm_slot", lambda: None)
 
         parsed, _, _ = await _run_tool_loop(
-            lambda: db, novel.id, session_data, "继续", None, 1,
+            lambda: db, novel.id, session_data, "继续", TEST_LLM_CONFIG, 1,
             snapshot, scenario, evidence, "task_query",
             inherited_workspace=prev_ws.to_dict(),
         )

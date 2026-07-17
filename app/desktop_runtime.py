@@ -16,10 +16,20 @@ from typing import Sequence
 
 _DATA_DIR_ENV = "NOVWR_DESKTOP_DATA_DIR"
 _JWT_SECRET_ENV = "NOVWR_DESKTOP_JWT_SECRET"
+_LLM_CONFIG_PATH_ENV = "NOVWR_DESKTOP_LLM_CONFIG_PATH"
 _SHUTDOWN_EVENT_ENV = "NOVWR_DESKTOP_SHUTDOWN_EVENT"
 _DATABASE_FILE_NAME = "novels.db"
 _HOST = "127.0.0.1"
 _PORT = 8000
+_LLM_ENVIRONMENT_KEYS_TO_REMOVE = (
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_MODEL",
+    "OPENAI_LOG",
+    "HOSTED_LLM_API_KEY",
+    "HOSTED_LLM_BASE_URL",
+    "HOSTED_LLM_MODEL",
+)
 _MINIMUM_JWT_SECRET_LENGTH = 32
 _INSECURE_JWT_SECRETS = {"CHANGE-ME-IN-PRODUCTION"}
 _SYNCHRONIZE = 0x00100000
@@ -38,6 +48,7 @@ class DesktopRuntimeError(RuntimeError):
 class DesktopRuntimeContext:
     data_dir: Path
     database_url: str
+    llm_config_path: Path
     runtime_root: Path
 
     @property
@@ -103,6 +114,36 @@ def _database_url(data_dir: Path) -> str:
     return f"sqlite:///{(data_dir / _DATABASE_FILE_NAME).as_posix()}"
 
 
+def _load_llm_config_path(data_dir: Path) -> Path:
+    configured = Path(_required_environment_value(_LLM_CONFIG_PATH_ENV)).expanduser()
+    if not configured.is_absolute():
+        raise DesktopRuntimeError(
+            f"{_LLM_CONFIG_PATH_ENV} must be an absolute path: {configured}"
+        )
+    try:
+        parent = configured.parent.resolve(strict=True)
+    except OSError as exc:
+        raise DesktopRuntimeError(
+            f"Parent directory for {_LLM_CONFIG_PATH_ENV} does not exist: {configured.parent}"
+        ) from exc
+    if not parent.is_dir():
+        raise DesktopRuntimeError(
+            f"Parent directory for {_LLM_CONFIG_PATH_ENV} is not a directory: {parent}"
+        )
+    if parent != data_dir.parent or configured.name != "llm-config.json":
+        raise DesktopRuntimeError(
+            f"{_LLM_CONFIG_PATH_ENV} must be {data_dir.parent / 'llm-config.json'}"
+        )
+    resolved = parent / configured.name
+    if resolved.is_symlink():
+        raise DesktopRuntimeError(
+            "Desktop LLM config path must not be a symbolic link."
+        )
+    if resolved.exists() and not resolved.is_file():
+        raise DesktopRuntimeError(f"Desktop LLM config path is not a file: {resolved}")
+    return resolved
+
+
 def _runtime_root() -> Path:
     packaged_root = getattr(sys, "_MEIPASS", None)
     candidate = (
@@ -144,13 +185,17 @@ def _validate_state_proto_runtime() -> None:
 def _prepare_runtime() -> DesktopRuntimeContext:
     data_dir = _load_data_dir()
     jwt_secret = _load_jwt_secret()
+    llm_config_path = _load_llm_config_path(data_dir)
     database_url = _database_url(data_dir)
 
+    for name in _LLM_ENVIRONMENT_KEYS_TO_REMOVE:
+        os.environ.pop(name, None)
     os.environ["DEPLOY_MODE"] = "selfhost"
     os.environ["ENVIRONMENT"] = "desktop"
     os.environ["SCNGS_DATA_DIR"] = str(data_dir)
     os.environ["DATABASE_URL"] = database_url
     os.environ["JWT_SECRET_KEY"] = jwt_secret
+    os.environ[_LLM_CONFIG_PATH_ENV] = str(llm_config_path)
 
     runtime_root = _runtime_root()
     os.chdir(runtime_root)
@@ -158,6 +203,7 @@ def _prepare_runtime() -> DesktopRuntimeContext:
     return DesktopRuntimeContext(
         data_dir=data_dir,
         database_url=database_url,
+        llm_config_path=llm_config_path,
         runtime_root=runtime_root,
     )
 

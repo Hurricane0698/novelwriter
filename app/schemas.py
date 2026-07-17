@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator, TypeAdapter
+from pydantic import BaseModel, Field, ConfigDict, SecretStr, field_validator, model_validator, TypeAdapter
 from pydantic_core import PydanticCustomError
 from typing import ClassVar, Optional, List, Literal, Any
 from datetime import datetime
@@ -12,6 +12,53 @@ WorldOrigin = Literal["manual", "bootstrap", "worldpack", "worldgen"]
 SystemDisplayType = Literal["hierarchy", "timeline", "list"]
 LegacySystemDisplayType = Literal["hierarchy", "timeline", "list", "graph"]
 WarningMessageParam = str | int | float | bool | None
+
+
+class DesktopLlmConfigPutRequest(BaseModel):
+    base_url: str = Field(min_length=1, max_length=2048)
+    model: str = Field(min_length=1, max_length=255)
+    api_key: SecretStr | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("base_url")
+    @classmethod
+    def _reject_empty_base_url(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("value cannot be empty")
+        return value
+
+    @field_validator("model")
+    @classmethod
+    def _strip_required_model(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value cannot be empty")
+        return normalized
+
+
+class DesktopLlmConfigResponse(BaseModel):
+    configured: bool
+    base_url: str
+    model: str
+    api_key_configured: bool
+
+
+class LlmProbeCapabilitiesResponse(BaseModel):
+    basic: bool
+    stream: bool
+    json_mode: bool
+
+
+class LlmProbeResponse(BaseModel):
+    code: Literal[
+        "llm_probe_compatible",
+        "llm_probe_connection_failed",
+        "llm_probe_capability_mismatch",
+    ]
+    model: str
+    latency_ms: int
+    capabilities: LlmProbeCapabilitiesResponse
 
 
 class NovelBase(BaseModel):

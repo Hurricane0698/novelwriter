@@ -22,7 +22,8 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.events import record_event
-from app.core.llm_request import resolve_generation_billing_source
+from app.core.llm_config import ResolvedLlmConfig
+from app.core.llm_request import get_llm_config
 from app.core.safety_fuses import ensure_ai_available, ensure_hosted_user_capacity, hosted_signup_lock
 from app.database import get_db
 from app.models import AuthIdentity, QuotaReservation, User
@@ -656,21 +657,17 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
-def _resolve_generation_billing_source(request: Request) -> str:
-    return resolve_generation_billing_source(request)
-
-
 def check_generation_quota(
-    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
+    llm_config: ResolvedLlmConfig = Depends(get_llm_config),
 ) -> User:
     """Dependency stub — validates quota > 0 but does NOT decrement.
 
     Actual reservation / decrement happens in the endpoint or background
     workflow once the concrete billable unit is known.
     """
-    ensure_ai_available(db, billing_source=_resolve_generation_billing_source(request))
+    ensure_ai_available(db, billing_source=llm_config.billing_source_hint)
 
     settings = get_settings()
     if settings.deploy_mode == "selfhost":

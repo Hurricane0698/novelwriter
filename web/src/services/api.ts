@@ -61,6 +61,33 @@ export interface AuthOptions {
   github_login_enabled: boolean
 }
 
+export interface LlmConfigResponse {
+  configured: boolean
+  base_url: string
+  model: string
+  api_key_configured: boolean
+}
+
+export interface LlmConfigUpdateRequest {
+  base_url: string
+  model: string
+  api_key?: string
+}
+
+export interface LlmProbeResponse {
+  code:
+    | 'llm_probe_compatible'
+    | 'llm_probe_connection_failed'
+    | 'llm_probe_capability_mismatch'
+  model: string
+  latency_ms: number
+  capabilities: {
+    basic: boolean
+    stream: boolean
+    json_mode: boolean
+  }
+}
+
 export interface AnalyticsEventRequest {
   event: string
   anonymous_id?: string
@@ -218,8 +245,16 @@ export const api = {
     )
   },
 
+  getLlmConfig: () => request<LlmConfigResponse>('/api/llm/config'),
+  updateLlmConfig: (data: LlmConfigUpdateRequest) =>
+    request<LlmConfigResponse>('/api/llm/config', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  clearLlmConfig: () => request<void>('/api/llm/config', { method: 'DELETE' }),
+
   testLlmConnection: () =>
-    request<{ ok: boolean; model?: string; latency_ms?: number; error?: string; message?: string; capabilities?: { basic: boolean; stream: boolean; json_mode: boolean } }>('/api/llm/test', {
+    request<LlmProbeResponse>('/api/llm/test', {
       method: 'POST',
       headers: llmHeaders(),
     }),

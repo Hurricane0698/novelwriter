@@ -5,7 +5,7 @@
 
 import pytest
 
-from tests.copilot.runtime_support import noop_coro as _noop_coro
+from tests.copilot.runtime_support import TEST_LLM_CONFIG, noop_coro as _noop_coro
 
 class TestDegradation:
     @pytest.fixture
@@ -41,7 +41,7 @@ class TestDegradation:
         original_close = db.close
         monkeypatch.setattr(db, "close", lambda: None)
 
-        await execute_copilot_run(run.run_id, novel.id, 1, None)
+        await execute_copilot_run(run.run_id, novel.id, 1, TEST_LLM_CONFIG)
         assert one_shot_called
         db.refresh(run)
         assert run.status == "completed"
@@ -74,7 +74,7 @@ class TestDegradation:
         original_close = db.close
         monkeypatch.setattr(db, "close", lambda: None)
 
-        await execute_copilot_run(run.run_id, novel.id, 1, None)
+        await execute_copilot_run(run.run_id, novel.id, 1, TEST_LLM_CONFIG)
 
         db.refresh(run)
         assert run.status == "completed"
@@ -107,7 +107,7 @@ class TestDegradation:
         monkeypatch.setattr(db, "close", lambda: None)
 
         from app.core.copilot.service import execute_copilot_run
-        await execute_copilot_run(run.run_id, novel.id, 1, None)
+        await execute_copilot_run(run.run_id, novel.id, 1, TEST_LLM_CONFIG)
 
         db.refresh(run)
         assert run.status == "error"
@@ -140,7 +140,7 @@ class TestDegradation:
         monkeypatch.setattr(db, "close", lambda: None)
 
         from app.core.copilot.service import execute_copilot_run
-        await execute_copilot_run(run.run_id, novel.id, 1, None)
+        await execute_copilot_run(run.run_id, novel.id, 1, TEST_LLM_CONFIG)
         assert one_shot_called
 
         db.refresh(run)
@@ -197,7 +197,7 @@ class TestDegradation:
         original_close = db.close
         monkeypatch.setattr(db, "close", lambda: None)
 
-        await execute_copilot_run(run.run_id, novel.id, 1, None)
+        await execute_copilot_run(run.run_id, novel.id, 1, TEST_LLM_CONFIG)
 
         db.refresh(run)
         summaries = [step["summary"] for step in (run.trace_json or [])]
@@ -249,7 +249,7 @@ class TestDegradation:
         original_close = db.close
         monkeypatch.setattr(db, "close", lambda: None)
 
-        await execute_copilot_run(run.run_id, novel.id, 1, None)
+        await execute_copilot_run(run.run_id, novel.id, 1, TEST_LLM_CONFIG)
 
         db.refresh(run)
         assert run.status == "completed"

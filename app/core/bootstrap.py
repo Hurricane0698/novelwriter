@@ -71,6 +71,7 @@ from app.core.llm_semaphore import (
     acquire_background_llm_slot_blocking,
     release_background_llm_slot,
 )
+from app.core.llm_config import ResolvedLlmConfig
 from app.database import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ async def run_bootstrap_job(
     session_factory: Callable[[], Session] | None = None,
     client: AIClient | None = None,
     user_id: int | None = None,
-    llm_config: dict | None = None,
+    llm_config: ResolvedLlmConfig | None = None,
 ) -> BootstrapRunSummary | None:
     make_session = session_factory or SessionLocal
     db = make_session()

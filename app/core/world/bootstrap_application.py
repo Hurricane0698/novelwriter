@@ -27,6 +27,7 @@ from app.core.bootstrap import (
     is_running_status,
     is_stale_running_job,
     RUNNING_BOOTSTRAP_STATUSES,
+    resolve_bootstrap_mode,
     resolve_bootstrap_trigger_user_id,
     resolve_reextract_draft_policy,
     run_bootstrap_job,
@@ -36,8 +37,19 @@ from app.core.safety_fuses import ensure_ai_available
 from app.core.world.crud import load_novel
 from app.core.world.bootstrap_queue import is_window_index_ready
 from app.core.indexing.chapters import has_non_empty_chapter_text
+from app.core.llm_config import (
+    LLM_CONFIG_INCOMPLETE_CODE,
+    LLM_CONFIG_MISSING_CODE,
+    LlmConfigError,
+    LlmConfigValues,
+    ResolvedLlmConfig,
+    resolve_llm_config,
+)
 from app.core.world.bootstrap_state import is_bootstrap_initialized
-from app.core.world.use_case_errors import WorldUseCaseError, detail_error_from_http_exception
+from app.core.world.use_case_errors import (
+    WorldUseCaseError,
+    detail_error_from_http_exception,
+)
 from app.models import BootstrapJob, User
 from app.schemas import BootstrapDraftPolicy, BootstrapTriggerRequest
 
@@ -45,19 +57,19 @@ logger = logging.getLogger(__name__)
 _bootstrap_trigger_locks: dict[int, asyncio.Lock] = {}
 _bootstrap_trigger_locks_guard = asyncio.Lock()
 _LEGACY_REPAIR_SCRIPT = "scripts/fix_legacy_bootstrap_origin.py"
-BOOTSTRAP_HOSTED_BYOK_DISABLED_CODE = "hosted_byok_disabled"
-BOOTSTRAP_HOSTED_BYOK_DISABLED_MESSAGE = "Hosted beta uses platform-managed AI credentials only."
 
 
 @dataclass(frozen=True, slots=True)
-class BootstrapWorkerClaim:
+class BootstrapWorkerCandidate:
     job_id: int
     novel_id: int
     user_id: int | None
     mode: str
 
 
-def _matches_worker_source(job: BootstrapJob, *, queued_source_filter: str | None) -> bool:
+def _matches_worker_source(
+    job: BootstrapJob, *, queued_source_filter: str | None
+) -> bool:
     if queued_source_filter is None:
         return True
     return bootstrap_job_queued_source(job) == queued_source_filter
@@ -69,7 +81,7 @@ async def trigger_bootstrap(
     body: BootstrapTriggerRequest | None,
     db: Session,
     current_user: User,
-    llm_config: dict | None,
+    llm_override: LlmConfigValues,
     settings: Settings | None = None,
     launch_bootstrap_job_fn: Callable[..., None] | None = None,
 ) -> BootstrapJob:
@@ -79,24 +91,6 @@ async def trigger_bootstrap(
 
     async with lock:
         novel = load_novel(novel_id, db)
-        if resolved_settings.deploy_mode == "hosted" and _uses_request_scoped_byok(llm_config):
-            raise WorldUseCaseError(
-                code=BOOTSTRAP_HOSTED_BYOK_DISABLED_CODE,
-                message=BOOTSTRAP_HOSTED_BYOK_DISABLED_MESSAGE,
-                status_code=400,
-            )
-        try:
-            ensure_ai_available(
-                db,
-                billing_source=(
-                    llm_config.get("billing_source_hint")
-                    if isinstance(llm_config, dict)
-                    else ("hosted" if resolved_settings.deploy_mode == "hosted" else None)
-                ),
-            )
-        except HTTPException as exc:
-            raise detail_error_from_http_exception(exc) from exc
-
         if not has_non_empty_chapter_text(db, novel_id):
             raise WorldUseCaseError(
                 code="bootstrap_no_text",
@@ -112,7 +106,11 @@ async def trigger_bootstrap(
             ):
                 logger.warning(
                     "Reclaiming stale bootstrap job before retrigger",
-                    extra={"novel_id": novel_id, "job_id": job.id, "status": job.status},
+                    extra={
+                        "novel_id": novel_id,
+                        "job_id": job.id,
+                        "status": job.status,
+                    },
                 )
             else:
                 raise WorldUseCaseError(
@@ -122,7 +120,29 @@ async def trigger_bootstrap(
                 )
 
         bootstrap_initialized = is_bootstrap_initialized(job)
-        mode, draft_policy = _resolve_trigger_params(body, bootstrap_initialized=bootstrap_initialized)
+        mode, draft_policy = _resolve_trigger_params(
+            body, bootstrap_initialized=bootstrap_initialized
+        )
+
+        llm_config: ResolvedLlmConfig | None = None
+        if mode == BOOTSTRAP_MODE_INDEX_REFRESH:
+            if llm_override.has_any_value():
+                _resolve_request_llm_config(
+                    settings=resolved_settings,
+                    llm_override=llm_override,
+                )
+        else:
+            llm_config = _resolve_request_llm_config(
+                settings=resolved_settings,
+                llm_override=llm_override,
+            )
+            try:
+                ensure_ai_available(
+                    db,
+                    billing_source=llm_config.billing_source_hint,
+                )
+            except HTTPException as exc:
+                raise detail_error_from_http_exception(exc) from exc
 
         if (
             mode == BOOTSTRAP_MODE_REEXTRACT
@@ -172,7 +192,9 @@ async def trigger_bootstrap(
             db.commit()
         except IntegrityError as exc:
             db.rollback()
-            existing_job = db.query(BootstrapJob).filter(BootstrapJob.novel_id == novel_id).first()
+            existing_job = (
+                db.query(BootstrapJob).filter(BootstrapJob.novel_id == novel_id).first()
+            )
             if existing_job and is_running_status(existing_job.status):
                 raise WorldUseCaseError(
                     code="bootstrap_already_running",
@@ -187,12 +209,13 @@ async def trigger_bootstrap(
 
         db.refresh(job)
 
-        if resolved_settings.deploy_mode == "hosted":
+        if resolved_settings.runtime_mode in {"hosted", "desktop"}:
             logger.info(
-                "bootstrap[%d]: queued for hosted worker novel=%d mode=%s",
+                "bootstrap[%d]: queued for background worker novel=%d mode=%s runtime=%s",
                 job.id,
                 novel_id,
                 mode,
+                resolved_settings.runtime_mode,
             )
         else:
             launcher(
@@ -205,20 +228,16 @@ async def trigger_bootstrap(
         return job
 
 
-def _uses_request_scoped_byok(llm_config: dict | None) -> bool:
-    if not isinstance(llm_config, dict):
-        return False
-    return llm_config.get("billing_source_hint") == "byok"
-
-
-def _claim_bootstrap_worker_job(
+def _list_bootstrap_worker_candidates(
     *,
     session_factory: Callable[[], Session],
     settings: Settings,
     queued_source_filter: str | None,
-) -> BootstrapWorkerClaim | None:
+) -> list[BootstrapWorkerCandidate]:
     db = session_factory()
     try:
+        candidates: list[BootstrapWorkerCandidate] = []
+        reclaimed_stale_job = False
         jobs = (
             db.query(BootstrapJob)
             .filter(BootstrapJob.status.in_(RUNNING_BOOTSTRAP_STATUSES))
@@ -226,15 +245,21 @@ def _claim_bootstrap_worker_job(
             .all()
         )
         for job in jobs:
-            if not _matches_worker_source(job, queued_source_filter=queued_source_filter):
+            if not _matches_worker_source(
+                job, queued_source_filter=queued_source_filter
+            ):
                 continue
+            mode = resolve_bootstrap_mode(job.mode)
             if job.status == "pending":
-                return BootstrapWorkerClaim(
-                    job_id=job.id,
-                    novel_id=job.novel_id,
-                    user_id=resolve_bootstrap_trigger_user_id(job),
-                    mode=job.mode,
+                candidates.append(
+                    BootstrapWorkerCandidate(
+                        job_id=job.id,
+                        novel_id=job.novel_id,
+                        user_id=resolve_bootstrap_trigger_user_id(job),
+                        mode=mode,
+                    )
                 )
+                continue
             if not is_running_status(job.status):
                 continue
             if not is_stale_running_job(
@@ -244,24 +269,33 @@ def _claim_bootstrap_worker_job(
                 continue
             logger.warning(
                 "Reclaiming stale background bootstrap job",
-                extra={"novel_id": job.novel_id, "job_id": job.id, "status": job.status},
+                extra={
+                    "novel_id": job.novel_id,
+                    "job_id": job.id,
+                    "status": job.status,
+                },
             )
+            job.mode = mode
             job.status = "pending"
             job.progress = {"step": 0, "detail": "queued"}
             job.result = build_bootstrap_trigger_result(
-                mode=job.mode,
+                mode=mode,
                 user_id=resolve_bootstrap_trigger_user_id(job),
                 queued_source=bootstrap_job_queued_source(job),
             )
             job.error = None
-            db.commit()
-            return BootstrapWorkerClaim(
-                job_id=job.id,
-                novel_id=job.novel_id,
-                user_id=resolve_bootstrap_trigger_user_id(job),
-                mode=job.mode,
+            reclaimed_stale_job = True
+            candidates.append(
+                BootstrapWorkerCandidate(
+                    job_id=job.id,
+                    novel_id=job.novel_id,
+                    user_id=resolve_bootstrap_trigger_user_id(job),
+                    mode=mode,
+                )
             )
-        return None
+        if reclaimed_stale_job:
+            db.commit()
+        return candidates
     except Exception:
         db.rollback()
         raise
@@ -278,35 +312,79 @@ def run_next_bootstrap_job(
     resolved_settings = settings or get_settings()
     queued_source_filter = (
         BOOTSTRAP_RESULT_QUEUED_SOURCE_INGEST_AUTO
-        if resolved_settings.deploy_mode == "selfhost"
+        if resolved_settings.runtime_mode == "selfhost"
         else None
     )
 
-    claim = _claim_bootstrap_worker_job(
+    candidates = _list_bootstrap_worker_candidates(
         session_factory=session_factory,
         settings=resolved_settings,
         queued_source_filter=queued_source_filter,
     )
-    if claim is None:
+    if not candidates:
+        return False
+
+    selected_candidate: BootstrapWorkerCandidate | None = None
+    llm_config: ResolvedLlmConfig | None = None
+    llm_config_resolved = False
+    llm_config_unavailable = False
+    for candidate in candidates:
+        if candidate.mode == BOOTSTRAP_MODE_INDEX_REFRESH:
+            selected_candidate = candidate
+            llm_config = None
+            break
+        if not llm_config_resolved:
+            llm_config_resolved = True
+            try:
+                llm_config = resolve_llm_config(settings=resolved_settings)
+            except LlmConfigError as exc:
+                if exc.code in {LLM_CONFIG_MISSING_CODE, LLM_CONFIG_INCOMPLETE_CODE}:
+                    llm_config_unavailable = True
+                else:
+                    raise
+        if llm_config_unavailable:
+            continue
+        selected_candidate = candidate
+        break
+
+    if selected_candidate is None:
         return False
 
     logger.info(
         "bootstrap[%d]: background worker picked queued job novel=%d mode=%s source=%s",
-        claim.job_id,
-        claim.novel_id,
-        claim.mode,
+        selected_candidate.job_id,
+        selected_candidate.novel_id,
+        selected_candidate.mode,
         queued_source_filter or "any",
     )
     runner = background_job_runner or run_bootstrap_background_job
     asyncio.run(
         runner(
-            claim.job_id,
+            selected_candidate.job_id,
             session_factory=session_factory,
-            user_id=claim.user_id,
-            llm_config=None,
+            user_id=selected_candidate.user_id,
+            llm_config=llm_config,
         )
     )
     return True
+
+
+def _resolve_request_llm_config(
+    *,
+    settings: Settings,
+    llm_override: LlmConfigValues,
+) -> ResolvedLlmConfig:
+    try:
+        return resolve_llm_config(
+            settings=settings,
+            request_override=llm_override,
+        )
+    except LlmConfigError as exc:
+        raise WorldUseCaseError(
+            code=exc.code,
+            message=str(exc),
+            status_code=exc.status_code,
+        ) from exc
 
 
 def get_bootstrap_status(
@@ -325,7 +403,9 @@ def get_bootstrap_status(
         )
 
     resolved_settings = settings or get_settings()
-    if is_stale_running_job(job, stale_after_seconds=resolved_settings.bootstrap_stale_job_timeout_seconds):
+    if is_stale_running_job(
+        job, stale_after_seconds=resolved_settings.bootstrap_stale_job_timeout_seconds
+    ):
         job.status = "failed"
         job.error = "Bootstrap job stale after restart; please retry."
         db.commit()
@@ -338,11 +418,13 @@ def launch_bootstrap_job(
     db: Session,
     job_id: int,
     user_id: int | None,
-    llm_config: dict | None,
+    llm_config: ResolvedLlmConfig | None,
     task_scheduler: Callable[[Awaitable[None]], object] = asyncio.create_task,
     background_job_runner: Callable[..., Awaitable[None]] | None = None,
 ) -> None:
-    background_session_factory = sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False)
+    background_session_factory = sessionmaker(
+        bind=db.get_bind(), autocommit=False, autoflush=False
+    )
     runner = background_job_runner or run_bootstrap_background_job
     task_scheduler(
         runner(
@@ -359,8 +441,10 @@ async def run_bootstrap_background_job(
     *,
     session_factory: Callable[[], Session],
     user_id: int | None = None,
-    llm_config: dict | None = None,
-    bootstrap_runner: Callable[..., Awaitable[BootstrapRunSummary | None]] = run_bootstrap_job,
+    llm_config: ResolvedLlmConfig | None = None,
+    bootstrap_runner: Callable[
+        ..., Awaitable[BootstrapRunSummary | None]
+    ] = run_bootstrap_job,
     record_event_fn: Callable[..., None] = record_event,
 ) -> None:
     summary = await bootstrap_runner(
@@ -407,7 +491,11 @@ def _resolve_trigger_params(
     mode_explicit = body is not None and "mode" in body.model_fields_set
     mode = request.mode.value
     if not mode_explicit:
-        mode = BOOTSTRAP_MODE_INDEX_REFRESH if bootstrap_initialized else BOOTSTRAP_MODE_INITIAL
+        mode = (
+            BOOTSTRAP_MODE_INDEX_REFRESH
+            if bootstrap_initialized
+            else BOOTSTRAP_MODE_INITIAL
+        )
 
     if mode != BOOTSTRAP_MODE_REEXTRACT and request.draft_policy is not None:
         raise WorldUseCaseError(

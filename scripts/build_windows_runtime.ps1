@@ -105,7 +105,7 @@ try {
             throw "npm ci failed."
         }
         $env:VITE_API_URL = ""
-        $env:VITE_DEPLOY_MODE = "selfhost"
+        $env:VITE_DEPLOY_MODE = "desktop"
         & npm run build
         if ($LASTEXITCODE -ne 0) {
             throw "Frontend build failed."

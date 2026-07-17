@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { afterEach, describe, expect, it, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -52,12 +52,19 @@ function renderDemoEntry(initialPath = '/demo') {
 
 describe('DemoEntryPage', () => {
   beforeEach(() => {
+    vi.unstubAllEnvs()
+    vi.stubEnv('VITE_DEPLOY_MODE', 'desktop')
     authState.isLoggedIn = false
     authState.isLoading = false
     listNovelsMock.mockReset()
   })
 
-  it('sends signed-out users through login while preserving the demo intent', async () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('sends signed-out hosted users through login while preserving the demo intent', async () => {
+    vi.stubEnv('VITE_DEPLOY_MODE', 'hosted')
     renderDemoEntry('/demo')
 
     await waitFor(() => {
@@ -67,8 +74,8 @@ describe('DemoEntryPage', () => {
     expect(listNovelsMock).not.toHaveBeenCalled()
   })
 
-  it('opens the seeded demo studio for signed-in users', async () => {
-    authState.isLoggedIn = true
+  it.each(['desktop', 'selfhost'] as const)('opens the seeded demo directly in %s mode without login', async (runtimeMode) => {
+    vi.stubEnv('VITE_DEPLOY_MODE', runtimeMode)
     listNovelsMock.mockResolvedValue([
       { id: 3, is_seeded_demo: false },
       { id: 9, is_seeded_demo: true },
@@ -81,8 +88,7 @@ describe('DemoEntryPage', () => {
     })
   })
 
-  it('falls back to library when no seeded demo exists', async () => {
-    authState.isLoggedIn = true
+  it('falls back to library when no seeded desktop demo exists', async () => {
     listNovelsMock.mockResolvedValue([{ id: 3, is_seeded_demo: false }])
 
     renderDemoEntry('/demo')

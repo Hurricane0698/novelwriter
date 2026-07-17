@@ -7,6 +7,7 @@ const DATA_DIRECTORY_NAME: &str = "data";
 const LOGS_DIRECTORY_NAME: &str = "logs";
 const APP_DIRECTORY_NAME: &str = "app";
 const SECRET_FILE_NAME: &str = "runtime-secret.json";
+const LLM_CONFIG_FILE_NAME: &str = "llm-config.json";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AppPaths {
@@ -15,6 +16,7 @@ pub struct AppPaths {
     pub logs: PathBuf,
     pub app: PathBuf,
     pub secret: PathBuf,
+    pub llm_config: PathBuf,
 }
 
 impl AppPaths {
@@ -25,6 +27,7 @@ impl AppPaths {
             logs: root.join(LOGS_DIRECTORY_NAME),
             app: root.join(APP_DIRECTORY_NAME),
             secret: root.join(SECRET_FILE_NAME),
+            llm_config: root.join(LLM_CONFIG_FILE_NAME),
             root,
         }
     }
@@ -85,6 +88,9 @@ mod tests {
         assert_eq!(paths.logs, expected_root.join("logs"));
         assert_eq!(paths.app, expected_root.join("app"));
         assert_eq!(paths.secret, expected_root.join("runtime-secret.json"));
+        assert_eq!(paths.llm_config, expected_root.join("llm-config.json"));
+        assert_eq!(paths.llm_config.parent(), Some(paths.root.as_path()));
+        assert_ne!(paths.llm_config.parent(), Some(paths.data.as_path()));
     }
 
     #[test]
@@ -105,6 +111,7 @@ mod tests {
         }
         assert!(!paths.app.exists());
         assert!(!paths.secret.exists());
+        assert!(!paths.llm_config.exists());
     }
 
     #[test]

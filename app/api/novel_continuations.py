@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user_or_default
 from app.core.llm_request import get_llm_config
+from app.core.llm_config import ResolvedLlmConfig
 from app.database import get_db
 from app.models import Continuation, User
 from app.schemas import (
@@ -31,7 +32,7 @@ async def continue_novel_endpoint(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
-    llm_config: dict | None = Depends(get_llm_config),
+    llm_config: ResolvedLlmConfig = Depends(get_llm_config),
 ):
     return await continuation_runtime.handle_continue_request(
         db=db,
@@ -50,7 +51,7 @@ async def continue_novel_stream_endpoint(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
-    llm_config: dict | None = Depends(get_llm_config),
+    llm_config: ResolvedLlmConfig = Depends(get_llm_config),
 ):
     return await continuation_runtime.handle_continue_stream_request(
         db=db,

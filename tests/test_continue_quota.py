@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.config import Settings
 from app.core.continuation_runs import build_continuation_request_hash
 from app.database import Base, get_db
 from app.models import Chapter, Continuation, ContinuationRun, Novel, QuotaReservation, TokenUsage, User
@@ -25,6 +26,17 @@ engine = create_engine(
     poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def _hosted_settings(**overrides) -> Settings:
+    return Settings(
+        deploy_mode="hosted",
+        hosted_llm_base_url="https://hosted.example/v1",
+        hosted_llm_api_key="hosted-key",
+        hosted_llm_model="hosted-model",
+        _env_file=None,
+        **overrides,
+    )
 
 
 @pytest.fixture(scope="function")
@@ -41,10 +53,8 @@ def db():
 @pytest.fixture(scope="function")
 def hosted_settings(_force_selfhost_settings):  # ensure conftest runs first
     import app.config as config_mod
-    from app.config import Settings
-
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(deploy_mode="hosted", _env_file=None)
+    config_mod._settings_instance = _hosted_settings()
     try:
         yield
     finally:
@@ -197,10 +207,8 @@ def test_continue_does_not_charge_quota_on_busy_semaphore_503(client, db, hosted
 
 def test_continue_rejects_when_ai_budget_hard_stop_is_reached(client, db, hosted_user, novel, monkeypatch):
     import app.config as config_mod
-    from app.config import Settings
-
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
+    config_mod._settings_instance = _hosted_settings(ai_hard_stop_usd=1.0)
     try:
         db.add(
             TokenUsage(
@@ -238,10 +246,8 @@ def test_continue_rejects_byok_when_ai_budget_hard_stop_is_reached(
     monkeypatch,
 ):
     import app.config as config_mod
-    from app.config import Settings
-
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(deploy_mode="hosted", ai_hard_stop_usd=1.0, _env_file=None)
+    config_mod._settings_instance = _hosted_settings(ai_hard_stop_usd=1.0)
     try:
         db.add(
             TokenUsage(
@@ -524,8 +530,6 @@ def test_continue_duplicate_click_without_request_id_fast_fails(client, db, host
 def test_continue_does_not_reclaim_old_running_semantic_run_on_timeout(client, db, hosted_user, novel, monkeypatch):
     import app.config as config_mod
     import app.api.novel_continuation_runtime as continuation_api
-    from app.config import Settings
-
     payload = {"num_versions": 1, "context_chapters": 1}
     stale_started = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=10)
     db.add(
@@ -546,10 +550,8 @@ def test_continue_does_not_reclaim_old_running_semantic_run_on_timeout(client, d
     db.commit()
 
     prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(
-        deploy_mode="hosted",
+    config_mod._settings_instance = _hosted_settings(
         generation_run_stale_timeout_seconds=1,
-        _env_file=None,
     )
     try:
         monkeypatch.setattr(

@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
 
+    # Desktop-only process contract. The Tauri launcher owns this path and the
+    # Python runtime never derives it from the install or data directory.
+    novwr_desktop_llm_config_path: str = ""
+
     db_auto_create: bool = False
 
     max_context_chapters: int = DEFAULT_CONTEXT_CHAPTERS
@@ -171,6 +175,12 @@ class Settings(BaseSettings):
     def normalized_environment(self) -> str:
         return (self.environment or "dev").strip().lower()
 
+    @property
+    def runtime_mode(self) -> Literal["hosted", "selfhost", "desktop"]:
+        if self.normalized_environment == "desktop":
+            return "desktop"
+        return self.deploy_mode
+
     @field_validator("hosted_invite_codes", mode="before")
     @classmethod
     def _parse_hosted_invite_codes(cls, value: object) -> object:
@@ -202,6 +212,12 @@ class Settings(BaseSettings):
     @property
     def hosted_invite_login_enabled(self) -> bool:
         return bool(self.hosted_invite_code_entries)
+
+    @model_validator(mode="after")
+    def _validate_runtime_mode(self) -> "Settings":
+        if self.normalized_environment == "desktop" and self.deploy_mode != "selfhost":
+            raise ValueError("desktop environment requires deploy_mode=selfhost")
+        return self
 
     @model_validator(mode="after")
     def _validate_llm_concurrency(self) -> "Settings":

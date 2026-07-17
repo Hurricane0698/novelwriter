@@ -39,3 +39,15 @@ def test_settings_validate_background_llm_lane_does_not_exceed_global_capacity()
             max_background_concurrent_llm_calls=2,
             _env_file=None,
         )
+
+
+def test_settings_reject_desktop_environment_with_hosted_deploy_mode():
+    with pytest.raises(
+        ValidationError,
+        match="desktop environment requires deploy_mode=selfhost",
+    ):
+        Settings(
+            environment="desktop",
+            deploy_mode="hosted",
+            _env_file=None,
+        )

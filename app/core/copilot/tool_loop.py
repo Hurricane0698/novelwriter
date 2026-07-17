@@ -13,6 +13,7 @@ from typing import Any, Awaitable, Callable
 from sqlalchemy.orm import Session
 
 from app.core.ai_client import AIClient
+from app.core.llm_config import ResolvedLlmConfig
 from app.core.copilot.prompt_contract import PromptBuild
 from app.core.copilot.run_state import ensure_run_lease as _ensure_run_lease
 from app.core.copilot.scope import EvidenceItem, ScopeSnapshot
@@ -51,7 +52,6 @@ class ToolLoopDeps:
     tool_load_scope_snapshot: Callable[[ScopeSnapshot], str]
     persist_workspace: Callable[..., bool]
     renew_run_lease: Callable[..., bool]
-    extract_llm_kwargs: Callable[[dict[str, Any] | None], dict[str, Any]]
     parse_llm_response: Callable[[str], dict[str, Any]]
     evidence_from_workspace: Callable[
         [Workspace, list[EvidenceItem], str], list[EvidenceItem]
@@ -165,7 +165,7 @@ async def run_tool_loop(
     novel_id: int,
     session_data: dict[str, Any],
     prompt: str,
-    llm_config: dict[str, Any] | None,
+    llm_config: ResolvedLlmConfig,
     user_id: int,
     snapshot: ScopeSnapshot,
     scenario: str,
@@ -184,7 +184,6 @@ async def run_tool_loop(
     settings = get_settings()
     max_rounds = settings.copilot_max_tool_rounds
     client = deps.client_factory()
-    llm_kwargs = deps.extract_llm_kwargs(llm_config)
     valid_tool_names = {spec.name for spec in deps.tool_catalog.specs}
 
     if inherited_workspace and inherited_workspace.get("messages"):
@@ -276,11 +275,11 @@ async def run_tool_loop(
             response = await client.generate_with_tools(
                 messages=messages,
                 tools=deps.tool_catalog.tool_schemas,
+                llm_config=llm_config,
                 max_tokens=4000,
                 temperature=0.4,
                 role="default",
                 user_id=user_id,
-                **llm_kwargs,
             )
         finally:
             deps.release_llm_slot()
@@ -353,15 +352,15 @@ async def run_tool_loop(
     _ensure_run_lease(deps, db_factory, run_id=run_id, worker_id=worker_id)
     await deps.acquire_llm_slot()
     try:
-            response = await client.generate_with_tools(
-                messages=messages,
-                tools=deps.tool_catalog.tool_schemas,
-                max_tokens=4000,
-                temperature=0.4,
-                role="default",
+        response = await client.generate_with_tools(
+            messages=messages,
+            tools=deps.tool_catalog.tool_schemas,
+            llm_config=llm_config,
+            max_tokens=4000,
+            temperature=0.4,
+            role="default",
             user_id=user_id,
             tool_choice="none",
-            **llm_kwargs,
         )
     finally:
         deps.release_llm_slot()
