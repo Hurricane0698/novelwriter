@@ -210,8 +210,8 @@ def persist_bootstrap_output(
         entity.name: entity
         for entity in db.query(WorldEntity).filter(WorldEntity.novel_id == novel_id).all()
     }
-    entity_ids_by_name: dict[str, int] = {}
     entities_written = 0
+    new_entities: list[WorldEntity] = []
 
     for refined_entity in refinement.entities:
         name = refined_entity.name.strip()
@@ -234,7 +234,7 @@ def persist_bootstrap_output(
                 status="draft",
             )
             db.add(entity)
-            db.flush()
+            new_entities.append(entity)
             existing_entities[name] = entity
             entities_written += 1
         elif entity.status == "draft" and entity.origin == "bootstrap":
@@ -242,7 +242,9 @@ def persist_bootstrap_output(
             entity.aliases = _normalize_aliases([*(entity.aliases or []), *aliases], name)
             entities_written += 1
 
-        entity_ids_by_name[name] = entity.id
+    if new_entities:
+        # One flush assigns ids for relationship resolution below.
+        db.flush()
 
     existing_relationship_keys = {
         relationship_signature_from_row(rel)
@@ -257,16 +259,12 @@ def persist_bootstrap_output(
         if not source_name or not target_name or not label or source_name == target_name:
             continue
 
-        source_id = entity_ids_by_name.get(source_name)
-        target_id = entity_ids_by_name.get(target_name)
-        if source_id is None:
-            source = existing_entities.get(source_name)
-            source_id = source.id if source else None
-        if target_id is None:
-            target = existing_entities.get(target_name)
-            target_id = target.id if target else None
-        if source_id is None or target_id is None:
+        source = existing_entities.get(source_name)
+        target = existing_entities.get(target_name)
+        if source is None or target is None:
             continue
+        source_id = int(source.id)
+        target_id = int(target.id)
 
         direct_key = build_relationship_signature(
             source_id=source_id,

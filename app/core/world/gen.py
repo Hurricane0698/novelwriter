@@ -588,11 +588,10 @@ def _delete_previous_worldgen_drafts(db: Session, novel_id: int) -> None:
         .all()
     )
     for src_id, tgt_id in remaining_rels:
-        try:
+        if src_id is not None:
             protected_entity_ids.add(int(src_id))
+        if tgt_id is not None:
             protected_entity_ids.add(int(tgt_id))
-        except Exception:
-            continue
 
     # Relationships first (draft-only).
     db.query(WorldRelationship).filter(
@@ -687,15 +686,13 @@ async def generate_world_drafts(
             if name:
                 name_to_entity_id[str(name)] = int(entity_id)
 
-        name_to_system_id: dict[str, int] = {}
-        for system_id, name in (
-            db.query(WorldSystem.id, WorldSystem.name)
+        existing_system_names = {
+            str(name)
+            for (name,) in db.query(WorldSystem.name)
             .filter(WorldSystem.novel_id == novel_id)
             .all()
-        ):
-            if name:
-                name_to_system_id[str(name)] = int(system_id)
-        existing_system_names = set(name_to_system_id.keys())
+            if name
+        }
 
         relationship_keys_seen: set[tuple[int, int, str]] = set()
         for src_id, tgt_id, label_canonical in (
@@ -722,7 +719,9 @@ async def generate_world_drafts(
         relationships_created = 0
         systems_created = 0
 
-        # Entities
+        # Entities — stage all new rows, then one flush to assign ids for
+        # relationship resolution.
+        new_entities: list[WorldEntity] = []
         for idx, ent in enumerate(extracted.entities or []):
             name = _norm(ent.name)
             if not name:
@@ -749,9 +748,14 @@ async def generate_world_drafts(
                 status="draft",
             )
             db.add(entity)
-            db.flush()  # assign id for relationship resolution
-            name_to_entity_id[name] = int(entity.id)
+            new_entities.append(entity)
+            name_to_entity_id[name] = 0  # reserved; real id assigned after flush
             entities_created += 1
+
+        if new_entities:
+            db.flush()
+            for entity in new_entities:
+                name_to_entity_id[str(entity.name)] = int(entity.id)
 
         # Relationships
         for idx, rel in enumerate(extracted.relationships or []):
@@ -902,8 +906,6 @@ async def generate_world_drafts(
                 status="draft",
             )
             db.add(system)
-            db.flush()
-            name_to_system_id[name] = int(system.id)
             systems_created += 1
 
         db.commit()

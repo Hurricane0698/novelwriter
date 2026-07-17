@@ -451,6 +451,43 @@ async def test_run_bootstrap_job_builds_state_proto_before_refinement_in_hosted_
 
 
 @pytest.mark.asyncio
+async def test_run_bootstrap_job_fails_fast_without_rust_state_proto(db, monkeypatch):
+    """Rust-canonical contract: no hidden Python compat payload when Rust is unavailable."""
+    from app.core.indexing.state_proto_executor import STATE_PROTO_RUST_REQUIRED_ERROR
+
+    novel = Novel(title="Rust Required", author="Tester", language="en", file_path="/tmp/test.txt", total_chapters=1)
+    db.add(novel)
+    db.commit()
+    db.refresh(novel)
+
+    db.add(Chapter(novel_id=novel.id, chapter_number=1, title="One", content="Alice met Bob. " * 40))
+    job = BootstrapJob(
+        novel_id=novel.id,
+        mode=BOOTSTRAP_MODE_INITIAL,
+        status="pending",
+        progress={"step": 0, "detail": "queued"},
+        result={"entities_found": 0, "relationships_found": 0},
+    )
+    db.add(job)
+    db.commit()
+
+    def _build(**kwargs):
+        raise RuntimeError(STATE_PROTO_RUST_REQUIRED_ERROR)
+
+    monkeypatch.setattr(bootstrap_module, "execute_state_proto_build", _build)
+
+    summary = await run_bootstrap_job(job.id, session_factory=TestingSessionLocal, client=_FakeAIClient())
+
+    assert summary is None
+    db.expire_all()
+    refreshed_job = db.query(BootstrapJob).filter(BootstrapJob.id == job.id).first()
+    refreshed_novel = db.query(Novel).filter(Novel.id == novel.id).first()
+    assert refreshed_job.status == "failed"
+    assert refreshed_novel.window_index is None
+    assert refreshed_novel.window_index_status == "failed"
+
+
+@pytest.mark.asyncio
 async def test_bootstrap_dedupes_canonical_relationship_labels(db):
     novel = Novel(title="Canonical Test", author="Tester", language="en", file_path="/tmp/test.txt", total_chapters=1)
     db.add(novel)

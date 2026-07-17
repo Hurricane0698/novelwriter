@@ -65,7 +65,7 @@ def parse_novel_text(
     content: str, *, language: str | None = None
 ) -> list[ParsedChapter]:
     """Parse novel text into structured chapter records."""
-    chapter_regexes = _compile_chapter_heading_regexes(
+    chapter_regexes = compile_chapter_heading_regexes(
         language=language,
         sample_text=content,
     )
@@ -207,24 +207,13 @@ def _iter_novel_file_lines(file_path: str, *, encoding: str) -> Iterable[str]:
         yield from handle
 
 
-def _compile_chapter_heading_regexes(
-    *,
-    language: str | None,
-    sample_text: str,
-) -> list[re.Pattern[str]]:
-    return compile_chapter_heading_regexes(
-        language=language,
-        sample_text=sample_text,
-    )
-
-
 def _find_chapter_heading_regex_in_file(
     file_path: str,
     *,
     encoding: str,
     language: str,
 ) -> re.Pattern[str] | None:
-    compiled_patterns = _compile_chapter_heading_regexes(
+    compiled_patterns = compile_chapter_heading_regexes(
         language=language,
         sample_text="",
     )

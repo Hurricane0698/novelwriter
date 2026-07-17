@@ -2,7 +2,6 @@
 
 from .builder import (
     ChapterText,
-    detect_language,
     get_tokenizer,
     load_common_words,
     tokenize_text,
@@ -35,8 +34,6 @@ from .planner import (
     AUTO_INDEX_PLAN_DEFERRED,
     AUTO_INDEX_PLAN_IMMEDIATE,
     AUTO_INDEX_PLAN_SKIP_AUTO,
-    should_enqueue_window_index_build,
-    should_enqueue_window_index_build_deferred,
     should_enqueue_window_index_build_immediately,
 )
 from .state_proto_executor import execute_state_proto_build
@@ -146,7 +143,6 @@ __all__ = [
     "WindowRef",
     "build_state_proto_target_specs_from_world_entities",
     "compute_state_proto_chapter_signature",
-    "detect_language",
     "enqueue_window_index_rebuild_for_latest_revision",
     "enqueue_window_index_rebuild_job",
     "execute_state_proto_build",
@@ -168,8 +164,6 @@ __all__ = [
     "resolve_world_entity_target_kind",
     "run_next_window_index_rebuild_job",
     "select_next_window_index_rebuild_job_novel_id",
-    "should_enqueue_window_index_build",
-    "should_enqueue_window_index_build_deferred",
     "should_enqueue_window_index_build_immediately",
     "tokenize_text",
     "window_index_is_ready",

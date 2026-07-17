@@ -4,7 +4,6 @@ from functools import lru_cache
 from pathlib import Path
 import re
 import unicodedata
-from collections.abc import Iterable
 from dataclasses import dataclass
 
 from app.language import DEFAULT_LANGUAGE, normalize_language_code
@@ -110,19 +109,6 @@ def detect_language_from_text(
             return "zh"
 
     return "en"
-
-
-def detect_language_from_texts(
-    texts: Iterable[str],
-    *,
-    cjk_space_ratio_threshold: float = DEFAULT_CJK_SPACE_RATIO_THRESHOLD,
-) -> str:
-    accumulator = LanguageDetectionAccumulator(
-        cjk_space_ratio_threshold=cjk_space_ratio_threshold,
-    )
-    for text in texts:
-        accumulator.add_text(text)
-    return accumulator.detect_language()
 
 
 def resolve_text_processing_language(

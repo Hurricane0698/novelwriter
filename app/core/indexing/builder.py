@@ -8,8 +8,6 @@ from pathlib import Path
 from typing import Protocol
 
 from app.language_policy import (
-    DEFAULT_CJK_SPACE_RATIO_THRESHOLD,
-    detect_language_from_text,
     get_language_policy,
     resolve_text_processing_language,
 )
@@ -76,16 +74,6 @@ class JiebaTokenizer:
         if rust_tokenize is not None:
             return [token for token in rust_tokenize(text) if token]
         return CharacterNgramTokenizer(n=2).tokenize(text)
-
-
-def detect_language(
-    text: str,
-    *,
-    cjk_space_ratio_threshold: float = DEFAULT_CJK_SPACE_RATIO_THRESHOLD,
-) -> str:
-    return detect_language_from_text(
-        text, cjk_space_ratio_threshold=cjk_space_ratio_threshold
-    )
 
 
 def get_tokenizer(
@@ -180,7 +168,6 @@ __all__ = [
     "WhitespaceTokenizer",
     "CharacterNgramTokenizer",
     "JiebaTokenizer",
-    "detect_language",
     "get_tokenizer",
     "tokenize_text",
     "load_common_words",

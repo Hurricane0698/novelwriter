@@ -25,23 +25,6 @@ def _configure_limits(monkeypatch, *, total: int, background: int) -> None:
 
 
 @pytest.mark.asyncio
-async def test_blocking_acquire_returns_wait_duration(monkeypatch):
-    _configure_limits(monkeypatch, total=1, background=1)
-
-    await llm_semaphore.acquire_llm_slot()
-
-    async def waiter() -> float:
-        return await llm_semaphore.acquire_llm_slot_blocking()
-
-    task = asyncio.create_task(waiter())
-    await asyncio.sleep(0.05)
-    llm_semaphore.release_llm_slot()
-    waited = await task
-    assert waited >= 0.04
-    llm_semaphore.release_llm_slot()
-
-
-@pytest.mark.asyncio
 async def test_background_lane_preserves_foreground_headroom(monkeypatch):
     _configure_limits(monkeypatch, total=2, background=1)
 

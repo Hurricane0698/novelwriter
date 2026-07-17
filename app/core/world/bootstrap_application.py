@@ -26,6 +26,7 @@ from app.core.bootstrap import (
     find_legacy_manual_draft_ambiguity,
     is_running_status,
     is_stale_running_job,
+    RUNNING_BOOTSTRAP_STATUSES,
     resolve_bootstrap_trigger_user_id,
     resolve_reextract_draft_policy,
     run_bootstrap_job,
@@ -34,9 +35,10 @@ from app.core.events import record_event
 from app.core.safety_fuses import ensure_ai_available
 from app.core.world.crud import load_novel
 from app.core.world.bootstrap_queue import is_window_index_ready
+from app.core.indexing.chapters import has_non_empty_chapter_text
 from app.core.world.bootstrap_state import is_bootstrap_initialized
 from app.core.world.use_case_errors import WorldUseCaseError, detail_error_from_http_exception
-from app.models import BootstrapJob, Chapter, User
+from app.models import BootstrapJob, User
 from app.schemas import BootstrapDraftPolicy, BootstrapTriggerRequest
 
 logger = logging.getLogger(__name__)
@@ -95,7 +97,7 @@ async def trigger_bootstrap(
         except HTTPException as exc:
             raise detail_error_from_http_exception(exc) from exc
 
-        if not _has_non_empty_chapter_text(novel_id, db):
+        if not has_non_empty_chapter_text(db, novel_id):
             raise WorldUseCaseError(
                 code="bootstrap_no_text",
                 message="Novel has no non-empty chapter text to bootstrap",
@@ -219,6 +221,7 @@ def _claim_bootstrap_worker_job(
     try:
         jobs = (
             db.query(BootstrapJob)
+            .filter(BootstrapJob.status.in_(RUNNING_BOOTSTRAP_STATUSES))
             .order_by(BootstrapJob.updated_at.asc(), BootstrapJob.id.asc())
             .all()
         )
@@ -393,11 +396,6 @@ async def _get_bootstrap_trigger_lock(novel_id: int) -> asyncio.Lock:
             lock = asyncio.Lock()
             _bootstrap_trigger_locks[novel_id] = lock
         return lock
-
-
-def _has_non_empty_chapter_text(novel_id: int, db: Session) -> bool:
-    chapters = db.query(Chapter.content).filter(Chapter.novel_id == novel_id).all()
-    return any((content or "").strip() for (content,) in chapters)
 
 
 def _resolve_trigger_params(

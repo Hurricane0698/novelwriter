@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import logging
 from typing import Callable
 
@@ -12,22 +11,14 @@ from app.core.bootstrap_contract import (
     BOOTSTRAP_MODE_INITIAL,
     BOOTSTRAP_RESULT_QUEUED_SOURCE_INGEST_AUTO,
     build_bootstrap_trigger_result,
+    is_running_status,
+    is_stale_running_job,
 )
+from app.core.indexing.chapters import has_non_empty_chapter_text
 from app.core.world.bootstrap_state import is_bootstrap_initialized
-from app.models import BootstrapJob, Chapter, Novel, NovelIngestJob
+from app.models import BootstrapJob, Novel, NovelIngestJob
 
 logger = logging.getLogger(__name__)
-
-_RUNNING_BOOTSTRAP_STATUSES = frozenset(
-    {
-        "pending",
-        "tokenizing",
-        "extracting",
-        "windowing",
-        "refining",
-    }
-)
-
 
 def _auto_bootstrap_llm_ready(settings: Settings) -> bool:
     if bool(getattr(settings, "ai_manual_disable", False)):
@@ -76,12 +67,12 @@ def ensure_ingest_bootstrap_job(
             return None
         if bootstrap_plan not in {"immediate", "defer_until_index"}:
             return None
-        if not _has_non_empty_chapter_text(novel_id, db):
+        if not has_non_empty_chapter_text(db, novel_id):
             return None
 
         job = db.query(BootstrapJob).filter(BootstrapJob.novel_id == novel_id).first()
-        if job and _is_running_status(job.status):
-            if _is_stale_running_job(
+        if job and is_running_status(job.status):
+            if is_stale_running_job(
                 job,
                 stale_after_seconds=resolved_settings.bootstrap_stale_job_timeout_seconds,
             ):
@@ -116,7 +107,7 @@ def ensure_ingest_bootstrap_job(
             existing_job = db.query(BootstrapJob).filter(BootstrapJob.novel_id == novel_id).first()
             if existing_job and (
                 is_bootstrap_initialized(existing_job)
-                or _is_running_status(existing_job.status)
+                or is_running_status(existing_job.status)
             ):
                 return None
             raise
@@ -133,11 +124,6 @@ def ensure_ingest_bootstrap_job(
         db.close()
 
 
-def _has_non_empty_chapter_text(novel_id: int, db: Session) -> bool:
-    chapters = db.query(Chapter.content).filter(Chapter.novel_id == novel_id).all()
-    return any((content or "").strip() for (content,) in chapters)
-
-
 def is_window_index_ready(novel: Novel) -> bool:
     current_revision = int(getattr(novel, "window_index_revision", 0) or 0)
     built_revision = int(getattr(novel, "window_index_built_revision", 0) or 0)
@@ -146,26 +132,3 @@ def is_window_index_ready(novel: Novel) -> bool:
         and built_revision >= current_revision
         and str(getattr(novel, "window_index_status", "") or "").strip().lower() == "fresh"
     )
-
-
-def _is_running_status(status: str | None) -> bool:
-    return status in _RUNNING_BOOTSTRAP_STATUSES
-def _is_stale_running_job(
-    job: BootstrapJob,
-    *,
-    stale_after_seconds: int,
-    now: datetime | None = None,
-) -> bool:
-    if stale_after_seconds <= 0 or not _is_running_status(job.status):
-        return False
-
-    updated_at = job.updated_at or job.created_at
-    if updated_at is None:
-        return False
-    if updated_at.tzinfo is not None:
-        updated_at = updated_at.astimezone(timezone.utc).replace(tzinfo=None)
-
-    current_time = now or datetime.now(timezone.utc)
-    if current_time.tzinfo is not None:
-        current_time = current_time.astimezone(timezone.utc).replace(tzinfo=None)
-    return (current_time - updated_at).total_seconds() >= stale_after_seconds

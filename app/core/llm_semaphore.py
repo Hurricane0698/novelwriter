@@ -65,18 +65,6 @@ async def acquire_llm_slot() -> None:
     await sem.acquire()
 
 
-async def acquire_llm_slot_blocking() -> float:
-    """Acquire an LLM concurrency slot, waiting if necessary.
-
-    This is the plain shared-gate blocking acquire. Use it only for callers
-    that genuinely should wait on the global gate without consuming a special
-    background lane.
-    """
-    started = perf_counter()
-    await _get_global_semaphore().acquire()
-    return max(perf_counter() - started, 0.0)
-
-
 def release_llm_slot() -> None:
     """Release a previously acquired LLM concurrency slot."""
     _get_global_semaphore().release()

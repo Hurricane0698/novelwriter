@@ -30,21 +30,12 @@ from app.core.bootstrap_refinement import (
     sanitize_bootstrap_refinement_result,
 )
 from app.core.indexing.chapters import load_chapter_texts
-from app.core.indexing.state_proto_executor import STATE_PROTO_RUST_REQUIRED_ERROR
-from app.core.indexing.state_proto_model import (
-    STATE_PROTO_EXECUTOR_BACKEND_NONE,
-    STATE_PROTO_EXECUTOR_STATE_FRESH,
-    STATE_PROTO_EXECUTOR_STATE_MISSING,
-    StateProtoBuildOutput,
-)
-from app.core.indexing.window_index import NovelIndex, WindowRef
 from app.core.indexing.lifecycle import (
     mark_window_index_build_failed,
     mark_window_index_build_succeeded,
     resolve_window_index_target_revision,
 )
 from app.models import BootstrapJob, Novel
-from app.language_policy import get_language_policy
 
 logger = logging.getLogger(__name__)
 
@@ -86,111 +77,21 @@ class BootstrapArtifacts:
         return self.state_proto_output.index_payload or b""
 
 
-def _build_compat_window_index_payload(
-    *,
-    chapters: list[Any],
-    novel_language: str | None,
-    target_specs: list[Any],
-) -> bytes:
-    if not target_specs:
-        return NovelIndex().to_msgpack()
-
-    policy = get_language_policy(novel_language)
-    entity_windows: dict[str, list[WindowRef]] = {}
-    window_id = 1
-    for chapter in chapters:
-        chapter_text = chapter.text or ""
-        if not chapter_text.strip():
-            continue
-
-        target_hit_counts: dict[str, int] = {}
-        for target in target_specs:
-            hit_count = 0
-            for alias in target.all_aliases():
-                alias_text = str(alias or "").strip()
-                if not alias_text:
-                    continue
-                start = 0
-                while True:
-                    match_idx = chapter_text.find(alias_text, start)
-                    if match_idx < 0:
-                        break
-                    match_end = match_idx + len(alias_text)
-                    if policy.match_has_word_boundaries(chapter_text, match_idx, match_end):
-                        hit_count += 1
-                    start = match_idx + max(len(alias_text), 1)
-            if hit_count > 0:
-                target_hit_counts[str(target.id)] = hit_count
-
-        if not target_hit_counts:
-            window_id += 1
-            continue
-
-        for target in target_specs:
-            hit_count = int(target_hit_counts.get(str(target.id), 0))
-            if hit_count <= 0:
-                continue
-            ref = WindowRef(
-                window_id=window_id,
-                chapter_id=int(chapter.chapter_id),
-                start_pos=0,
-                end_pos=len(chapter_text),
-                entity_count=hit_count,
-            )
-            for alias in target.all_aliases():
-                alias_text = str(alias or "").strip()
-                if not alias_text:
-                    continue
-                entity_windows.setdefault(alias_text, []).append(ref)
-        window_id += 1
-
-    return NovelIndex(
-        entity_windows=entity_windows,
-        window_entities=NovelIndex.build_window_entities(entity_windows),
-    ).to_msgpack()
-
-
-def _execute_state_proto_build_with_runtime_fallback(
+def _execute_state_proto_build(
     *,
     deps: BootstrapRuntimeDeps,
     context: BootstrapRuntimeContext,
     target_specs: list[Any],
-) -> StateProtoBuildOutput:
-    try:
-        return deps.execute_state_proto_build(
-            chapters=context.chapters,
-            novel_language=getattr(context.novel, "language", None),
-            target_specs=target_specs,
-            existing_payload=getattr(context.novel, "window_index", None),
-            settings=context.settings,
-        )
-    except RuntimeError as exc:
-        if str(exc) != STATE_PROTO_RUST_REQUIRED_ERROR:
-            raise
-        logger.warning(
-            "bootstrap[%d]: rust state-proto unavailable; continuing with text fallback only",
-            context.job.id,
-        )
-        compat_payload = _build_compat_window_index_payload(
-            chapters=context.chapters,
-            novel_language=getattr(context.novel, "language", None),
-            target_specs=target_specs,
-        )
-        return StateProtoBuildOutput(
-            asset_state=(
-                STATE_PROTO_EXECUTOR_STATE_FRESH
-                if target_specs
-                else STATE_PROTO_EXECUTOR_STATE_MISSING
-            ),
-            executor_backend=STATE_PROTO_EXECUTOR_BACKEND_NONE,
-            index_payload=compat_payload,
-            chapter_count=len(context.chapters),
-            chapter_chars=sum(len(chapter.text or "") for chapter in context.chapters),
-            target_count=len(target_specs),
-            coverage_rep_count=len(target_specs),
-            payload_bytes=len(compat_payload),
-            fallback_reason="rust_state_proto_unavailable",
-        )
+):
+    # Rust-canonical contract: when the Rust executor is unavailable the build
+    # raises and the job fails loudly. No Python compat payload may be persisted.
+    return deps.execute_state_proto_build(
+        chapters=context.chapters,
+        novel_language=getattr(context.novel, "language", None),
+        target_specs=target_specs,
+        existing_payload=getattr(context.novel, "window_index", None),
+        settings=context.settings,
+    )
 
 
 def load_runtime_context(
@@ -268,7 +169,7 @@ def prepare_bootstrap_artifacts(
     deps: BootstrapRuntimeDeps,
 ) -> BootstrapArtifacts:
     target_specs = deps.load_state_proto_target_specs(context.db, context.novel.id)
-    state_proto_output = _execute_state_proto_build_with_runtime_fallback(
+    state_proto_output = _execute_state_proto_build(
         deps=deps,
         context=context,
         target_specs=target_specs,
@@ -419,7 +320,7 @@ def finalize_bootstrap_run(
     )
     target_specs = deps.load_state_proto_target_specs(context.db, context.novel.id)
     if target_specs:
-        state_proto_output = _execute_state_proto_build_with_runtime_fallback(
+        state_proto_output = _execute_state_proto_build(
             deps=deps,
             context=context,
             target_specs=list(target_specs),

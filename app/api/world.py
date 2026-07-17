@@ -47,7 +47,6 @@ from app.api.world_systems import (
     router as systems_router,
     update_system,
 )
-from app.config import get_settings
 from app.core.auth import get_current_user_or_default
 
 router = APIRouter(
@@ -83,7 +82,6 @@ __all__ = [
     "generate_world_from_text",
     "get_bootstrap_status",
     "get_current_user_or_default",
-    "get_settings",
     "get_entity",
     "get_system",
     "import_worldpack_v1",

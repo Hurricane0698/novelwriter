@@ -367,7 +367,9 @@ async def test_bootstrap_rejects_running_job(world_api, db, novel_with_text, use
 
 @pytest.mark.asyncio
 async def test_bootstrap_allows_retry_for_stale_running_job(world_api, db, novel_with_text, user, monkeypatch):
-    monkeypatch.setattr(world_api, "get_settings", lambda: Settings(bootstrap_stale_job_timeout_seconds=1))
+    from app.api import world_bootstrap
+
+    monkeypatch.setattr(world_bootstrap, "get_settings", lambda: Settings(bootstrap_stale_job_timeout_seconds=1))
     stale_time = datetime.now(timezone.utc) - timedelta(minutes=1)
     running_job = BootstrapJob(
         novel_id=novel_with_text.id,

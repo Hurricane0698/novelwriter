@@ -1,7 +1,7 @@
 from app.core.generator import _trim_to_target_chars
 from app.language_policy import (
     detect_language_from_text,
-    detect_language_from_texts,
+    LanguageDetectionAccumulator,
     get_language_policy,
 )
 
@@ -23,14 +23,17 @@ def test_detect_language_from_text_ignores_sparse_kana_noise_in_chinese_text():
     assert detect_language_from_text(noisy_chinese) == "zh"
 
 
-def test_detect_language_from_texts_ignores_sparse_kana_noise_in_chinese_text():
+def test_detection_accumulator_ignores_sparse_kana_noise_in_chinese_text():
     texts = (
         "云澈看向前方，周围的人都屏住了呼吸。",
         "他抬起手时，所有人都感到心口发紧。",
         "这段正文里混进了少量乱码假名ぃアご。",
     )
 
-    assert detect_language_from_texts(texts) == "zh"
+    accumulator = LanguageDetectionAccumulator()
+    for text in texts:
+        accumulator.add_text(text)
+    assert accumulator.detect_language() == "zh"
 
 
 def test_zh_policy_normalizes_variant_characters_for_matching():

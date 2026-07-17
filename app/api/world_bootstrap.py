@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.world_support import run_world_operation, run_world_operation_async, serialize_bootstrap_job
-from app.config import get_settings as resolve_default_settings
+from app.config import get_settings
 from app.core.auth import get_current_user_or_default
 from app.core.llm_request import get_llm_config
 from app.core.world.bootstrap_application import (
@@ -19,15 +19,6 @@ from app.models import User
 from app.schemas import BootstrapJobResponse, BootstrapTriggerRequest
 
 router = APIRouter()
-
-
-def _resolve_route_settings():
-    try:
-        from app.api import world as world_module
-    except Exception:
-        return resolve_default_settings()
-    resolver = getattr(world_module, "get_settings", resolve_default_settings)
-    return resolver()
 
 
 @router.post("/bootstrap", response_model=BootstrapJobResponse, status_code=202)
@@ -45,7 +36,7 @@ async def trigger_bootstrap(
         db=db,
         current_user=current_user,
         llm_config=llm_config,
-        settings=_resolve_route_settings(),
+        settings=get_settings(),
     )
     return serialize_bootstrap_job(job)
 
@@ -61,7 +52,7 @@ def get_bootstrap_status(
         get_bootstrap_status_use_case,
         novel_id,
         db=db,
-        settings=_resolve_route_settings(),
+        settings=get_settings(),
     )
     return serialize_bootstrap_job(job)
 

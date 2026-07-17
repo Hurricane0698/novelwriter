@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from app.config import Settings, get_settings
+from app.core.indexing.planner import (
+    AUTO_INDEX_PLAN_DEFERRED,
+    AUTO_INDEX_PLAN_IMMEDIATE,
+    AUTO_INDEX_PLAN_SKIP_AUTO,
+)
 
 from .contracts import IngestPolicyDecision, IngestPolicyInput
 
@@ -26,7 +31,7 @@ def resolve_ingest_policy(
     if max(int(policy_input.source_bytes or 0), 0) > upload_limit_bytes(resolved_settings):
         return IngestPolicyDecision(
             size_tier="reject",
-            auto_index_plan="skip_auto",
+            auto_index_plan=AUTO_INDEX_PLAN_SKIP_AUTO,
             bootstrap_plan="manual_only",
             readiness_mode="degraded_target",
         )
@@ -51,14 +56,14 @@ def resolve_ingest_policy(
     if not is_large:
         return IngestPolicyDecision(
             size_tier="normal",
-            auto_index_plan="immediate",
+            auto_index_plan=AUTO_INDEX_PLAN_IMMEDIATE,
             bootstrap_plan="immediate",
             readiness_mode="full_target",
         )
 
     return IngestPolicyDecision(
         size_tier="large",
-        auto_index_plan="deferred",
+        auto_index_plan=AUTO_INDEX_PLAN_DEFERRED,
         bootstrap_plan="defer_until_index",
         readiness_mode="degraded_target",
     )

@@ -43,10 +43,7 @@ from app.core.bootstrap_errors import (
     BOOTSTRAP_TIMEOUT_ERROR_MESSAGE,
     sanitize_bootstrap_error,
 )
-from app.core.bootstrap_heartbeat import (
-    resolve_bootstrap_heartbeat_interval_seconds,
-    start_bootstrap_job_heartbeat,
-)
+from app.core.bootstrap_heartbeat import start_bootstrap_job_heartbeat
 from app.core.bootstrap_persistence import (
     LEGACY_ORIGIN_TRACKING_CUTOFF,
     find_legacy_manual_draft_ambiguity,
@@ -78,10 +75,6 @@ from app.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-_sanitize_bootstrap_error = sanitize_bootstrap_error
-_resolve_bootstrap_heartbeat_interval_seconds = resolve_bootstrap_heartbeat_interval_seconds
-_start_bootstrap_job_heartbeat = start_bootstrap_job_heartbeat
-
 
 async def run_bootstrap_job(
     job_id: int,
@@ -95,12 +88,12 @@ async def run_bootstrap_job(
     db = make_session()
     deps = BootstrapRuntimeDeps(
         get_settings=get_settings,
-        start_bootstrap_job_heartbeat=_start_bootstrap_job_heartbeat,
+        start_bootstrap_job_heartbeat=start_bootstrap_job_heartbeat,
         load_state_proto_target_specs=load_state_proto_target_specs,
         execute_state_proto_build=execute_state_proto_build,
         acquire_background_llm_slot_blocking=acquire_background_llm_slot_blocking,
         release_background_llm_slot=release_background_llm_slot,
-        sanitize_bootstrap_error=_sanitize_bootstrap_error,
+        sanitize_bootstrap_error=sanitize_bootstrap_error,
     )
     index_persisted = False
     target_index_revision = 0

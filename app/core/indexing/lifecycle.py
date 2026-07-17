@@ -23,7 +23,6 @@ from app.core.derived_assets import (
 )
 from app.config import Settings, get_settings
 from app.core.job_runtime import stale_running_job_filter, utcnow_naive
-from app.core.world.bootstrap_queue import ensure_ingest_bootstrap_job
 from app.models import DerivedAssetJob
 from app.models import Novel
 
@@ -31,7 +30,7 @@ from .artifact_store import (
     persist_window_index_build_failure,
     persist_window_index_build_success,
 )
-from .chapters import load_chapter_texts
+from .chapters import has_non_empty_chapter_text, load_chapter_texts
 from .state_proto_executor import execute_state_proto_build
 from .state_proto_model import StateProtoBuildOutput
 from .state_proto_targets import load_state_proto_target_specs
@@ -278,6 +277,10 @@ def run_next_window_index_rebuild_job(
         session_factory=session_factory,
         settings=resolved_settings,
     )
+    # Imported lazily: the indexing package must not depend on the world layer
+    # at import time (world.bootstrap_queue itself imports indexing helpers).
+    from app.core.world.bootstrap_queue import ensure_ingest_bootstrap_job
+
     ensure_ingest_bootstrap_job(
         novel_id,
         session_factory=session_factory,
@@ -595,10 +598,9 @@ def enqueue_window_index_rebuild_for_latest_revision(
         novel = db.query(Novel).filter(Novel.id == novel_id).first()
         if novel is None:
             return None
-        chapters = load_chapter_texts(db, novel_id)
         target_revision = resolve_window_index_target_revision(
             novel,
-            has_source_text=bool(chapters),
+            has_source_text=has_non_empty_chapter_text(db, novel_id),
         )
         enqueue_window_index_rebuild_job(
             db,

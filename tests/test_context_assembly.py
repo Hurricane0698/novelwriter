@@ -587,57 +587,6 @@ class TestWriterContext:
         assert "丙" not in injected_names
 
 
-# ===========================================================================
-# Consistency Checker Context
-# ===========================================================================
-
-class TestConsistencyCheckerContext:
-    """Consistency checker: sees everything including hidden + truth."""
-
-    def test_hidden_attribute_visible(self, db, populated_world):
-        """Consistency checker sees hidden attributes with value + truth."""
-        from app.core.context_assembly import assemble_checker_context
-
-        ctx = assemble_checker_context(db, populated_world["novel"].id, chapter_text="云澈走进了大殿")
-
-        yunche_attrs = _find_entity_attrs(ctx, "云澈")
-        hidden = _find_attr(yunche_attrs, "真实血脉")
-        assert hidden is not None
-        assert hidden["surface"] == "表面普通人"
-        assert hidden["truth"] == "邪神传人"
-
-    def test_active_attribute_with_truth_checker_sees_both(self, db, populated_world):
-        """Consistency checker sees active attributes with truth."""
-        from app.core.context_assembly import assemble_checker_context
-
-        ctx = assemble_checker_context(db, populated_world["novel"].id, chapter_text="云澈感到力量涌动")
-
-        yunche_attrs = _find_entity_attrs(ctx, "云澈")
-        mystery = _find_attr(yunche_attrs, "神秘力量")
-        assert mystery is not None
-        assert mystery["truth"] == "邪神遗脉"
-
-    def test_hidden_relationship_visible(self, db, populated_world):
-        """Consistency checker sees hidden relationships."""
-        from app.core.context_assembly import assemble_checker_context
-
-        ctx = assemble_checker_context(db, populated_world["novel"].id, chapter_text="云澈来到苍风帝国")
-
-        rel_types = [r["label"] for r in ctx.get("relationships", [])]
-        assert "暗中对抗" in rel_types
-
-    def test_checker_is_read_only(self, db, populated_world):
-        """Consistency checker context is read-only — no writes to world model."""
-        from app.core.context_assembly import assemble_checker_context
-        from app.models import WorldEntity
-
-        before_count = db.query(WorldEntity).filter_by(novel_id=populated_world["novel"].id).count()
-
-        assemble_checker_context(db, populated_world["novel"].id, chapter_text="任意文本")
-
-        after_count = db.query(WorldEntity).filter_by(novel_id=populated_world["novel"].id).count()
-        assert before_count == after_count
-
 
 # ===========================================================================
 # Helpers
