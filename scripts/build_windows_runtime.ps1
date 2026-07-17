@@ -27,11 +27,25 @@ $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 $WorkDirectory = Join-Path $RootDirectory "desktop/build/pyinstaller"
 $SpecPath = Join-Path $RootDirectory "desktop/runtime/novwr-runtime.spec"
 $RequiredUvVersion = (Get-Content -LiteralPath (Join-Path $RootDirectory ".uv-version") -Raw).Trim()
-$ActualUvVersion = (& uv --version).Trim()
-if ($LASTEXITCODE -ne 0) {
+$UvVersionJsonLines = @(& uv self version --output-format json)
+$UvVersionExitCode = $LASTEXITCODE
+if ($UvVersionExitCode -ne 0) {
     throw "uv version check failed."
 }
-if ($ActualUvVersion -ne "uv $RequiredUvVersion") {
+try {
+    $UvVersionInfo = ($UvVersionJsonLines -join [Environment]::NewLine) |
+        ConvertFrom-Json -AsHashtable -ErrorAction Stop
+} catch {
+    throw "Unable to parse uv version JSON: $($_.Exception.Message)"
+}
+$ActualUvVersion = [string]$UvVersionInfo["version"]
+if (
+    $UvVersionInfo["package_name"] -ne "uv" -or
+    [string]::IsNullOrWhiteSpace($ActualUvVersion)
+) {
+    throw "uv version JSON is missing required fields."
+}
+if ($ActualUvVersion -ne $RequiredUvVersion) {
     throw "NovWr requires uv $RequiredUvVersion; found $ActualUvVersion."
 }
 
