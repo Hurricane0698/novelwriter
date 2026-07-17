@@ -71,7 +71,7 @@ export async function loginThroughInstalledUi(page: Page) {
     `Installed login returned HTTP ${loginResponse.status()}.`,
   ).toBe(true)
   await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/library`, { timeout: 60_000 })
-  await expect(page.getByRole('heading', { name: '我的作品库' })).toBeVisible()
+  await expect(page.getByTestId('library-create-novel')).toBeVisible()
 }
 
 export async function assertSeededDemoVisible(page: Page) {
