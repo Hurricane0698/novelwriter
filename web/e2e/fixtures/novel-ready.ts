@@ -22,29 +22,32 @@ export async function waitForInitialNovelReady(
   opts?: {
     requireOnboarding?: boolean
     dismissOnboarding?: boolean
+    /** Per-wait budget for readiness signals; installed runs raise it to ride out the first-launch storm. */
+    readyTimeoutMs?: number
   },
 ) {
+  const readyTimeoutMs = opts?.readyTimeoutMs ?? 30_000
   const preparationGate = page.getByTestId('studio-preparation-gate')
   const onboarding = page.getByTestId('world-onboarding')
   const chapterList = page.getByTestId('studio-rail-chapters')
   const chapterBtn = chapterList.getByRole('button', { name: /第\s*1\s*章/ })
 
   await Promise.any([
-    preparationGate.waitFor({ state: 'visible', timeout: 30_000 }),
-    onboarding.waitFor({ state: 'visible', timeout: 30_000 }),
-    chapterBtn.waitFor({ state: 'visible', timeout: 30_000 }),
+    preparationGate.waitFor({ state: 'visible', timeout: readyTimeoutMs }),
+    onboarding.waitFor({ state: 'visible', timeout: readyTimeoutMs }),
+    chapterBtn.waitFor({ state: 'visible', timeout: readyTimeoutMs }),
   ])
 
   if (await preparationGate.isVisible()) {
     await expect(preparationGate).toBeHidden({ timeout: 120_000 })
     await Promise.any([
-      onboarding.waitFor({ state: 'visible', timeout: 30_000 }),
-      chapterBtn.waitFor({ state: 'visible', timeout: 30_000 }),
+      onboarding.waitFor({ state: 'visible', timeout: readyTimeoutMs }),
+      chapterBtn.waitFor({ state: 'visible', timeout: readyTimeoutMs }),
     ])
   }
 
   if (opts?.requireOnboarding) {
-    await expect(onboarding).toBeVisible({ timeout: 30_000 })
+    await expect(onboarding).toBeVisible({ timeout: readyTimeoutMs })
     return
   }
 

@@ -5,6 +5,12 @@ import { dirname } from 'node:path'
 export const INSTALLED_ORIGIN = 'http://127.0.0.1:8000'
 export const INSTALLED_NOVEL_TITLE = 'NovWr Desktop Installed Smoke'
 
+// Individual navigations and first paints during the installed first-launch
+// storm (WebView2 first-run, Defender scanning the fresh install, queued demo
+// indexing) were observed taking 30-70s each; every installed-context wait
+// shares this per-step budget while the 360s test budget caps the aggregate.
+export const INSTALLED_STORM_TIMEOUT_MS = 120_000
+
 function requiredEnvironmentValue(name: string): string {
   const value = process.env[name]?.trim()
   if (!value) {
@@ -176,9 +182,9 @@ async function expectDesktopLandingSurface(page: Page) {
     await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/`)
     // First launch renders Landing while the runner absorbs WebView2 first-run,
     // Defender scanning of the fresh install, and first-user demo seeding; the
-    // route chunk can take 30-70s to arrive, so this gate gets its own budget
-    // below the 210s test and 300s outer process deadlines.
-    await expect(page.getByTestId('home-start-writing')).toBeVisible({ timeout: 120_000 })
+    // route chunk can take 30-70s to arrive, so this gate gets the shared
+    // storm budget below the 360s test and 480s outer process deadlines.
+    await expect(page.getByTestId('home-start-writing')).toBeVisible({ timeout: INSTALLED_STORM_TIMEOUT_MS })
   } catch (error) {
     await writeInstalledPageDiagnostics(page, 'landing surface')
     throw error
@@ -199,7 +205,7 @@ export async function enterLibraryThroughDesktopLanding(page: Page) {
   const startWritingLink = page.getByTestId('home-start-writing')
   await expect(startWritingLink).toHaveAttribute('href', '/library')
   await page.goto('/library', { waitUntil: 'domcontentloaded' })
-  await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/library`, { timeout: 60_000 })
+  await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/library`, { timeout: INSTALLED_STORM_TIMEOUT_MS })
   await expect(page.getByTestId('library-create-novel')).toBeVisible()
 }
 
@@ -277,7 +283,7 @@ export async function testDesktopLlmConnection(page: Page) {
 
 export async function assertSeededDemoVisible(page: Page) {
   const demoEntry = page.getByTestId('library-demo-entry')
-  await expect(demoEntry).toBeVisible({ timeout: 60_000 })
+  await expect(demoEntry).toBeVisible({ timeout: INSTALLED_STORM_TIMEOUT_MS })
   await expect(demoEntry).toContainText('西游记')
 }
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "novwr"
-version = "0.3.2"
+version = "0.4.0"
 description = "Long-form novel writing engine with world-model-driven generation."
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
