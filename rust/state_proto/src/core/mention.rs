@@ -14,11 +14,14 @@ pub(crate) struct AliasMatch {
     pub(crate) end: usize,
 }
 
+/// Alias matches grouped by segment id, then by target id.
+pub(crate) type SegmentAliasMatches = HashMap<i64, HashMap<String, Vec<AliasMatch>>>;
+
 pub(crate) fn build_mention_postings(
     segments: &[SegmentData],
     indexed: &IndexedText,
     context: &BuildContext,
-) -> (Vec<MentionData>, HashMap<i64, HashMap<String, Vec<AliasMatch>>>) {
+) -> (Vec<MentionData>, SegmentAliasMatches) {
     let Some(alias_automaton) = context.alias_automaton.as_ref() else {
         return (Vec::new(), HashMap::new());
     };
@@ -41,7 +44,10 @@ pub(crate) fn build_mention_postings(
         );
         let mut by_target: HashMap<String, Vec<AliasMatch>> = HashMap::new();
         for matched in matches {
-            by_target.entry(matched.target_id.clone()).or_default().push(matched);
+            by_target
+                .entry(matched.target_id.clone())
+                .or_default()
+                .push(matched);
         }
         let segment_char_len = usize::max((segment.end_pos - segment.start_pos) as usize, 1);
         for (target_id, target_matches) in &by_target {
@@ -52,7 +58,10 @@ pub(crate) fn build_mention_postings(
                 segment_id: segment.segment_id,
                 mention_score: round_places(mention_score, 4),
                 density: round_places(density, 6),
-                best_anchor_offset: target_matches.first().map(|item| item.start as i64).unwrap_or(0),
+                best_anchor_offset: target_matches
+                    .first()
+                    .map(|item| item.start as i64)
+                    .unwrap_or(0),
             });
         }
         if !by_target.is_empty() {
@@ -91,7 +100,11 @@ fn find_alias_matches(
         }
     }
     matches.sort_by(|left, right| {
-        (left.start, left.end, left.target_id.as_str()).cmp(&(right.start, right.end, right.target_id.as_str()))
+        (left.start, left.end, left.target_id.as_str()).cmp(&(
+            right.start,
+            right.end,
+            right.target_id.as_str(),
+        ))
     });
     matches
 }
@@ -103,12 +116,20 @@ fn match_has_word_boundaries(text: &str, start_byte: usize, end_byte: usize) -> 
     let left_ok = if start_byte == 0 {
         true
     } else {
-        text[..start_byte].chars().next_back().map(|ch| !is_word_char(ch)).unwrap_or(true)
+        text[..start_byte]
+            .chars()
+            .next_back()
+            .map(|ch| !is_word_char(ch))
+            .unwrap_or(true)
     };
     let right_ok = if end_byte >= text.len() {
         true
     } else {
-        text[end_byte..].chars().next().map(|ch| !is_word_char(ch)).unwrap_or(true)
+        text[end_byte..]
+            .chars()
+            .next()
+            .map(|ch| !is_word_char(ch))
+            .unwrap_or(true)
     };
     left_ok && right_ok
 }

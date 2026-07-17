@@ -8,7 +8,10 @@ static BLANK_PARAGRAPH_RE: LazyLock<Regex> =
 
 pub(crate) fn normalize_chapter_text(text: &str) -> String {
     let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-    BLANK_LINE_RE.replace_all(&normalized, "\n\n").trim().to_owned()
+    BLANK_LINE_RE
+        .replace_all(&normalized, "\n\n")
+        .trim()
+        .to_owned()
 }
 
 pub(crate) fn pack_segment_id(chapter_id: i64, local_ordinal: i64) -> i64 {
@@ -19,7 +22,11 @@ pub(crate) fn pack_claim_id(chapter_id: i64, local_ordinal: i64) -> i64 {
     (chapter_id << STATE_PROTO_CLAIM_ID_SHIFT) | local_ordinal
 }
 
-pub(crate) fn segment_chapter_text(chapter_id: i64, chapter_number: i64, indexed: &IndexedText) -> Vec<SegmentData> {
+pub(crate) fn segment_chapter_text(
+    chapter_id: i64,
+    chapter_number: i64,
+    indexed: &IndexedText,
+) -> Vec<SegmentData> {
     if indexed.char_len() == 0 {
         return Vec::new();
     }
@@ -245,13 +252,9 @@ mod tests {
         for (chapter_id, sample) in samples.iter().enumerate() {
             let normalized = normalize_chapter_text(sample);
             let indexed = IndexedText::new(normalized.clone());
-            let indexed_segments =
-                segment_chapter_text(chapter_id as i64 + 1, 1, &indexed);
-            let fast_segments = segment_chapter_text_without_index(
-                chapter_id as i64 + 1,
-                1,
-                &normalized,
-            );
+            let indexed_segments = segment_chapter_text(chapter_id as i64 + 1, 1, &indexed);
+            let fast_segments =
+                segment_chapter_text_without_index(chapter_id as i64 + 1, 1, &normalized);
 
             assert_eq!(indexed_segments.len(), fast_segments.len());
             for (left, right) in indexed_segments.iter().zip(fast_segments.iter()) {

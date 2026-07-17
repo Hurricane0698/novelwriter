@@ -14,25 +14,35 @@ pub(crate) fn prepare_payload(
         }
     }
 
-    let rebuilt_ids: HashSet<i64> = provided_shards.iter().map(|shard| shard.chapter_id).collect();
+    let rebuilt_ids: HashSet<i64> = provided_shards
+        .iter()
+        .map(|shard| shard.chapter_id)
+        .collect();
     for mut shard in provided_shards {
         shard.segments.sort_by_key(|segment| segment.segment_id);
-        shard.claims.sort_by_key(|claim| (claim.segment_id, claim.anchor_offset, claim.claim_id));
+        shard
+            .claims
+            .sort_by_key(|claim| (claim.segment_id, claim.anchor_offset, claim.claim_id));
         merged_by_id.insert(shard.chapter_id, shard);
     }
 
     let mut chapters: Vec<ChapterShardData> = Vec::with_capacity(request.chapters.len());
     let mut reused_chapter_count = 0usize;
     for (index, request_chapter) in request.chapters.iter().enumerate() {
-        let mut shard = merged_by_id.remove(&request_chapter.chapter_id).ok_or_else(|| {
-            PayloadError::InvalidPayload(format!(
-                "missing shard for chapter_id={} during assembly",
-                request_chapter.chapter_id
-            ))
-        })?;
+        let mut shard = merged_by_id
+            .remove(&request_chapter.chapter_id)
+            .ok_or_else(|| {
+                PayloadError::InvalidPayload(format!(
+                    "missing shard for chapter_id={} during assembly",
+                    request_chapter.chapter_id
+                ))
+            })?;
         let chapter_number = (index + 1) as i64;
         let was_rebuilt = rebuilt_ids.contains(&request_chapter.chapter_id);
-        if existing_payload.is_some() && !was_rebuilt && request_chapter.signature == shard.signature {
+        if existing_payload.is_some()
+            && !was_rebuilt
+            && request_chapter.signature == shard.signature
+        {
             reused_chapter_count += 1;
         }
         shard.chapter_number = chapter_number;
@@ -70,7 +80,9 @@ pub(crate) fn prepare_payload(
         coverage_rep_count,
         rebuilt_chapter_count: rebuilt_ids.len(),
         reused_chapter_count,
-        incremental_applied: existing_payload.is_some() && !rebuilt_ids.is_empty() && rebuilt_ids.len() < request.chapters.len(),
+        incremental_applied: existing_payload.is_some()
+            && !rebuilt_ids.is_empty()
+            && rebuilt_ids.len() < request.chapters.len(),
     };
     Ok((payload, counts))
 }
@@ -83,7 +95,8 @@ fn assign_progress_buckets(chapters: &mut [ChapterShardData]) {
     let mut seen = 0usize;
     for chapter in chapters.iter_mut() {
         for segment in chapter.segments.iter_mut() {
-            let bucket = (((seen as f64) / (total as f64)) * (DEFAULT_PROGRESS_BUCKETS as f64)).floor() as i64;
+            let bucket = (((seen as f64) / (total as f64)) * (DEFAULT_PROGRESS_BUCKETS as f64))
+                .floor() as i64;
             segment.progress_bucket = bucket.clamp(0, DEFAULT_PROGRESS_BUCKETS - 1);
             seen += 1;
         }
@@ -93,7 +106,12 @@ fn assign_progress_buckets(chapters: &mut [ChapterShardData]) {
 fn rebuild_coverage(chapters: &[ChapterShardData]) -> Vec<CoverageData> {
     let segments_by_id: HashMap<i64, &SegmentData> = chapters
         .iter()
-        .flat_map(|chapter| chapter.segments.iter().map(|segment| (segment.segment_id, segment)))
+        .flat_map(|chapter| {
+            chapter
+                .segments
+                .iter()
+                .map(|segment| (segment.segment_id, segment))
+        })
         .collect();
     let mut best_by_target_bucket: BTreeMap<(String, i64), MentionData> = BTreeMap::new();
     for mention in chapters.iter().flat_map(|chapter| chapter.mentions.iter()) {

@@ -1,4 +1,4 @@
-use super::mention::AliasMatch;
+use super::mention::{AliasMatch, SegmentAliasMatches};
 use super::segment::{detect_script_mode, is_cjk, pack_claim_id};
 use super::*;
 use std::sync::LazyLock;
@@ -6,7 +6,8 @@ use std::sync::LazyLock;
 static ZH_LOCATION_VALUE_BODY_RE: LazyLock<String> = LazyLock::new(build_zh_location_value_body);
 static ZH_AFFILIATION_VALUE_BODY_RE: LazyLock<String> =
     LazyLock::new(build_zh_affiliation_value_body);
-static EN_STRUCTURED_VALUE_BODY_RE: LazyLock<String> = LazyLock::new(build_en_structured_value_body);
+static EN_STRUCTURED_VALUE_BODY_RE: LazyLock<String> =
+    LazyLock::new(build_en_structured_value_body);
 static ZH_ROLE_RE: LazyLock<String> = LazyLock::new(|| join_regex_alternation(ROLE_KEYWORDS_ZH));
 static EN_ROLE_RE: LazyLock<String> = LazyLock::new(|| join_regex_alternation(ROLE_KEYWORDS_EN));
 static DETERMINER_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -143,7 +144,7 @@ pub(crate) fn build_claim_atoms(
     segments: &[SegmentData],
     indexed: &IndexedText,
     context: &BuildContext,
-    grouped_matches: &HashMap<i64, HashMap<String, Vec<AliasMatch>>>,
+    grouped_matches: &SegmentAliasMatches,
 ) -> Result<Vec<ClaimData>, PayloadError> {
     if segments.is_empty() || grouped_matches.is_empty() {
         return Ok(Vec::new());
@@ -153,8 +154,11 @@ pub(crate) fn build_claim_atoms(
         let Some(target_matches) = grouped_matches.get(&segment.segment_id) else {
             continue;
         };
-        let segment_indexed =
-            IndexedTextSlice::new(indexed, segment.start_pos as usize, segment.end_pos as usize);
+        let segment_indexed = IndexedTextSlice::new(
+            indexed,
+            segment.start_pos as usize,
+            segment.end_pos as usize,
+        );
         let script_mode = detect_script_mode(segment_indexed.chars);
         for (target_id, matches) in target_matches {
             let Some(target) = context.targets_by_id.get(target_id) else {
@@ -181,12 +185,13 @@ pub(crate) fn build_claim_atoms(
                     cue_bitmap: candidate.cue_bitmap,
                     change_salience: candidate.change_salience,
                 };
-                match deduped.get(&dedupe_key) {
-                    None => {
-                        deduped.insert(dedupe_key, claim);
+                match deduped.entry(dedupe_key) {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(claim);
                     }
-                    Some(existing) => {
-                        deduped.insert(dedupe_key, merge_claims(existing.clone(), claim));
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        let merged = merge_claims(entry.get(), &claim);
+                        entry.insert(merged);
                     }
                 }
             }
@@ -280,8 +285,10 @@ impl<'a> ClaimSearchWindow<'a> {
     fn new(segment: &'a IndexedTextSlice<'a>, matched: &AliasMatch, script_mode: &str) -> Self {
         let start_char = matched.start;
         let end_char = claim_window_end_char(segment, start_char, script_mode);
-        let start_byte = segment.parent.char_to_byte(segment.start_char + start_char) - segment.start_byte;
-        let end_byte = segment.parent.char_to_byte(segment.start_char + end_char) - segment.start_byte;
+        let start_byte =
+            segment.parent.char_to_byte(segment.start_char + start_char) - segment.start_byte;
+        let end_byte =
+            segment.parent.char_to_byte(segment.start_char + end_char) - segment.start_byte;
         Self {
             segment,
             text: &segment.text[start_byte..end_byte],
@@ -299,7 +306,10 @@ fn claim_window_end_char(
     start_char: usize,
     script_mode: &str,
 ) -> usize {
-    let limit = usize::min(start_char + CLAIM_SEARCH_WINDOW_MAX_CHARS, segment.char_len());
+    let limit = usize::min(
+        start_char + CLAIM_SEARCH_WINDOW_MAX_CHARS,
+        segment.char_len(),
+    );
     let terminators = if script_mode == SCRIPT_MODE_CJK_HEAVY {
         CJK_SENTENCE_TERMINATORS
     } else {
@@ -319,6 +329,39 @@ fn claim_window_end_char(
     limit
 }
 
+/// Shared tail of every value-bearing claim extraction: normalize the captured
+/// value, derive the cue bitmap from the local context, then push a candidate.
+#[allow(clippy::too_many_arguments)]
+fn push_normalized_claim(
+    claims: &mut Vec<ClaimCandidate>,
+    search_window: &ClaimSearchWindow<'_>,
+    matched: &AliasMatch,
+    value_match: regex::Match<'_>,
+    slot: &'static str,
+    canonical_name_by_surface: &HashMap<String, String>,
+    confidence: f64,
+    change_salience: f64,
+) {
+    let Some(value) =
+        normalize_value_signature(value_match.as_str(), slot, canonical_name_by_surface)
+    else {
+        return;
+    };
+    let cue_bitmap = detect_cue_bitmap(
+        search_window.segment,
+        matched.start,
+        search_window.byte_to_segment_char(value_match.end()),
+    );
+    claims.push(ClaimCandidate {
+        slot,
+        value_signature: value,
+        anchor_offset: search_window.byte_to_segment_char(value_match.start()),
+        confidence,
+        cue_bitmap,
+        change_salience,
+    });
+}
+
 fn extract_location_claims(
     search_window: &ClaimSearchWindow<'_>,
     matched: &AliasMatch,
@@ -327,7 +370,6 @@ fn extract_location_claims(
     script_mode: &str,
 ) -> Vec<ClaimCandidate> {
     let mut claims = Vec::new();
-    let segment_text = search_window.segment;
     let text = search_window.text;
     if script_mode == SCRIPT_MODE_CJK_HEAVY {
         if let Some(captures) = patterns.zh_location_contrast.captures(text) {
@@ -365,55 +407,40 @@ fn extract_location_claims(
             }
         }
 
-        if let Some(captures) = patterns.zh_location.captures(text) {
-            if let Some(value_match) = captures.name("value") {
-                if let Some(value) = normalize_value_signature(
-                    value_match.as_str(),
-                    SLOT_ENTITY_CURRENT_LOCATION,
-                    canonical_name_by_surface,
-                ) {
-                    let cue_bitmap = detect_cue_bitmap(
-                        segment_text,
-                        matched.start,
-                        search_window.byte_to_segment_char(value_match.end()),
-                    );
-                    claims.push(ClaimCandidate {
-                        slot: SLOT_ENTITY_CURRENT_LOCATION,
-                        value_signature: value,
-                        anchor_offset: search_window.byte_to_segment_char(value_match.start()),
-                        confidence: 0.9,
-                        cue_bitmap,
-                        change_salience: 1.1,
-                    });
-                }
-            }
+        if let Some(value_match) = patterns
+            .zh_location
+            .captures(text)
+            .and_then(|captures| captures.name("value"))
+        {
+            push_normalized_claim(
+                &mut claims,
+                search_window,
+                matched,
+                value_match,
+                SLOT_ENTITY_CURRENT_LOCATION,
+                canonical_name_by_surface,
+                0.9,
+                1.1,
+            );
         }
     } else {
         for regex in [&patterns.en_location_asserted, &patterns.en_location_motion] {
-            let Some(captures) = regex.captures(text) else {
+            let Some(value_match) = regex
+                .captures(text)
+                .and_then(|captures| captures.name("value"))
+            else {
                 continue;
             };
-            if let Some(value_match) = captures.name("value") {
-                if let Some(value) = normalize_value_signature(
-                    value_match.as_str(),
-                    SLOT_ENTITY_CURRENT_LOCATION,
-                    canonical_name_by_surface,
-                ) {
-                    let cue_bitmap = detect_cue_bitmap(
-                        segment_text,
-                        matched.start,
-                        search_window.byte_to_segment_char(value_match.end()),
-                    );
-                    claims.push(ClaimCandidate {
-                        slot: SLOT_ENTITY_CURRENT_LOCATION,
-                        value_signature: value,
-                        anchor_offset: search_window.byte_to_segment_char(value_match.start()),
-                        confidence: 0.9,
-                        cue_bitmap,
-                        change_salience: 1.1,
-                    });
-                }
-            }
+            push_normalized_claim(
+                &mut claims,
+                search_window,
+                matched,
+                value_match,
+                SLOT_ENTITY_CURRENT_LOCATION,
+                canonical_name_by_surface,
+                0.9,
+                1.1,
+            );
         }
     }
     claims
@@ -427,60 +454,32 @@ fn extract_affiliation_claims(
     script_mode: &str,
 ) -> Vec<ClaimCandidate> {
     let mut claims = Vec::new();
-    let segment_text = search_window.segment;
     let text = search_window.text;
-    if script_mode == SCRIPT_MODE_CJK_HEAVY {
-        for regex in [
+    let regexes: &[&Regex] = if script_mode == SCRIPT_MODE_CJK_HEAVY {
+        &[
             &patterns.zh_affiliation_membership,
             &patterns.zh_affiliation_role,
-        ] {
-            let Some(captures) = regex.captures(text) else {
-                continue;
-            };
-            if let Some(value_match) = captures.name("value") {
-                if let Some(value) = normalize_value_signature(
-                    value_match.as_str(),
-                    SLOT_ENTITY_CURRENT_AFFILIATION,
-                    canonical_name_by_surface,
-                ) {
-                    let cue_bitmap = detect_cue_bitmap(
-                        segment_text,
-                        matched.start,
-                        search_window.byte_to_segment_char(value_match.end()),
-                    );
-                    claims.push(ClaimCandidate {
-                        slot: SLOT_ENTITY_CURRENT_AFFILIATION,
-                        value_signature: value,
-                        anchor_offset: search_window.byte_to_segment_char(value_match.start()),
-                        confidence: 0.85,
-                        cue_bitmap,
-                        change_salience: 1.0,
-                    });
-                }
-            }
-        }
-    } else if let Some(captures) = patterns.en_affiliation.captures(text) {
-        if let Some(value_match) = captures.name("value") {
-            if let Some(value) = normalize_value_signature(
-                value_match.as_str(),
-                SLOT_ENTITY_CURRENT_AFFILIATION,
-                canonical_name_by_surface,
-            ) {
-                let cue_bitmap = detect_cue_bitmap(
-                    segment_text,
-                    matched.start,
-                    search_window.byte_to_segment_char(value_match.end()),
-                );
-                claims.push(ClaimCandidate {
-                    slot: SLOT_ENTITY_CURRENT_AFFILIATION,
-                    value_signature: value,
-                    anchor_offset: search_window.byte_to_segment_char(value_match.start()),
-                    confidence: 0.85,
-                    cue_bitmap,
-                    change_salience: 1.0,
-                });
-            }
-        }
+        ]
+    } else {
+        &[&patterns.en_affiliation]
+    };
+    for regex in regexes {
+        let Some(value_match) = regex
+            .captures(text)
+            .and_then(|captures| captures.name("value"))
+        else {
+            continue;
+        };
+        push_normalized_claim(
+            &mut claims,
+            search_window,
+            matched,
+            value_match,
+            SLOT_ENTITY_CURRENT_AFFILIATION,
+            canonical_name_by_surface,
+            0.85,
+            1.0,
+        );
     }
     claims
 }
@@ -566,40 +565,31 @@ fn extract_owner_claims(
     script_mode: &str,
 ) -> Vec<ClaimCandidate> {
     let mut claims = Vec::new();
-    let segment_text = search_window.segment;
     let regex = if script_mode == SCRIPT_MODE_CJK_HEAVY {
         &patterns.zh_owner
     } else {
         &patterns.en_owner
     };
-    if let Some(captures) = regex.captures(search_window.text) {
-        if let Some(value_match) = captures.name("value") {
-            if let Some(value) = normalize_value_signature(
-                value_match.as_str(),
-                SLOT_ARTIFACT_CURRENT_OWNER,
-                canonical_name_by_surface,
-            ) {
-                let cue_bitmap = detect_cue_bitmap(
-                    segment_text,
-                    matched.start,
-                    search_window.byte_to_segment_char(value_match.end()),
-                );
-                claims.push(ClaimCandidate {
-                    slot: SLOT_ARTIFACT_CURRENT_OWNER,
-                    value_signature: value,
-                    anchor_offset: search_window.byte_to_segment_char(value_match.start()),
-                    confidence: 0.9,
-                    cue_bitmap,
-                    change_salience: 1.0,
-                });
-            }
-        }
+    if let Some(value_match) = regex
+        .captures(search_window.text)
+        .and_then(|captures| captures.name("value"))
+    {
+        push_normalized_claim(
+            &mut claims,
+            search_window,
+            matched,
+            value_match,
+            SLOT_ARTIFACT_CURRENT_OWNER,
+            canonical_name_by_surface,
+            0.9,
+            1.0,
+        );
     }
     claims
 }
 
 fn build_zh_location_value_body() -> String {
-    let mut suffixes: Vec<&str> = LOCATION_SUFFIXES_ZH.iter().copied().collect();
+    let mut suffixes: Vec<&str> = LOCATION_SUFFIXES_ZH.to_vec();
     suffixes.extend(EXTRA_LOCATION_SUFFIXES_ZH.iter().copied());
     sort_longest_first(&mut suffixes);
     format!(
@@ -609,7 +599,7 @@ fn build_zh_location_value_body() -> String {
 }
 
 fn build_zh_affiliation_value_body() -> String {
-    let mut suffixes: Vec<&str> = AFFILIATION_SUFFIXES_ZH.iter().copied().collect();
+    let mut suffixes: Vec<&str> = AFFILIATION_SUFFIXES_ZH.to_vec();
     suffixes.extend(EXTRA_AFFILIATION_SUFFIXES_ZH.iter().copied());
     sort_longest_first(&mut suffixes);
     format!(
@@ -619,8 +609,7 @@ fn build_zh_affiliation_value_body() -> String {
 }
 
 fn build_en_structured_value_body() -> String {
-    r"[A-Z][A-Za-z0-9']*(?:[ -](?:[A-Z][A-Za-z0-9']*|(?:of|the|de|du|van|von))){0,5}"
-        .to_owned()
+    r"[A-Z][A-Za-z0-9']*(?:[ -](?:[A-Z][A-Za-z0-9']*|(?:of|the|de|du|van|von))){0,5}".to_owned()
 }
 
 fn build_life_state_patterns(
@@ -812,19 +801,19 @@ fn detect_cue_bitmap(text: &IndexedTextSlice<'_>, start: usize, end: usize) -> i
     flags
 }
 
-fn merge_claims(existing: ClaimData, candidate: ClaimData) -> ClaimData {
+fn merge_claims(existing: &ClaimData, candidate: &ClaimData) -> ClaimData {
     let preferred = if (existing.confidence, -existing.anchor_offset)
         >= (candidate.confidence, -candidate.anchor_offset)
     {
-        existing.clone()
+        existing
     } else {
-        candidate.clone()
+        candidate
     };
     ClaimData {
         claim_id: 0,
-        target_id: preferred.target_id,
-        slot: preferred.slot,
-        value_signature: preferred.value_signature,
+        target_id: preferred.target_id.clone(),
+        slot: preferred.slot.clone(),
+        value_signature: preferred.value_signature.clone(),
         segment_id: preferred.segment_id,
         chapter_number: preferred.chapter_number,
         anchor_offset: preferred.anchor_offset,
@@ -835,23 +824,16 @@ fn merge_claims(existing: ClaimData, candidate: ClaimData) -> ClaimData {
 }
 
 fn dedupe_alias_matches(matches: &[AliasMatch]) -> Vec<AliasMatch> {
-    let mut deduped: HashMap<(String, usize, usize), AliasMatch> = HashMap::new();
-    for matched in matches {
-        let key = (matched.alias.clone(), matched.start, matched.end);
-        match deduped.get(&key) {
-            None => {
-                deduped.insert(key, matched.clone());
-            }
-            Some(existing) => {
-                if matched.start < existing.start {
-                    deduped.insert(key, matched.clone());
-                }
-            }
-        }
-    }
-    let mut ordered: Vec<AliasMatch> = deduped.into_values().collect();
+    let mut ordered = matches.to_vec();
     ordered.sort_by(|left, right| {
-        (left.start, left.end, left.alias.as_str()).cmp(&(right.start, right.end, right.alias.as_str()))
+        (left.start, left.end, left.alias.as_str()).cmp(&(
+            right.start,
+            right.end,
+            right.alias.as_str(),
+        ))
+    });
+    ordered.dedup_by(|left, right| {
+        left.start == right.start && left.end == right.end && left.alias == right.alias
     });
     ordered
 }

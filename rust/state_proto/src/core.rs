@@ -12,18 +12,11 @@ mod mention;
 mod payload;
 mod segment;
 
-pub use incremental::{
-    assemble_payload_bytes,
-    build_full,
-    build_full_bytes,
-    plan_update_result,
-    update_incremental,
-    update_incremental_bytes,
-};
+pub use incremental::{assemble_payload_bytes, build_full, plan_update_result, update_incremental};
 pub(crate) use segment::{normalize_chapter_text, segment_chapter_text_without_index};
 
-use mention::AliasEntry;
 use claim::AliasPatternSet;
+use mention::AliasEntry;
 use segment::is_cjk_language;
 
 pub const STATE_PROTO_PAYLOAD_KIND: &str = "state_proto";
@@ -63,35 +56,101 @@ const SENTENCE_CLOSERS: &[char] = &['"', '\'', '”', '’', '」', '』', '）'
 const CJK_SENTENCE_TERMINATORS: &[char] = &['。', '！', '？', '；', '…'];
 const NON_CJK_SENTENCE_TERMINATORS: &[char] = &['.', '?', '!', ';', ':'];
 const LEADING_VALUE_PREFIXES: &[&str] = &[
-    "并不是", "不是", "并非", "不在", "没有", "未在", "并不", "不再", "非", "了", "着", "过", "又", "还", "仍", "正", "就", "便", "却", "都", "也",
+    "并不是",
+    "不是",
+    "并非",
+    "不在",
+    "没有",
+    "未在",
+    "并不",
+    "不再",
+    "非",
+    "了",
+    "着",
+    "过",
+    "又",
+    "还",
+    "仍",
+    "正",
+    "就",
+    "便",
+    "却",
+    "都",
+    "也",
 ];
 const LATIN_VALUE_CONNECTORS: &[&str] = &["of", "the", "de", "du", "van", "von"];
 
 const ROLE_KEYWORDS_ZH: &[&str] = &[
-    "大长老", "长老", "门主", "掌门", "城主", "队长", "统领", "侍女", "弟子", "护卫", "掌柜", "账房", "信使", "先生", "老师", "师父", "族长", "少主",
+    "大长老",
+    "长老",
+    "门主",
+    "掌门",
+    "城主",
+    "队长",
+    "统领",
+    "侍女",
+    "弟子",
+    "护卫",
+    "掌柜",
+    "账房",
+    "信使",
+    "先生",
+    "老师",
+    "师父",
+    "族长",
+    "少主",
 ];
 const ROLE_KEYWORDS_EN: &[&str] = &[
-    "captain", "commander", "master", "teacher", "guard", "keeper", "messenger", "clerk",
+    "captain",
+    "commander",
+    "master",
+    "teacher",
+    "guard",
+    "keeper",
+    "messenger",
+    "clerk",
 ];
 const LOCATION_SUFFIXES_ZH: &[&str] = &[
-    "旧街", "码头", "书院", "后院", "前院", "城门", "城", "街", "巷", "门", "司", "院", "阁", "楼", "坊", "铺", "堂", "宫", "殿", "桥", "寨", "营", "镇", "村", "山", "谷", "河", "湖", "港", "港口",
+    "旧街", "码头", "书院", "后院", "前院", "城门", "城", "街", "巷", "门", "司", "院", "阁", "楼",
+    "坊", "铺", "堂", "宫", "殿", "桥", "寨", "营", "镇", "村", "山", "谷", "河", "湖", "港",
+    "港口",
 ];
 const EXTRA_LOCATION_SUFFIXES_ZH: &[&str] = &[
-    "桥头", "门口", "入口", "出口", "家", "家里", "家中", "室", "室内", "屋内", "屋外", "厅", "大厅", "房", "房内", "馆", "公司", "公寓", "旅馆", "酒吧", "教堂",
+    "桥头", "门口", "入口", "出口", "家", "家里", "家中", "室", "室内", "屋内", "屋外", "厅",
+    "大厅", "房", "房内", "馆", "公司", "公寓", "旅馆", "酒吧", "教堂",
 ];
-const AFFILIATION_SUFFIXES_ZH: &[&str] = &[
-    "宗", "门", "会", "帮", "派", "盟", "营", "司", "府", "书院",
-];
+const AFFILIATION_SUFFIXES_ZH: &[&str] =
+    &["宗", "门", "会", "帮", "派", "盟", "营", "司", "府", "书院"];
 const EXTRA_AFFILIATION_SUFFIXES_ZH: &[&str] = &["组织"];
 
 const HISTORICAL_TERMS: &[&str] = &[
-    "曾", "曾经", "从前", "过去", "此前", "之前", "当年", "昔日", "once", "formerly", "previously", "used to",
+    "曾",
+    "曾经",
+    "从前",
+    "过去",
+    "此前",
+    "之前",
+    "当年",
+    "昔日",
+    "once",
+    "formerly",
+    "previously",
+    "used to",
 ];
 const HYPOTHETICAL_TERMS: &[&str] = &[
-    "若", "如果", "假如", "或许", "也许", "可能", "传言", "听说", "据说", "rumor", "maybe", "might", "could", "would", "if ",
+    "若", "如果", "假如", "或许", "也许", "可能", "传言", "听说", "据说", "rumor", "maybe",
+    "might", "could", "would", "if ",
 ];
 const NEGATION_TERMS: &[&str] = &[
-    "不在", "并非", "不是", "没有", "未在", "no longer", "not ", "never", "without",
+    "不在",
+    "并非",
+    "不是",
+    "没有",
+    "未在",
+    "no longer",
+    "not ",
+    "never",
+    "without",
 ];
 
 const LIFE_STATE_ZH_DEAD: &[&str] = &["死了", "已死", "身亡", "死亡", "殒命", "丧命"];
@@ -205,7 +264,18 @@ pub struct SegmentRow(
 pub struct MentionRow(pub String, pub i64, pub f64, pub f64, pub i64);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClaimRow(pub i64, pub String, pub String, pub String, pub i64, pub i64, pub i64, pub f64, pub i64, pub f64);
+pub struct ClaimRow(
+    pub i64,
+    pub String,
+    pub String,
+    pub String,
+    pub i64,
+    pub i64,
+    pub i64,
+    pub f64,
+    pub i64,
+    pub f64,
+);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoverageRow(pub String, pub i64, pub i64, pub f64);
@@ -362,7 +432,8 @@ mod tests {
             .expect("first alias pattern should build");
 
         for index in 1..64 {
-            cache.get_or_build(&format!("人物{index}"))
+            cache
+                .get_or_build(&format!("人物{index}"))
                 .expect("later alias pattern should build");
         }
 
@@ -449,8 +520,10 @@ impl<'a> IndexedTextSlice<'a> {
     }
 
     fn slice(&self, start: usize, end: usize) -> &str {
-        self.parent
-            .slice(self.start_char.saturating_add(start), self.start_char.saturating_add(end))
+        self.parent.slice(
+            self.start_char.saturating_add(start),
+            self.start_char.saturating_add(end),
+        )
     }
 
     fn byte_to_char(&self, byte_idx: usize) -> usize {
@@ -592,7 +665,9 @@ pub fn decode_request(data: &[u8]) -> Result<BuildRequest, PayloadError> {
     let request: BuildRequest = serde_json::from_slice(data)
         .map_err(|err| PayloadError::InvalidRequest(err.to_string()))?;
     if request.format_version == 0 {
-        return Err(PayloadError::InvalidRequest("missing format_version".to_owned()));
+        return Err(PayloadError::InvalidRequest(
+            "missing format_version".to_owned(),
+        ));
     }
     Ok(request)
 }
@@ -604,14 +679,15 @@ pub fn decode_payload(data: &[u8]) -> Result<PayloadWire, PayloadError> {
             .map_err(|err| PayloadError::InvalidPayload(err.to_string()))?,
     };
     if payload.kind != STATE_PROTO_PAYLOAD_KIND {
-        return Err(PayloadError::InvalidPayload("legacy or unknown payload kind".to_owned()));
+        return Err(PayloadError::InvalidPayload(
+            "legacy or unknown payload kind".to_owned(),
+        ));
     }
     Ok(payload)
 }
 
 fn serialize_payload(payload: &PayloadWire) -> Result<Vec<u8>, PayloadError> {
-    rmp_serde::to_vec_named(payload)
-        .map_err(|err| PayloadError::InvalidPayload(err.to_string()))
+    rmp_serde::to_vec_named(payload).map_err(|err| PayloadError::InvalidPayload(err.to_string()))
 }
 
 fn request_targets_as_wire(targets: &[RequestTarget]) -> Vec<TargetWire> {
@@ -631,11 +707,22 @@ fn request_targets_as_wire(targets: &[RequestTarget]) -> Vec<TargetWire> {
         .collect()
 }
 
-
 fn count_payload(payload: &PayloadWire) -> (usize, usize, usize, usize, usize) {
-    let segment_count = payload.chapters.iter().map(|chapter| chapter.segments.len()).sum();
-    let mention_count = payload.chapters.iter().map(|chapter| chapter.mentions.len()).sum();
-    let claim_count = payload.chapters.iter().map(|chapter| chapter.claims.len()).sum();
+    let segment_count = payload
+        .chapters
+        .iter()
+        .map(|chapter| chapter.segments.len())
+        .sum();
+    let mention_count = payload
+        .chapters
+        .iter()
+        .map(|chapter| chapter.mentions.len())
+        .sum();
+    let claim_count = payload
+        .chapters
+        .iter()
+        .map(|chapter| chapter.claims.len())
+        .sum();
     (
         payload.targets.len(),
         segment_count,
@@ -681,8 +768,13 @@ fn build_context(targets: &[RequestTarget], language: &str) -> Result<BuildConte
         None
     } else {
         Some(
-            AhoCorasick::new(alias_entries.iter().map(|entry| entry.alias.as_str()).collect::<Vec<_>>())
-                .map_err(|err| PayloadError::InvalidRequest(err.to_string()))?,
+            AhoCorasick::new(
+                alias_entries
+                    .iter()
+                    .map(|entry| entry.alias.as_str())
+                    .collect::<Vec<_>>(),
+            )
+            .map_err(|err| PayloadError::InvalidRequest(err.to_string()))?,
         )
     };
     Ok(BuildContext {
@@ -694,7 +786,6 @@ fn build_context(targets: &[RequestTarget], language: &str) -> Result<BuildConte
         cjk_language: is_cjk_language(language),
     })
 }
-
 
 #[derive(Debug)]
 struct PayloadCounts {

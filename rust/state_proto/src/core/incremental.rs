@@ -13,12 +13,16 @@ fn chapter_ids_match_prefix(existing: &[ChapterShard], request: &[RequestChapter
     existing
         .iter()
         .zip(request.iter())
-        .all(|(existing_chapter, request_chapter)| existing_chapter.chapter_id == request_chapter.chapter_id)
+        .all(|(existing_chapter, request_chapter)| {
+            existing_chapter.chapter_id == request_chapter.chapter_id
+        })
 }
 
 fn determine_dirty_chapter_ids(existing: &[ChapterShard], request: &[RequestChapter]) -> Vec<i64> {
-    let existing_by_id: HashMap<i64, &ChapterShard> =
-        existing.iter().map(|chapter| (chapter.chapter_id, chapter)).collect();
+    let existing_by_id: HashMap<i64, &ChapterShard> = existing
+        .iter()
+        .map(|chapter| (chapter.chapter_id, chapter))
+        .collect();
 
     request
         .iter()
@@ -35,71 +39,61 @@ fn determine_dirty_chapter_ids(existing: &[ChapterShard], request: &[RequestChap
         .collect()
 }
 
-pub fn plan_update_result(existing_payload: Option<&[u8]>, request: &BuildRequest) -> UpdatePlanResult {
-    if let Some(payload_bytes) = existing_payload {
-        match decode_payload(payload_bytes) {
-            Ok(existing) => {
-                let target_catalog_changed = existing.targets != request_targets_as_wire(&request.targets);
-                if target_catalog_changed {
-                    UpdatePlanResult {
-                        mode: "full".to_owned(),
-                        supported_incremental: false,
-                        existing_payload_compatible: true,
-                        target_catalog_changed,
-                        dirty_chapter_ids: request.chapters.iter().map(|chapter| chapter.chapter_id).collect(),
-                        fallback_reason: Some("target_catalog_changed".to_owned()),
-                        no_changes: false,
-                    }
-                } else if !chapter_ids_match_prefix(&existing.chapters, &request.chapters) {
-                    UpdatePlanResult {
-                        mode: "full".to_owned(),
-                        supported_incremental: false,
-                        existing_payload_compatible: true,
-                        target_catalog_changed,
-                        dirty_chapter_ids: request.chapters.iter().map(|chapter| chapter.chapter_id).collect(),
-                        fallback_reason: Some("unsupported_structure_change".to_owned()),
-                        no_changes: false,
-                    }
-                } else {
-                    let dirty_chapter_ids = determine_dirty_chapter_ids(&existing.chapters, &request.chapters);
-                    let no_changes = dirty_chapter_ids.is_empty();
-                    UpdatePlanResult {
-                        mode: if no_changes {
-                            "reuse_existing".to_owned()
-                        } else if dirty_chapter_ids.len() == request.chapters.len() {
-                            "full".to_owned()
-                        } else {
-                            "incremental".to_owned()
-                        },
-                        supported_incremental: true,
-                        existing_payload_compatible: true,
-                        target_catalog_changed,
-                        dirty_chapter_ids,
-                        fallback_reason: None,
-                        no_changes,
-                    }
-                }
-            }
-            Err(_) => UpdatePlanResult {
-                mode: "full".to_owned(),
-                supported_incremental: false,
-                existing_payload_compatible: false,
-                target_catalog_changed: false,
-                dirty_chapter_ids: request.chapters.iter().map(|chapter| chapter.chapter_id).collect(),
-                fallback_reason: Some("legacy_payload".to_owned()),
-                no_changes: false,
-            },
-        }
-    } else {
-        UpdatePlanResult {
-            mode: "full".to_owned(),
-            supported_incremental: false,
-            existing_payload_compatible: false,
-            target_catalog_changed: false,
-            dirty_chapter_ids: request.chapters.iter().map(|chapter| chapter.chapter_id).collect(),
-            fallback_reason: Some("missing_existing_payload".to_owned()),
-            no_changes: false,
-        }
+fn full_rebuild_plan(
+    request: &BuildRequest,
+    existing_payload_compatible: bool,
+    target_catalog_changed: bool,
+    fallback_reason: &str,
+) -> UpdatePlanResult {
+    UpdatePlanResult {
+        mode: "full".to_owned(),
+        supported_incremental: false,
+        existing_payload_compatible,
+        target_catalog_changed,
+        dirty_chapter_ids: request
+            .chapters
+            .iter()
+            .map(|chapter| chapter.chapter_id)
+            .collect(),
+        fallback_reason: Some(fallback_reason.to_owned()),
+        no_changes: false,
+    }
+}
+
+pub fn plan_update_result(
+    existing_payload: Option<&[u8]>,
+    request: &BuildRequest,
+) -> UpdatePlanResult {
+    let Some(payload_bytes) = existing_payload else {
+        return full_rebuild_plan(request, false, false, "missing_existing_payload");
+    };
+    let Ok(existing) = decode_payload(payload_bytes) else {
+        return full_rebuild_plan(request, false, false, "legacy_payload");
+    };
+
+    if existing.targets != request_targets_as_wire(&request.targets) {
+        return full_rebuild_plan(request, true, true, "target_catalog_changed");
+    }
+    if !chapter_ids_match_prefix(&existing.chapters, &request.chapters) {
+        return full_rebuild_plan(request, true, false, "unsupported_structure_change");
+    }
+
+    let dirty_chapter_ids = determine_dirty_chapter_ids(&existing.chapters, &request.chapters);
+    let no_changes = dirty_chapter_ids.is_empty();
+    UpdatePlanResult {
+        mode: if no_changes {
+            "reuse_existing".to_owned()
+        } else if dirty_chapter_ids.len() == request.chapters.len() {
+            "full".to_owned()
+        } else {
+            "incremental".to_owned()
+        },
+        supported_incremental: true,
+        existing_payload_compatible: true,
+        target_catalog_changed: false,
+        dirty_chapter_ids,
+        fallback_reason: None,
+        no_changes,
     }
 }
 
@@ -146,7 +140,13 @@ fn build_request_shards(
         stats.mention_ms += round_ms(mention_started.elapsed().as_secs_f64() * 1000.0);
 
         let claim_started = Instant::now();
-        let claims = build_claim_atoms(chapter.chapter_id, &segments, &indexed, context, &grouped_matches)?;
+        let claims = build_claim_atoms(
+            chapter.chapter_id,
+            &segments,
+            &indexed,
+            context,
+            &grouped_matches,
+        )?;
         stats.claim_ms += round_ms(claim_started.elapsed().as_secs_f64() * 1000.0);
 
         shards.push(ChapterShardData {
@@ -163,7 +163,11 @@ fn build_request_shards(
 
 pub fn build_full(request: BuildRequest) -> Result<(Vec<u8>, BuildResult), PayloadError> {
     let started = Instant::now();
-    let chapter_chars: usize = request.chapters.iter().map(|chapter| chapter.text.chars().count()).sum();
+    let chapter_chars: usize = request
+        .chapters
+        .iter()
+        .map(|chapter| chapter.text.chars().count())
+        .sum();
     let language = resolve_language(request.requested_language.as_deref());
     let context = build_context(&request.targets, &language)?;
     let (shards, stats) = build_request_shards(&request, None, &context)?;
@@ -200,22 +204,22 @@ pub fn build_full(request: BuildRequest) -> Result<(Vec<u8>, BuildResult), Paylo
     Ok((payload_bytes, result))
 }
 
-pub fn build_full_bytes(request_json: &[u8]) -> Result<(Vec<u8>, Vec<u8>), PayloadError> {
-    let request = decode_request(request_json)?;
-    let (payload_bytes, result) = build_full(request)?;
-    let result_bytes = serde_json::to_vec(&result)
-        .map_err(|err| PayloadError::InvalidPayload(err.to_string()))?;
-    Ok((payload_bytes, result_bytes))
-}
-
-pub fn update_incremental(existing_payload: &[u8], request: BuildRequest) -> Result<(Vec<u8>, BuildResult), PayloadError> {
+pub fn update_incremental(
+    existing_payload: &[u8],
+    request: BuildRequest,
+) -> Result<(Vec<u8>, BuildResult), PayloadError> {
     let started = Instant::now();
-    let chapter_chars: usize = request.chapters.iter().map(|chapter| chapter.text.chars().count()).sum();
+    let chapter_chars: usize = request
+        .chapters
+        .iter()
+        .map(|chapter| chapter.text.chars().count())
+        .sum();
     let plan = plan_update_result(Some(existing_payload), &request);
 
     if plan.mode == "reuse_existing" {
         let payload = decode_payload(existing_payload)?;
-        let (target_count, segment_count, mention_count, claim_count, coverage_count) = count_payload(&payload);
+        let (target_count, segment_count, mention_count, claim_count, coverage_count) =
+            count_payload(&payload);
         let result = BuildResult {
             payload_bytes: existing_payload.len(),
             chapter_count: request.chapters.len(),
@@ -243,7 +247,11 @@ pub fn update_incremental(existing_payload: &[u8], request: BuildRequest) -> Res
     let language = resolve_language(request.requested_language.as_deref());
     let context = build_context(&request.targets, &language)?;
     let dirty_ids: HashSet<i64> = plan.dirty_chapter_ids.iter().copied().collect();
-    let dirty_filter = if plan.mode == "incremental" { Some(&dirty_ids) } else { None };
+    let dirty_filter = if plan.mode == "incremental" {
+        Some(&dirty_ids)
+    } else {
+        None
+    };
     let (shards, stats) = build_request_shards(&request, dirty_filter, &context)?;
     let existing = if plan.mode == "incremental" {
         Some(decode_payload(existing_payload)?)
@@ -283,13 +291,6 @@ pub fn update_incremental(existing_payload: &[u8], request: BuildRequest) -> Res
     Ok((payload_bytes, result))
 }
 
-pub fn update_incremental_bytes(existing_payload: &[u8], request_json: &[u8]) -> Result<(Vec<u8>, Vec<u8>), PayloadError> {
-    let request = decode_request(request_json)?;
-    let (payload_bytes, result) = update_incremental(existing_payload, request)?;
-    let result_bytes = serde_json::to_vec(&result)
-        .map_err(|err| PayloadError::InvalidPayload(err.to_string()))?;
-    Ok((payload_bytes, result_bytes))
-}
 pub fn assemble_payload_bytes(
     request_json: &[u8],
     chapter_shards_json: &[u8],
@@ -298,7 +299,10 @@ pub fn assemble_payload_bytes(
     let request = decode_request(request_json)?;
     let chapter_shards: Vec<ChapterShard> = serde_json::from_slice(chapter_shards_json)
         .map_err(|err| PayloadError::InvalidRequest(err.to_string()))?;
-    let provided: Vec<ChapterShardData> = chapter_shards.iter().map(ChapterShardData::from_wire).collect();
+    let provided: Vec<ChapterShardData> = chapter_shards
+        .iter()
+        .map(ChapterShardData::from_wire)
+        .collect();
     let existing = existing_payload.map(decode_payload).transpose()?;
     let (payload, counts) = prepare_payload(request, provided, existing)?;
     let payload_bytes = serialize_payload(&payload)?;
@@ -314,8 +318,7 @@ pub fn assemble_payload_bytes(
         reused_chapter_count: counts.reused_chapter_count,
         incremental_applied: counts.incremental_applied,
     };
-    let result_bytes = serde_json::to_vec(&result)
-        .map_err(|err| PayloadError::InvalidPayload(err.to_string()))?;
+    let result_bytes =
+        serde_json::to_vec(&result).map_err(|err| PayloadError::InvalidPayload(err.to_string()))?;
     Ok((payload_bytes, result_bytes))
-
 }
