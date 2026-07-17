@@ -305,6 +305,7 @@ fn handle_run_event(app: &AppHandle, event: RunEvent) {
         RunEvent::WindowEvent {
             label,
             event: WindowEvent::CloseRequested { api, .. },
+            ..
         } if label == MAIN_WINDOW_LABEL => {
             let exiting = app
                 .state::<DesktopState>()
