@@ -56,12 +56,6 @@ export function RequireAuth() {
   return <Outlet />
 }
 
-/** Legal pages document the official hosted entry; local runtimes have no such surface. */
-export function RequireHosted() {
-  if (!isHostedRuntime()) return <Navigate to="/" replace />
-  return <Outlet />
-}
-
 function LoginRoute() {
   if (!isHostedRuntime()) return <Navigate to="/" replace />
   return <Login />
@@ -83,11 +77,9 @@ export default function App() {
                         <Home />
                       </Suspense>
                     )} />
-                    <Route element={<RequireHosted />}>
-                      <Route path="/terms" element={<Terms />} />
-                      <Route path="/privacy" element={<Privacy />} />
-                      <Route path="/copyright" element={<CopyrightNotice />} />
-                    </Route>
+                    <Route path="/terms" element={<Terms />} />
+                    <Route path="/privacy" element={<Privacy />} />
+                    <Route path="/copyright" element={<CopyrightNotice />} />
                     <Route element={<RequireAuth />}>
                       <Route path="/settings" element={<Settings />} />
                     </Route>
