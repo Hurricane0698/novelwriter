@@ -17,10 +17,8 @@ from app.language import DEFAULT_LANGUAGE, get_language_fallback_chain
 
 
 class SnippetKey(str, Enum):
-    # Chapter/outline formatting
+    # Chapter formatting
     CHAPTER_HEADING_FMT = "chapter_heading_fmt"
-    OUTLINE_HEADING_FMT = "outline_heading_fmt"
-    NO_OUTLINE = "no_outline"
 
     # Length discipline
     LENGTH_GUIDANCE_TARGET = "length_guidance_target"
@@ -83,8 +81,6 @@ def get_snippet(key: SnippetKey, locale: str | None = None) -> str:
 
 _ZH: dict[SnippetKey, str] = {
     SnippetKey.CHAPTER_HEADING_FMT: "【第{n}章：{title}】",
-    SnippetKey.OUTLINE_HEADING_FMT: "【第{start}–{end}章大纲】",
-    SnippetKey.NO_OUTLINE: "暂无大纲。",
     SnippetKey.LENGTH_GUIDANCE_TARGET: (
         "以约{target}字为目标完整展开正文，不要过早收束，"
         "明显短于约{min_chars}字会显得篇幅不足，可自然上浮到约{ceiling}字，"
@@ -127,8 +123,6 @@ register_snippets("zh", _ZH)
 
 _EN: dict[SnippetKey, str] = {
     SnippetKey.CHAPTER_HEADING_FMT: "【Chapter {n}: {title}】",
-    SnippetKey.OUTLINE_HEADING_FMT: "【Outline: Chapters {start}–{end}】",
-    SnippetKey.NO_OUTLINE: "No outline available.",
     SnippetKey.LENGTH_GUIDANCE_TARGET: (
         "Aim for approximately {target} characters of fully developed prose. "
         "Do not wrap up prematurely — anything clearly shorter than ~{min_chars} characters feels truncated. "
@@ -177,8 +171,6 @@ register_snippets("en", _EN)
 
 _JA: dict[SnippetKey, str] = {
     SnippetKey.CHAPTER_HEADING_FMT: "【第{n}章：{title}】",
-    SnippetKey.OUTLINE_HEADING_FMT: "【第{start}–{end}章 あらすじ】",
-    SnippetKey.NO_OUTLINE: "あらすじはありません。",
     SnippetKey.LENGTH_GUIDANCE_TARGET: (
         "約{target}文字を目標に本文を十分に展開してください。"
         "約{min_chars}文字を明らかに下回ると不十分です。"
@@ -225,8 +217,6 @@ register_snippets("ja", _JA)
 
 _KO: dict[SnippetKey, str] = {
     SnippetKey.CHAPTER_HEADING_FMT: "【제{n}장: {title}】",
-    SnippetKey.OUTLINE_HEADING_FMT: "【제{start}–{end}장 개요】",
-    SnippetKey.NO_OUTLINE: "개요가 없습니다.",
     SnippetKey.LENGTH_GUIDANCE_TARGET: (
         "약 {target}자를 목표로 본문을 충분히 전개해 주세요. "
         "약 {min_chars}자보다 확연히 짧으면 분량이 부족합니다. "

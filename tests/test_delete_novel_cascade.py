@@ -25,7 +25,6 @@ from app.models import (
     Exploration,
     ExplorationChapter,
     Novel,
-    Outline,
     User,
     WorldEntity,
     WorldEntityAttribute,
@@ -86,9 +85,8 @@ def test_delete_novel_cascades_to_world_and_explorations(db, tmp_path):
 
     # ORM-cascaded tables.
     chapter = Chapter(novel_id=novel.id, chapter_number=1, title="c1", content="x")
-    outline = Outline(novel_id=novel.id, chapter_start=1, chapter_end=1, outline_text="o")
     cont = Continuation(novel_id=novel.id, chapter_number=1, content="y")
-    db.add_all([chapter, outline, cont])
+    db.add_all([chapter, cont])
 
     # World model tables (NOT ORM-cascaded off Novel).
     e1 = WorldEntity(novel_id=novel.id, name="e1", entity_type="Character", description="", aliases=[])
@@ -133,7 +131,6 @@ def test_delete_novel_cascades_to_world_and_explorations(db, tmp_path):
     assert db.get(Novel, novel.id) is None
 
     assert db.query(Chapter).filter(Chapter.novel_id == novel.id).count() == 0
-    assert db.query(Outline).filter(Outline.novel_id == novel.id).count() == 0
     assert db.query(Continuation).filter(Continuation.novel_id == novel.id).count() == 0
 
     assert db.query(WorldRelationship).filter(WorldRelationship.novel_id == novel.id).count() == 0
