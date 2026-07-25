@@ -24,7 +24,6 @@ export function HeroSection() {
   const { isLoggedIn } = useAuth()
   const { t } = useUiLocale()
   const startDestination = isHostedRuntime() && !isLoggedIn ? '/login' : '/library'
-  const demoDestination = '/demo'
 
   return (
     <section className="relative isolate min-h-[100svh] overflow-hidden px-6 pb-12 pt-24 sm:px-8 lg:pb-16 lg:pt-28">
@@ -66,24 +65,6 @@ export function HeroSection() {
               asChild
               variant="accent"
               className="rounded-full px-7 py-3 text-base font-medium bg-accent border-accent text-accent-foreground shadow-[0_12px_32px_hsl(var(--accent)/0.35)] hover:bg-[hsl(var(--nw-accent-hover))] active:translate-y-[1px]"
-            >
-              <Link
-                to={demoDestination}
-                data-testid="home-demo"
-                onClick={() => {
-                  void trackHostedAnalyticsEvent('acquisition_cta_click', {
-                    meta: { cta: 'hero_demo', destination: demoDestination },
-                  })
-                }}
-              >
-                {t('home.hero.cta.demo')}
-              </Link>
-            </NwButton>
-
-            <NwButton
-              asChild
-              variant="ghost"
-              className="rounded-full border border-border px-7 py-3 text-base font-medium"
             >
               <Link
                 to={startDestination}

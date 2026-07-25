@@ -28,7 +28,6 @@ export function ClosingCTA() {
   const inView = useInView(ref, { once: true, amount: 0.2 })
   const prefersReducedMotion = useReducedMotion()
   const startDestination = isHostedRuntime() && !isLoggedIn ? '/login' : '/library'
-  const demoDestination = '/demo'
   const shouldAnimateAmbient = inView && !prefersReducedMotion
 
   const stats = [
@@ -149,22 +148,6 @@ export function ClosingCTA() {
                 }}
               >
                 {t('home.cta.button')}
-              </Link>
-            </NwButton>
-            <NwButton
-              asChild
-              variant="ghost"
-              className="rounded-full border border-border px-7 py-3 text-base font-medium"
-            >
-              <Link
-                to={demoDestination}
-                onClick={() => {
-                  void trackHostedAnalyticsEvent('acquisition_cta_click', {
-                    meta: { cta: 'footer_demo', destination: demoDestination },
-                  })
-                }}
-              >
-                {t('home.hero.cta.demo')} →
               </Link>
             </NwButton>
           </div>

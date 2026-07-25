@@ -467,12 +467,6 @@ def test_admin_funnel_reports_world_build_attempts_demo_completion_and_upload_af
         ('world_generate_failed', {'source_surface': 'world_onboarding', 'status': 503, 'error_code': 'world_generate_llm_unavailable'}),
         ('bootstrap_trigger', {'source_surface': 'world_onboarding', 'mode': 'initial'}),
         ('bootstrap_failed', {'source_surface': 'world_onboarding', 'status': 400, 'error_code': 'bootstrap_no_text'}),
-        ('demo_guide_view', {'source': 'auto', 'status': 'in_progress', 'progress_count': 1}),
-        ('demo_guide_step_complete', {'step': 'chapter', 'progress_count': 1}),
-        ('demo_guide_step_complete', {'step': 'atlas', 'progress_count': 2}),
-        ('demo_guide_step_complete', {'step': 'write', 'progress_count': 3}),
-        ('demo_guide_step_complete', {'step': 'copilot', 'progress_count': 4}),
-        ('demo_guide_completed', {'progress_count': 4}),
     ]
     for event_name, meta in project_events:
         response = hosted_analytics_client.post(
@@ -480,6 +474,32 @@ def test_admin_funnel_reports_world_build_attempts_demo_completion_and_upload_af
             json={'event': event_name, 'novel_id': demo_novel_id, 'meta': meta},
         )
         assert response.status_code == 202, event_name
+
+    # The guided demo was removed; its client events are no longer accepted.
+    rejected = hosted_analytics_client.post(
+        '/api/auth/events',
+        json={'event': 'demo_guide_view', 'novel_id': demo_novel_id, 'meta': {'source': 'auto'}},
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()['detail']['code'] == 'analytics_event_unsupported'
+
+    # Historical demo_guide rows (recorded before the removal) must still be
+    # aggregated by the funnel report.
+    historical_demo_events = [
+        ('demo_guide_view', {'source': 'auto', 'status': 'in_progress', 'progress_count': 1}),
+        ('demo_guide_step_complete', {'step': 'chapter', 'progress_count': 1}),
+        ('demo_guide_step_complete', {'step': 'atlas', 'progress_count': 2}),
+        ('demo_guide_step_complete', {'step': 'write', 'progress_count': 3}),
+        ('demo_guide_step_complete', {'step': 'copilot', 'progress_count': 4}),
+        ('demo_guide_completed', {'progress_count': 4}),
+    ]
+    db = _db_session()
+    try:
+        user = db.query(User).filter(User.nickname == '漏斗补环用户').one()
+        for event_name, meta in historical_demo_events:
+            record_event(db, user.id, event_name, novel_id=demo_novel_id, meta=meta)
+    finally:
+        db.close()
 
     upload_click_response = hosted_analytics_client.post(
         '/api/auth/events',

@@ -653,19 +653,9 @@ export function NovelStudioPage() {
   const {
     bootstrapError,
     chaptersAvailable,
-    demoGuideProgressCount,
-    demoGuideState,
     handleDismissWorldOnboarding,
-    handleOpenDemoAtlas,
-    handleOpenDemoChapter,
-    handleOpenDemoCopilot,
-    handleOpenDemoWriteStage,
-    handleReopenDemoGuide,
-    handleSkipDemoGuide,
     handleTriggerBootstrap,
     preparationGate,
-    showDemoGuideExpanded,
-    showDemoGuideReopen,
     showWorldOnboarding,
     worldGenOpen,
     setWorldGenOpen,
@@ -674,11 +664,6 @@ export function NovelStudioPage() {
     novel,
     locale,
     t,
-    searchParams,
-    activeStage,
-    activeChapterNum,
-    chapterLoading,
-    showWorkbenchRail,
     worldEntityCount: worldEntities.length,
     worldSystemCount: worldSystems.length,
     worldLoading,
@@ -696,12 +681,6 @@ export function NovelStudioPage() {
         },
       )
     },
-    openDemoChapter: () => navigateToChapterStage(activeChapterNum),
-    openDemoWriteStage: navigateToWriteStage,
-    openDemoAtlas: () => navigateToAtlas(),
-    openDemoCopilot: () => {
-      openDrawer(...buildWholeBookCopilotLaunchArgs(routeState))
-    },
     dismissWorldOnboardingRoute: () => {
       navigate(`/world/${novelId}`)
     },
@@ -712,9 +691,7 @@ export function NovelStudioPage() {
   }, [])
 
   const assistRailPinnedOpen = (
-    showDemoGuideExpanded
-    || showDemoGuideReopen
-    || resolveStudioWorldEntryStage({
+    resolveStudioWorldEntryStage({
       worldEntityCount: worldEntities.length,
       worldSystemCount: worldSystems.length,
       handoff: worldEntryHandoff,
@@ -1119,21 +1096,9 @@ export function NovelStudioPage() {
           ) : showAssistRail ? (
             <StudioSupportRail
               novelId={novelId}
-              latestChapterReference={latestChapterReference}
-              chapterCount={chaptersMeta.length}
               worldEntityCount={worldEntities.length}
               worldSystemCount={worldSystems.length}
               windowIndexStatus={windowIndexStatusMeta}
-              demoGuideState={demoGuideState}
-              demoGuideProgressCount={demoGuideProgressCount}
-              showDemoGuideExpanded={showDemoGuideExpanded}
-              showDemoGuideReopen={showDemoGuideReopen}
-              onOpenDemoChapter={handleOpenDemoChapter}
-              onOpenDemoAtlas={handleOpenDemoAtlas}
-              onOpenDemoWriteStage={handleOpenDemoWriteStage}
-              onOpenDemoCopilot={handleOpenDemoCopilot}
-              onSkipDemoGuide={handleSkipDemoGuide}
-              onReopenDemoGuide={handleReopenDemoGuide}
               onOpenWholeBookCopilot={() => {
                 openDrawer(...buildWholeBookCopilotLaunchArgs(routeState))
               }}
