@@ -1,60 +1,57 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 
 /**
- * Hero background — animated gradient orbs instead of knowledge graph SVG.
+ * Hero background — celestial wash.
  *
- * Design intent: the old SVG graph with labeled nodes was too literal and
- * competed with the product screenshot for attention. These soft gradient
- * orbs provide visual warmth and depth without being "read" as content.
+ * Light mode: a periwinkle sky that saturates at the top of the viewport and
+ * dissolves into cloud white toward the fold (reference: soft sky gradient).
+ * Dark mode: a deep-space nebula in the same periwinkle family; the global
+ * starfield layer (AnimatedBackground) provides the star speckle behind it.
  */
 export function HeroGraphBg() {
+  const reduce = useReducedMotion()
+
   return (
     <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none" aria-hidden="true">
-      {/* Warm ambient glow — top left */}
-      <motion.div
-        className="absolute -left-[10%] -top-[20%] h-[600px] w-[600px] rounded-full opacity-[0.07]"
+      {/* Sky wash: saturated at top, dissolving toward the fold. Token-driven so it adapts per theme. */}
+      <div
+        className="absolute inset-x-0 top-0 h-[85%]"
         style={{
-          background: 'radial-gradient(circle, #f59e0b 0%, transparent 70%)',
+          background:
+            'linear-gradient(180deg, hsl(var(--accent) / 0.34) 0%, hsl(var(--accent) / 0.16) 38%, hsl(var(--background) / 0) 80%)',
         }}
-        animate={{
-          x: [0, 30, -10, 0],
-          y: [0, -20, 15, 0],
-        }}
-        transition={{ duration: 20, repeat: Infinity, ease: 'easeInOut' }}
       />
 
-      {/* Cool accent glow — center right */}
+      {/* Cloud bloom — soft white radial rising from the lower third (light); reads as nebula glow in dark. */}
       <motion.div
-        className="absolute right-[5%] top-[10%] h-[500px] w-[500px] rounded-full opacity-[0.05]"
-        style={{
-          background: 'radial-gradient(circle, #14b8a6 0%, transparent 70%)',
-        }}
-        animate={{
-          x: [0, -20, 10, 0],
-          y: [0, 15, -20, 0],
-        }}
-        transition={{ duration: 24, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute left-[8%] top-[38%] h-[520px] w-[720px] rounded-full blur-3xl"
+        style={{ background: 'radial-gradient(ellipse, hsl(var(--background) / 0.9) 0%, transparent 70%)' }}
+        animate={reduce ? undefined : { x: [0, 26, -12, 0], y: [0, -14, 10, 0] }}
+        transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
       />
 
-      {/* Violet whisper — bottom center */}
+      {/* Periwinkle drift — upper right */}
       <motion.div
-        className="absolute bottom-[5%] left-[30%] h-[400px] w-[400px] rounded-full opacity-[0.04]"
-        style={{
-          background: 'radial-gradient(circle, #8b5cf6 0%, transparent 70%)',
-        }}
-        animate={{
-          x: [0, 15, -15, 0],
-          y: [0, -10, 20, 0],
-        }}
-        transition={{ duration: 28, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute -right-[6%] -top-[12%] h-[560px] w-[560px] rounded-full opacity-[0.16] blur-2xl"
+        style={{ background: 'radial-gradient(circle, hsl(var(--accent)) 0%, transparent 68%)' }}
+        animate={reduce ? undefined : { x: [0, -22, 12, 0], y: [0, 16, -18, 0] }}
+        transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
+      />
+
+      {/* Deep indigo whisper — bottom center, ties hero into the next section */}
+      <motion.div
+        className="absolute bottom-[2%] left-[32%] h-[380px] w-[520px] rounded-full opacity-[0.08] blur-2xl"
+        style={{ background: 'radial-gradient(circle, hsl(252 70% 62%) 0%, transparent 70%)' }}
+        animate={reduce ? undefined : { x: [0, 14, -16, 0], y: [0, -10, 18, 0] }}
+        transition={{ duration: 30, repeat: Infinity, ease: 'easeInOut' }}
       />
 
       {/* Fine dot grid for texture */}
       <div
-        className="absolute inset-0 opacity-[0.025] .light:opacity-[0.025]"
+        className="absolute inset-0 opacity-[0.02]"
         style={{
           backgroundImage: 'radial-gradient(circle, hsl(var(--foreground)) 1px, transparent 1px)',
           backgroundSize: '32px 32px',

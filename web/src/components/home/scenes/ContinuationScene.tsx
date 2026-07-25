@@ -17,7 +17,7 @@ export default function ContinuationScene() {
   const { t } = useUiLocale()
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_bottom,rgba(217,119,6,0.05)_0%,#ffffff_62%)]">
+    <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_bottom,rgba(91,107,240,0.06)_0%,#ffffff_62%)]">
       <ScreenshotStageAsset
         src={sceneManifest.continuation.screenshot}
         alt={t(sceneManifest.continuation.labelKey)}

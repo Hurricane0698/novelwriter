@@ -49,7 +49,7 @@ export function StickyNarrative() {
                         <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                             {t('home.workflow.eyebrow')}
                         </div>
-                        <h2 className="mt-4 max-w-[560px] font-mono text-[34px] font-bold leading-[1.08] text-foreground sm:text-[42px]">
+                        <h2 className="mt-4 max-w-[560px] font-sans tracking-tight text-[34px] font-bold leading-[1.08] text-foreground sm:text-[42px]">
                             {t('home.workflow.title')}
                         </h2>
                     </div>

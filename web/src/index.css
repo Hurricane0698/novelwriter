@@ -4,40 +4,41 @@
 
 @layer base {
   /* Token base stays dark on :root; runtime now applies .light by default on first visit unless the user explicitly saved dark. */
+  /* Dark theme: "deep starfield" — near-black indigo space, periwinkle accent. */
   :root {
-    --background: 230 15% 7%;
-    --foreground: 0 0% 98%;
+    --background: 233 34% 6%;
+    --foreground: 228 30% 96%;
 
-    --card: 230 15% 8%;
-    --card-foreground: 0 0% 98%;
+    --card: 233 30% 8%;
+    --card-foreground: 228 30% 96%;
 
-    --popover: 230 15% 9%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 233 30% 9%;
+    --popover-foreground: 228 30% 96%;
 
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
+    --primary: 228 30% 96%;
+    --primary-foreground: 233 34% 8%;
 
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 233 22% 15%;
+    --secondary-foreground: 228 30% 96%;
 
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
+    --muted: 233 22% 15%;
+    --muted-foreground: 230 16% 66%;
 
-    --accent: 217 91% 60%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 235 78% 70%;
+    --accent-foreground: 233 40% 8%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 217 91% 60%;
+    --border: 233 22% 16%;
+    --input: 233 22% 16%;
+    --ring: 235 78% 70%;
 
     --radius: 0.75rem;
 
     /* Semantic aliases: keep app-specific tokens aligned with shadcn theme vars. */
     --color-accent: var(--accent);
-    --nw-accent-hover: 217 91% 55%;
+    --nw-accent-hover: 235 78% 64%;
     --color-vis-active: 142 71% 45%;
     --color-vis-reference: 213 94% 68%;
     --color-vis-hidden: 220 9% 46%;
@@ -55,7 +56,7 @@
     --nw-glass-border: #ffffff1A;
     --nw-glass-border-hover: #ffffff33;
     --nw-backdrop: #00000066;
-    --nw-modal-bg: 230 14% 16%;
+    --nw-modal-bg: 233 26% 13%;
 
     --nw-copilot-border: rgba(255, 255, 255, 0.08);
     --nw-copilot-border-strong: rgba(255, 255, 255, 0.14);
@@ -79,44 +80,45 @@
     --nw-copilot-glow-1: rgba(255, 255, 255, 0.10);
 
     /* ── Landing page surfaces ── */
-    --lp-surface: 228 14% 10%;
-    --lp-cta-from: 228 14% 10%;
-    --lp-cta-via: 225 12% 11%;
-    --lp-cta-to: 30 6% 12%;
+    /* ── Landing page surfaces ── */
+    --lp-surface: 233 30% 8%;
+    --lp-cta-from: 233 30% 8%;
+    --lp-cta-via: 235 28% 10%;
+    --lp-cta-to: 240 30% 12%;
   }
 
-  /* Light mode — activated by .light class on <html> */
+  /* Light mode — "periwinkle sky": cool cloud whites over a lavender-blue cast. */
   .light {
-    --background: 40 15% 99%;
-    --foreground: 240 10% 3.9%;
+    --background: 235 60% 99%;
+    --foreground: 235 30% 12%;
 
-    --card: 40 12% 99%;
-    --card-foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 235 30% 12%;
 
-    --popover: 40 8% 99.2%;
-    --popover-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 235 30% 12%;
 
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
+    --primary: 235 30% 14%;
+    --primary-foreground: 235 60% 99%;
 
-    --secondary: 36 6% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
+    --secondary: 235 45% 96%;
+    --secondary-foreground: 235 30% 14%;
 
-    --muted: 36 6% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
+    --muted: 235 40% 95%;
+    --muted-foreground: 235 14% 44%;
 
-    --accent: 217 91% 60%;
+    --accent: 235 74% 62%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 36 5% 90%;
-    --input: 36 5% 90%;
-    --ring: 217 91% 60%;
+    --border: 235 30% 90%;
+    --input: 235 30% 90%;
+    --ring: 235 74% 62%;
 
     --color-accent: var(--accent);
-    --nw-accent-hover: 217 91% 55%;
+    --nw-accent-hover: 235 74% 56%;
     --color-vis-active: 142 71% 45%;
     --color-vis-reference: 213 94% 68%;
     --color-vis-hidden: 220 9% 76%;
@@ -129,18 +131,18 @@
     --color-danger: 0 84% 60%;
     --color-warning: 38 92% 50%;
 
-    --nw-glass-bg: hsla(38, 15%, 99%, 0.70);
-    --nw-glass-bg-hover: hsla(36, 14%, 93%, 0.80);
-    --nw-glass-border: #00000015;
-    --nw-glass-border-hover: #00000030;
-    --nw-backdrop: #00000033;
-    --nw-modal-bg: 40 8% 98%;
+    --nw-glass-bg: hsla(235, 60%, 99%, 0.72);
+    --nw-glass-bg-hover: hsla(235, 45%, 95%, 0.82);
+    --nw-glass-border: #3b42a915;
+    --nw-glass-border-hover: #3b42a930;
+    --nw-backdrop: #1e226633;
+    --nw-modal-bg: 235 55% 99%;
 
-    --nw-copilot-border: rgba(15, 23, 42, 0.06);
-    --nw-copilot-border-strong: rgba(15, 23, 42, 0.12);
+    --nw-copilot-border: rgba(46, 52, 120, 0.08);
+    --nw-copilot-border-strong: rgba(46, 52, 120, 0.14);
     --nw-copilot-shell-bg:
-      linear-gradient(180deg, rgba(255, 253, 250, 0.82), rgba(253, 251, 247, 0.76) 50%, rgba(250, 248, 244, 0.70));
-    --nw-copilot-shell-shadow: 0 32px 72px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.04);
+      linear-gradient(180deg, rgba(252, 252, 255, 0.86), rgba(248, 249, 255, 0.78) 50%, rgba(243, 245, 255, 0.72));
+    --nw-copilot-shell-shadow: 0 32px 72px rgba(59, 66, 169, 0.10), 0 8px 24px rgba(59, 66, 169, 0.05);
     --nw-copilot-panel-bg: rgba(0, 0, 0, 0.02);
     --nw-copilot-panel-strong-bg: rgba(0, 0, 0, 0.035);
     --nw-copilot-panel-muted-bg: rgba(0, 0, 0, 0.015);
@@ -154,13 +156,13 @@
 
     --nw-copilot-glow-blend: normal;
     --nw-copilot-glow-op: 0.45;
-    --nw-copilot-glow-1: rgba(148, 163, 184, 0.12);
+    --nw-copilot-glow-1: rgba(139, 147, 248, 0.14);
 
     /* ── Landing page surfaces ── */
-    --lp-surface: 40 33% 97%;
-    --lp-cta-from: 40 33% 97%;
-    --lp-cta-via: 33 76% 97%;
-    --lp-cta-to: 35 67% 95%;
+    --lp-surface: 236 56% 97%;
+    --lp-cta-from: 236 56% 97%;
+    --lp-cta-via: 235 70% 96%;
+    --lp-cta-to: 233 76% 93%;
   }
 }
 
@@ -266,7 +268,7 @@ html[data-route-surface='workspace'] [class*='backdrop-blur']:not(.nw-preserve-b
 .blob-1 {
   width: 700px;
   height: 560px;
-  background: hsl(239 84% 67% / 0.22);
+  background: hsl(238 80% 68% / 0.16);
   top: 5%;
   left: 8%;
   animation: drift-1 10s ease-in-out infinite;
@@ -276,7 +278,7 @@ html[data-route-surface='workspace'] [class*='backdrop-blur']:not(.nw-preserve-b
 .blob-2 {
   width: 600px;
   height: 480px;
-  background: hsl(217 91% 60% / 0.20);
+  background: hsl(222 85% 62% / 0.14);
   top: 30%;
   right: 0%;
   animation: drift-2 12s ease-in-out infinite;
@@ -286,16 +288,62 @@ html[data-route-surface='workspace'] [class*='backdrop-blur']:not(.nw-preserve-b
 .blob-3 {
   width: 650px;
   height: 450px;
-  background: hsl(243 76% 53% / 0.17);
+  background: hsl(252 70% 58% / 0.13);
   bottom: 0%;
   left: 3%;
   animation: drift-3 14s ease-in-out infinite;
 }
 
-/* Light mode: warm palette aligned with landing page (amber/teal/violet) */
-.light .blob-1 { background: hsl(38 80% 55% / 0.08); }
-.light .blob-2 { background: hsl(175 70% 45% / 0.06); }
-.light .blob-3 { background: hsl(258 60% 60% / 0.05); }
+/* Light mode: periwinkle-sky palette — soft lavender-blue washes, like clouds over sky */
+.light .blob-1 { background: hsl(235 85% 72% / 0.16); }
+.light .blob-2 { background: hsl(220 90% 78% / 0.14); }
+.light .blob-3 { background: hsl(248 75% 76% / 0.10); }
+
+/* ── Starfield (dark mode only) ── */
+/* Three parallax speckle layers built from radial-gradient dots; hidden in light mode. */
+.nw-starfield {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.light .nw-starfield { display: none; }
+.nw-starfield::before,
+.nw-starfield::after {
+  content: '';
+  position: absolute;
+  inset: -50% 0 0 0;
+  background-image:
+    radial-gradient(1px 1px at 12% 22%, hsl(228 40% 92% / 0.9) 50%, transparent 51%),
+    radial-gradient(1px 1px at 34% 64%, hsl(228 40% 92% / 0.7) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 56% 12%, hsl(235 70% 88% / 0.8) 50%, transparent 51%),
+    radial-gradient(1px 1px at 71% 45%, hsl(228 40% 92% / 0.6) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 88% 78%, hsl(220 70% 90% / 0.7) 50%, transparent 51%),
+    radial-gradient(1px 1px at 22% 88%, hsl(228 40% 92% / 0.5) 50%, transparent 51%),
+    radial-gradient(1px 1px at 45% 35%, hsl(228 40% 92% / 0.45) 50%, transparent 51%),
+    radial-gradient(1.2px 1.2px at 64% 92%, hsl(248 60% 88% / 0.6) 50%, transparent 51%),
+    radial-gradient(1px 1px at 92% 18%, hsl(228 40% 92% / 0.65) 50%, transparent 51%),
+    radial-gradient(1px 1px at 5% 55%, hsl(228 40% 92% / 0.5) 50%, transparent 51%);
+  background-size: 640px 640px;
+  animation: star-twinkle 7s ease-in-out infinite alternate;
+}
+.nw-starfield::after {
+  background-size: 420px 420px;
+  opacity: 0.55;
+  animation-duration: 11s;
+  animation-delay: -4s;
+}
+
+@keyframes star-twinkle {
+  from { opacity: 0.45; }
+  to   { opacity: 0.95; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nw-starfield::before,
+  .nw-starfield::after {
+    animation: none !important;
+  }
+}
 
 @keyframes drift-1 {
   0%, 100% { transform: translate(0, 0) scale(1); }

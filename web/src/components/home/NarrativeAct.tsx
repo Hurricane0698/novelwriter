@@ -73,7 +73,7 @@ function EditorialAct({
         <div className="relative max-w-[500px]">
             {/* Oversized watermark number */}
             <div
-                className="pointer-events-none absolute -left-3 -top-12 select-none font-mono text-[150px] font-black leading-none"
+                className="pointer-events-none absolute -left-3 -top-12 select-none font-sans tracking-tighter text-[150px] font-black leading-none"
                 style={{ color: accentHex, opacity: 0.04 }}
             >
                 {stepLabel}
@@ -95,7 +95,7 @@ function EditorialAct({
                 </span>
             </div>
 
-            <h3 className="mt-7 font-mono text-[32px] font-bold leading-[1.10] text-foreground lg:text-[38px]">
+            <h3 className="mt-7 font-sans tracking-tight text-[32px] font-bold leading-[1.10] text-foreground lg:text-[38px]">
                 {title}
             </h3>
 
@@ -150,7 +150,7 @@ function ThreadAct({
 
             <div className="flex items-baseline gap-3">
                 <span
-                    className="font-mono text-[28px] font-black leading-none"
+                    className="font-sans tracking-tight text-[28px] font-black leading-none"
                     style={{ color: accentHex }}
                 >
                     {stepLabel}
@@ -160,7 +160,7 @@ function ThreadAct({
                 </span>
             </div>
 
-            <h3 className="mt-6 font-mono text-[30px] font-bold leading-[1.12] text-foreground lg:text-[35px]">
+            <h3 className="mt-6 font-sans tracking-tight text-[30px] font-bold leading-[1.12] text-foreground lg:text-[35px]">
                 {title}
             </h3>
 

@@ -59,7 +59,7 @@ export function FeatureShowcase() {
           <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
             {t('home.feature.section.eyebrow')}
           </div>
-          <h2 className="mt-4 font-mono text-[32px] font-bold leading-[1.12] text-foreground sm:text-[40px]">
+          <h2 className="mt-4 font-sans tracking-tight text-[32px] font-bold leading-[1.12] text-foreground sm:text-[40px]">
             {t('home.feature.section.title')}
           </h2>
           <p className="mt-5 text-[15px] leading-8 text-muted-foreground">
@@ -97,7 +97,7 @@ function FeatureRowComponent({ feature }: { feature: FeatureRow }) {
       >
         {feature.eyebrow}
       </span>
-      <h3 className="mt-5 font-mono text-[26px] font-bold leading-[1.16] text-foreground sm:text-[30px]">
+      <h3 className="mt-5 font-sans tracking-tight text-[26px] font-bold leading-[1.16] text-foreground sm:text-[30px]">
         {feature.title}
       </h3>
       <p className="mt-4 max-w-[440px] text-[15px] leading-8 text-muted-foreground">

@@ -29,7 +29,7 @@ export function DetailsMatter() {
       screenshot: homeScreenshotAssets.draftReviewHighlight,
       imageMode: 'contain',
       imageHeight: 112,
-      accentHex: '#d97706',
+      accentHex: '#5b6bf0',
     },
     {
       label: t('home.details.card2.label'),
@@ -37,7 +37,7 @@ export function DetailsMatter() {
       screenshot: homeScreenshotAssets.atlasEntityEdit,
       objectPosition: '50% 86%',
       scale: 1.42,
-      accentHex: '#0d9488',
+      accentHex: '#4a7de8',
     },
     {
       label: t('home.details.card3.label'),
@@ -45,7 +45,7 @@ export function DetailsMatter() {
       screenshot: homeScreenshotAssets.studioWrite,
       objectPosition: '26% 2%',
       scale: 1.28,
-      accentHex: '#7c3aed',
+      accentHex: '#7a5cf0',
     },
     {
       label: t('home.details.card4.label'),
@@ -53,7 +53,7 @@ export function DetailsMatter() {
       screenshot: homeScreenshotAssets.copilotChat,
       objectPosition: '50% 80%',
       scale: 1.34,
-      accentHex: '#7c3aed',
+      accentHex: '#7a5cf0',
     },
   ]
 
@@ -75,7 +75,7 @@ export function DetailsMatter() {
           <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
             {t('home.details.section.eyebrow')}
           </div>
-          <h2 className="mt-4 max-w-[560px] font-mono text-[32px] font-bold leading-[1.12] text-foreground sm:text-[40px]">
+          <h2 className="mt-4 max-w-[560px] font-sans tracking-tight text-[32px] font-bold leading-[1.12] text-foreground sm:text-[40px]">
             {t('home.details.section.title')}
           </h2>
           <p className="mt-5 max-w-[520px] text-[15px] leading-8 text-muted-foreground">

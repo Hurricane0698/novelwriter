@@ -16,8 +16,8 @@ export default function GovernanceScene() {
   const { t } = useUiLocale()
 
   return (
-    <div className="h-full bg-[radial-gradient(circle_at_top_left,#ebfffb_0%,#f8fffd_42%,#ffffff_82%)] p-3 sm:p-4">
-      <div className="h-full overflow-hidden rounded-[24px] border border-teal-100/90 bg-[#f7fffc] shadow-[0_16px_36px_rgba(15,23,42,0.04)]">
+    <div className="h-full bg-[radial-gradient(circle_at_top_left,#eef4ff_0%,#f8faff_42%,#ffffff_82%)] p-3 sm:p-4">
+      <div className="h-full overflow-hidden rounded-[24px] border border-indigo-100/90 bg-[#f8faff] shadow-[0_16px_36px_rgba(15,23,42,0.04)]">
         <ScreenshotStageAsset
           src={sceneManifest.governance.screenshot}
           alt={t(sceneManifest.governance.labelKey)}

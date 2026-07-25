@@ -14,6 +14,10 @@ export default {
             },
         },
         extend: {
+            fontFamily: {
+                sans: ['"Outfit Variable"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                mono: ['"JetBrains Mono Variable"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+            },
             colors: {
                 border: "hsl(var(--border) / <alpha-value>)",
                 input: "hsl(var(--input) / <alpha-value>)",

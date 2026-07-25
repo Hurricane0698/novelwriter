@@ -50,13 +50,13 @@ export function ClosingCTA() {
       {/* Ambient orbs */}
       <motion.div
         className="absolute left-[20%] top-[20%] h-[400px] w-[400px] rounded-full opacity-[0.06]"
-        style={{ background: 'radial-gradient(circle, #f59e0b 0%, transparent 70%)' }}
+        style={{ background: 'radial-gradient(circle, hsl(235 78% 68%) 0%, transparent 70%)' }}
         animate={shouldAnimateAmbient ? { x: [0, 20, -10, 0], y: [0, -15, 10, 0] } : { x: 0, y: 0 }}
         transition={shouldAnimateAmbient ? { duration: 20, repeat: Infinity, ease: 'easeInOut' } : { duration: 0 }}
       />
       <motion.div
         className="absolute bottom-[30%] right-[15%] h-[350px] w-[350px] rounded-full opacity-[0.04]"
-        style={{ background: 'radial-gradient(circle, #14b8a6 0%, transparent 70%)' }}
+        style={{ background: 'radial-gradient(circle, hsl(252 70% 62%) 0%, transparent 70%)' }}
         animate={shouldAnimateAmbient ? { x: [0, -15, 15, 0], y: [0, 10, -20, 0] } : { x: 0, y: 0 }}
         transition={shouldAnimateAmbient ? { duration: 24, repeat: Infinity, ease: 'easeInOut' } : { duration: 0 }}
       />
@@ -102,7 +102,7 @@ export function ClosingCTA() {
           transition={{ duration: 0.6, delay: 0.15, ease: 'easeOut' }}
         >
           <h2
-            className="max-w-[600px] font-mono text-[32px] font-bold leading-[1.12] text-foreground sm:text-[40px]"
+            className="max-w-[600px] font-sans tracking-tight text-[32px] font-bold leading-[1.12] text-foreground sm:text-[40px]"
           >
             {t('home.cta.title')}
           </h2>
@@ -122,7 +122,7 @@ export function ClosingCTA() {
                 transition={{ duration: 0.4, delay: 0.25 + i * 0.08 }}
               >
                 <div className="flex items-baseline justify-center gap-0.5">
-                  <span className="font-mono text-[36px] font-extrabold text-foreground">
+                  <span className="font-sans tracking-tight text-[36px] font-extrabold text-foreground">
                     {s.value}
                   </span>
                 </div>
@@ -138,7 +138,7 @@ export function ClosingCTA() {
             <NwButton
               asChild
               variant="accent"
-              className="rounded-full px-8 py-3.5 text-base font-medium bg-foreground border-foreground text-background shadow-[0_8px_24px_rgba(15,23,42,0.12)] hover:bg-foreground/90"
+              className="rounded-full px-8 py-3.5 text-base font-medium bg-accent border-accent text-accent-foreground shadow-[0_12px_32px_hsl(var(--accent)/0.35)] hover:bg-[hsl(var(--nw-accent-hover))] active:translate-y-[1px]"
             >
               <Link
                 to={startDestination}

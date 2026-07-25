@@ -68,7 +68,7 @@ export function Home({ deferBelowFold = true }: HomeProps = {}) {
   }, [deferBelowFold])
 
   return (
-    <div className="relative flex flex-col bg-background">
+    <div className="relative flex flex-col">
       <HeroSection />
       {!deferBelowFold ? (
         <HomeDeferredSectionsSlot />

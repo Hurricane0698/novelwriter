@@ -16,7 +16,7 @@ export default function ImportScene() {
   const { t } = useUiLocale()
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_top_left,#fff6e7_0%,#fffdf8_38%,#ffffff_78%)]">
+    <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_top_left,#eef1ff_0%,#fafbff_38%,#ffffff_78%)]">
       <ScreenshotStageAsset
         src={sceneManifest.import.screenshot}
         alt={t(sceneManifest.import.labelKey)}

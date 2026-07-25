@@ -15,7 +15,7 @@ type StageShellProps = {
 
 export function StageShell({
   label = 'NovWr',
-  accentHex = '#d97706',
+  accentHex = '#5b6bf0',
   className,
   headerClassName,
   bodyClassName,

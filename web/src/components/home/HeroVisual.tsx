@@ -77,10 +77,10 @@ export function HeroVisual() {
 
       {/* Subtle accent glow behind the main card */}
       <div
-        className="absolute -inset-8 -z-10 rounded-[40px] opacity-50 blur-3xl"
+        className="absolute -inset-8 -z-10 rounded-[40px] opacity-60 blur-3xl"
         style={{
           background:
-            'radial-gradient(ellipse at 60% 40%, rgba(217,119,6,0.08) 0%, rgba(13,148,136,0.04) 50%, transparent 80%)',
+            'radial-gradient(ellipse at 60% 40%, hsl(var(--accent) / 0.16) 0%, hsl(252 70% 62% / 0.07) 50%, transparent 80%)',
         }}
       />
     </div>
