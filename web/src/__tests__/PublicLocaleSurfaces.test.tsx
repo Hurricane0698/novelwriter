@@ -71,6 +71,7 @@ describe('public locale surfaces', () => {
     )
 
     expect(screen.getByRole('heading', { name: /Understand the world first\.\s*Write better stories\./ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Try Journey to the West Demo' })).toHaveAttribute('href', '/demo')
     expect(await screen.findByText('THREE SURFACES')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Studio, Atlas, and Copilot all work on the same novel.' })).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Five steps from raw text to grounded continuation.' })).toBeInTheDocument()
@@ -92,6 +93,7 @@ describe('public locale surfaces', () => {
     )
 
     expect(screen.getByTestId('home-start-writing')).toHaveAttribute('href', '/library')
+    expect(screen.getByTestId('home-demo')).toHaveAttribute('href', '/demo')
     expect(screen.queryByRole('link', { name: 'Log in' })).toBeNull()
     expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('href', '/library')
   })

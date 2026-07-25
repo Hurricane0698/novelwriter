@@ -5,11 +5,15 @@ use windows_sys::Win32::System::SystemInformation::{IMAGE_FILE_MACHINE, IMAGE_FI
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, IsWow64Process2};
 use windows_version::OsVersion;
 
-const WINDOWS_11_MINIMUM_BUILD: u32 = 22_000;
+// Windows 10 2004 — the oldest build covered by the WebView2 Evergreen runtime
+// and the bundled Python runtime.
+const MINIMUM_WINDOWS_BUILD: u32 = 19_041;
 
 #[derive(Debug, Error)]
 pub enum UnsupportedWindowsPlatform {
-    #[error("NovWr requires Windows 11 or newer; found Windows build {build}")]
+    #[error(
+        "NovWr requires Windows 10 build {MINIMUM_WINDOWS_BUILD} or newer; found Windows build {build}"
+    )]
     UnsupportedBuild { build: u32 },
     #[error("inspect native Windows machine architecture: {source}")]
     ArchitectureInspection {
@@ -20,7 +24,7 @@ pub enum UnsupportedWindowsPlatform {
     UnsupportedArchitecture { native_machine: IMAGE_FILE_MACHINE },
 }
 
-pub fn require_windows_11_x64() -> Result<(), UnsupportedWindowsPlatform> {
+pub fn require_supported_windows_x64() -> Result<(), UnsupportedWindowsPlatform> {
     require_supported_build(OsVersion::current().build)?;
     let native_machine = current_native_machine()
         .map_err(|source| UnsupportedWindowsPlatform::ArchitectureInspection { source })?;
@@ -28,7 +32,7 @@ pub fn require_windows_11_x64() -> Result<(), UnsupportedWindowsPlatform> {
 }
 
 fn require_supported_build(build: u32) -> Result<(), UnsupportedWindowsPlatform> {
-    if build < WINDOWS_11_MINIMUM_BUILD {
+    if build < MINIMUM_WINDOWS_BUILD {
         return Err(UnsupportedWindowsPlatform::UnsupportedBuild { build });
     }
     Ok(())
@@ -65,9 +69,11 @@ mod tests {
     use windows_sys::Win32::System::SystemInformation::IMAGE_FILE_MACHINE_ARM64;
 
     #[test]
-    fn rejects_windows_10_and_accepts_windows_11_builds() {
-        assert!(require_supported_build(19_045).is_err());
-        assert!(require_supported_build(21_999).is_err());
+    fn rejects_pre_2004_builds_and_accepts_windows_10_and_11() {
+        assert!(require_supported_build(17_763).is_err());
+        assert!(require_supported_build(19_040).is_err());
+        assert!(require_supported_build(19_041).is_ok());
+        assert!(require_supported_build(19_045).is_ok());
         assert!(require_supported_build(22_000).is_ok());
         assert!(require_supported_build(26_100).is_ok());
     }

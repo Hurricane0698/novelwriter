@@ -52,6 +52,10 @@ PUBLIC_CLIENT_EVENT_NAMES = frozenset(
         "worldpack_import_failed",
         "bootstrap_trigger",
         "bootstrap_failed",
+        "demo_guide_view",
+        "demo_guide_step_complete",
+        "demo_guide_completed",
+        "demo_guide_skipped",
         "world_model_view",
         "copilot_open",
     }
@@ -67,6 +71,10 @@ PUBLIC_PROJECT_EVENT_NAMES = frozenset(
         "worldpack_import_failed",
         "bootstrap_trigger",
         "bootstrap_failed",
+        "demo_guide_view",
+        "demo_guide_step_complete",
+        "demo_guide_completed",
+        "demo_guide_skipped",
         "world_model_view",
         "copilot_open",
     }
@@ -282,6 +290,38 @@ EVENT_CATALOG: dict[str, dict[str, Any]] = {
             "source_surface": "world_onboarding|copilot_card|unknown",
             "status": "HTTP status when available",
             "error_code": "stable frontend/backend error code when available",
+        },
+    },
+    "demo_guide_view": {
+        "description": "User saw the in-Studio guided demo card/checklist.",
+        "funnel_position": 5,
+        "question": "How many demo projects expose the guided sample checklist to the user?",
+        "meta_keys": {
+            "source": "auto|reopen",
+            "status": "not_started|in_progress|completed|skipped",
+            "progress_count": "number of completed checklist steps",
+        },
+    },
+    "demo_guide_step_complete": {
+        "description": "User completed one step in the guided demo checklist.",
+        "funnel_position": 5,
+        "question": "Which guided-demo steps are users actually completing?",
+        "meta_keys": {
+            "step": "chapter|atlas|write|copilot",
+            "progress_count": "number of completed checklist steps after this event",
+        },
+    },
+    "demo_guide_completed": {
+        "description": "User completed the guided demo checklist for a demo novel.",
+        "funnel_position": 5,
+        "question": "How many demo projects actually reach guided-demo completion?",
+    },
+    "demo_guide_skipped": {
+        "description": "User explicitly skipped the guided demo checklist.",
+        "funnel_position": 5,
+        "question": "How often do users choose to skip the demo checklist instead of completing it?",
+        "meta_keys": {
+            "progress_count": "number of completed checklist steps when the guide was skipped",
         },
     },
     "world_model_view": {
