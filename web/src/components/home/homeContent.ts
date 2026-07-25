@@ -146,23 +146,3 @@ export const homeFeatureRows: readonly HomeFeatureRowDefinition[] = [
   },
 ] as const
 
-export const homeHeroStats = [
-  {
-    value: '27',
-    unitKey: 'home.hero.stat.demo.unit' as const,
-    labelKey: 'home.hero.stat.demo.label' as const,
-    color: '#5b6bf0',
-  },
-  {
-    value: '127',
-    unitKey: 'home.hero.stat.entities.unit' as const,
-    labelKey: 'home.hero.stat.entities.label' as const,
-    color: '#4a7de8',
-  },
-  {
-    value: '5',
-    unitKey: 'home.hero.stat.systems.unit' as const,
-    labelKey: 'home.hero.stat.systems.label' as const,
-    color: '#7a5cf0',
-  },
-] as const
