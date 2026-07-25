@@ -9,7 +9,7 @@ from alembic import context
 # Import the app's Base and models
 from app.database import Base
 from app.models import (  # noqa: F401 — ensure all models registered with Base.metadata
-    Novel, Chapter, Continuation,
+    Novel, Chapter, Outline, Continuation,
     TokenUsage, User,
     WorldEntity, WorldEntityAttribute, WorldRelationship, WorldSystem,
     BootstrapJob, Exploration, ExplorationChapter,

@@ -47,6 +47,7 @@ class Novel(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     chapters = relationship("Chapter", back_populates="novel", cascade="all, delete-orphan")
+    outlines = relationship("Outline", back_populates="novel", cascade="all, delete-orphan")
     continuations = relationship("Continuation", back_populates="novel", cascade="all, delete-orphan")
     bootstrap_job = relationship("BootstrapJob", back_populates="novel", uselist=False, cascade="all, delete-orphan")
     derived_asset_jobs = relationship("DerivedAssetJob", back_populates="novel", cascade="all, delete-orphan")
@@ -71,6 +72,18 @@ class Chapter(Base):
 
     novel = relationship("Novel", back_populates="chapters")
 
+
+class Outline(Base):
+    __tablename__ = "outlines"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    novel_id = Column(Integer, ForeignKey("novels.id"), nullable=False)
+    chapter_start = Column(Integer, nullable=False)
+    chapter_end = Column(Integer, nullable=False)
+    outline_text = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    novel = relationship("Novel", back_populates="outlines")
 
 
 class Continuation(Base):

@@ -12,7 +12,6 @@ import { isHostedRuntime } from '@/lib/runtimeMode'
 
 const Home = lazy(() => import('@/pages/Home'))
 const Login = lazy(() => import('@/pages/Login'))
-const DemoEntryPage = lazy(() => import('@/pages/DemoEntryPage').then((module) => ({ default: module.DemoEntryPage })))
 const Settings = lazy(() => import('@/pages/Settings'))
 const Terms = lazy(() => import('@/pages/Terms'))
 const Privacy = lazy(() => import('@/pages/Privacy'))
@@ -81,7 +80,6 @@ export default function App() {
                     <Route path="/terms" element={<Terms />} />
                     <Route path="/privacy" element={<Privacy />} />
                     <Route path="/copyright" element={<CopyrightNotice />} />
-                    <Route path="/demo" element={<DemoEntryPage />} />
                     <Route element={<RequireAuth />}>
                       <Route path="/settings" element={<Settings />} />
                     </Route>

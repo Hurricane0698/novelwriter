@@ -50,8 +50,38 @@ Title: {title}
 Chapter to continue: {next_chapter_reference}
 </novel_info>
 
+<outline>
+{outline}
+</outline>
 {world_context}
 {narrative_constraints}""",
+
+    # ------------------------------------------------------------------
+    # Outline generation
+    # ------------------------------------------------------------------
+    PromptKey.OUTLINE: """Please generate a structured outline for the following chapters.
+
+【Chapter Range】Chapter {start} – Chapter {end}
+
+【Content】
+{content}
+
+【Outline Requirements】
+Please output in the following format:
+
+## Main Plot
+- [List 3-5 key plot points]
+
+## Character Development
+- [Major character changes and growth]
+
+## Important Foreshadowing
+- [Clues that need to be followed up in later chapters]
+
+## World-Building Expansion
+- [Newly introduced settings or background information]
+
+Keep it concise, 300-500 words total.""",
 
     # ------------------------------------------------------------------
     # World generation: system prompt

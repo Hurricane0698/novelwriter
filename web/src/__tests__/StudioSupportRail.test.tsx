@@ -25,29 +25,9 @@ function renderRail(overrides?: Partial<ComponentProps<typeof StudioSupportRail>
       <MemoryRouter>
         <StudioSupportRail
           novelId={7}
-          latestChapterReference="第 8 章"
-          chapterCount={8}
           worldEntityCount={5}
           worldSystemCount={2}
           windowIndexStatus={{ text: '全书检索可用', tone: 'success', requiresFallback: false }}
-          demoGuideState={{
-            status: 'not_started',
-            visited: {
-              chapter: false,
-              atlas: false,
-              write: false,
-              copilot: false,
-            },
-          }}
-          demoGuideProgressCount={0}
-          showDemoGuideExpanded={false}
-          showDemoGuideReopen={false}
-          onOpenDemoChapter={vi.fn()}
-          onOpenDemoAtlas={vi.fn()}
-          onOpenDemoWriteStage={vi.fn()}
-          onOpenDemoCopilot={vi.fn()}
-          onSkipDemoGuide={vi.fn()}
-          onReopenDemoGuide={vi.fn()}
           onOpenWholeBookCopilot={vi.fn()}
           worldEntryHandoff={null as WorldEntryHandoffState | null}
           worldEntryPending={null as WorldEntryPendingState | null}

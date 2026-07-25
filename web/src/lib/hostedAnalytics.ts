@@ -16,10 +16,6 @@ export type HostedAnalyticsEventName =
   | 'worldpack_import_failed'
   | 'bootstrap_trigger'
   | 'bootstrap_failed'
-  | 'demo_guide_view'
-  | 'demo_guide_step_complete'
-  | 'demo_guide_completed'
-  | 'demo_guide_skipped'
   | 'world_model_view'
   | 'copilot_open'
 

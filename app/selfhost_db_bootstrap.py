@@ -21,6 +21,7 @@ from app.models import (  # noqa: F401 - register models with Base.metadata
     ExplorationChapter,
     Novel,
     NovelIngestJob,
+    Outline,
     TokenUsage,
     User,
     UserEvent,
