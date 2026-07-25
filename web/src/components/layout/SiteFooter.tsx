@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
+import { isHostedRuntime } from '@/lib/runtimeMode'
 import { cn } from '@/lib/utils'
 
 type SiteFooterProps = {
@@ -9,11 +10,14 @@ type SiteFooterProps = {
 
 export function SiteFooter({ compact, className }: SiteFooterProps) {
   const { t } = useUiLocale()
-  const links = [
-    { to: '/terms', label: t('footer.link.terms') },
-    { to: '/privacy', label: t('footer.link.privacy') },
-    { to: '/copyright', label: t('footer.link.copyright') },
-  ]
+  // Legal pages cover the official hosted entry only; local runtimes keep a clean footer.
+  const links = isHostedRuntime()
+    ? [
+        { to: '/terms', label: t('footer.link.terms') },
+        { to: '/privacy', label: t('footer.link.privacy') },
+        { to: '/copyright', label: t('footer.link.copyright') },
+      ]
+    : []
 
   return (
     <footer
@@ -36,17 +40,19 @@ export function SiteFooter({ compact, className }: SiteFooterProps) {
           </p>
         </div>
 
-        <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
-          {links.map((link) => (
-            <Link
-              key={link.to}
-              to={link.to}
-              className="transition-colors hover:text-foreground"
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
+        {links.length > 0 ? (
+          <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
+            {links.map((link) => (
+              <Link
+                key={link.to}
+                to={link.to}
+                className="transition-colors hover:text-foreground"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        ) : null}
       </div>
     </footer>
   )
