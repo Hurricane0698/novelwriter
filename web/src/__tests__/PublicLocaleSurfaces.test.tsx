@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import '@/lib/uiMessagePacks/home'
 import { UiLocaleProvider } from '@/contexts/UiLocaleContext'
 import { HeroSection } from '@/components/home/HeroSection'
 import { HomeDeferredSections } from '@/components/home/HomeDeferredSections'
 import { Navbar } from '@/components/layout/Navbar'
+import { SiteFooter } from '@/components/layout/SiteFooter'
+import { RequireHosted } from '@/App'
 import Settings from '@/pages/Settings'
 import Terms from '@/pages/Terms'
 import { createTestQueryClient } from '@/__tests__/support/queryClient'
@@ -149,6 +151,32 @@ describe('public locale surfaces', () => {
 
     expect(screen.queryByText('账户')).toBeNull()
     expect(screen.queryByText('退出登录')).toBeNull()
+  })
+
+  it.each(['desktop', 'selfhost'] as const)('hides legal surfaces on the local %s runtime', (runtimeMode) => {
+    vi.stubEnv('VITE_DEPLOY_MODE', runtimeMode)
+    setEnglishLocale()
+
+    const queryClient = createTestQueryClient()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <UiLocaleProvider>
+          <MemoryRouter initialEntries={['/terms']}>
+            <Routes>
+              <Route path="/" element={<div data-testid="landing-surface" />} />
+              <Route element={<RequireHosted />}>
+                <Route path="/terms" element={<div data-testid="terms-surface" />} />
+              </Route>
+            </Routes>
+            <SiteFooter />
+          </MemoryRouter>
+        </UiLocaleProvider>
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByTestId('landing-surface')).toBeInTheDocument()
+    expect(screen.queryByTestId('terms-surface')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Terms of use' })).toBeNull()
   })
 
   it('renders the legal terms page in English', () => {
