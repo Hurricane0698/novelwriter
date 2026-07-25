@@ -10,6 +10,8 @@ import { WorkCard } from '@/components/library/WorkCard'
 import { PageShell } from '@/components/layout/PageShell'
 import { NwButton } from '@/components/ui/nw-button'
 import { GlassCard } from '@/components/GlassCard'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { ApiError, api } from '@/services/api'
 import { novelKeys } from '@/hooks/novel/keys'
@@ -24,6 +26,7 @@ export function LibraryPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingUploadSourceRef = useRef<string | null>(null)
   const [uploadingFileName, setUploadingFileName] = useState<string | null>(null)
+  const { confirm, alert: showAlert, dialogProps } = useConfirmDialog()
 
   const { data: novels = [], isLoading: loading, error } = useQuery({
     ...buildNovelListQueryOptions(),
@@ -37,8 +40,14 @@ export function LibraryPage() {
     },
   })
 
-  function handleDelete(id: number) {
-    if (!window.confirm(t('library.confirm.delete'))) return
+  async function handleDelete(id: number) {
+    const confirmed = await confirm({
+      title: t('library.confirm.delete.title'),
+      description: t('library.confirm.delete'),
+      confirmText: t('library.workCard.delete'),
+      tone: 'destructive',
+    })
+    if (!confirmed) return
     const novel = novels.find((n) => n.id === id)
     deleteNovel.mutate({ id, created_at: novel?.created_at })
   }
@@ -65,20 +74,20 @@ export function LibraryPage() {
       queryClient.invalidateQueries({ queryKey: novelKeys.all })
       navigate(`/novel/${result.novel_id}`, { state: { novwrEntry: 'upload' } })
     } catch (err) {
+      let description: string | undefined
       if (err instanceof ApiError) {
         const detail = err.detail as { max_megabytes?: number } | undefined
         if (err.code === 'upload_file_too_large') {
-          alert(t('library.error.uploadTooLarge', { maxMb: detail?.max_megabytes ?? 30 }))
+          description = t('library.error.uploadTooLarge', { maxMb: detail?.max_megabytes ?? 30 })
         } else if (err.code === 'upload_type_not_supported') {
-          alert(t('library.error.uploadTypeNotSupported'))
+          description = t('library.error.uploadTypeNotSupported')
         } else if (err.code === 'upload_parse_failed') {
-          alert(t('library.error.uploadParseFailed'))
-        } else {
-          alert(t('library.error.uploadFailed'))
+          description = t('library.error.uploadParseFailed')
         }
-      } else {
-        alert(err instanceof Error ? err.message : t('library.error.uploadFailed'))
+      } else if (err instanceof Error && err.message) {
+        description = err.message
       }
+      void showAlert({ title: t('library.error.uploadFailed'), description })
       setUploadingFileName(null)
     }
     pendingUploadSourceRef.current = null
@@ -177,6 +186,7 @@ export function LibraryPage() {
           </div>
         )}
       </div>
+      <ConfirmDialog {...dialogProps} />
     </PageShell>
   )
 }

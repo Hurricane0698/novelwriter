@@ -106,7 +106,7 @@ export function StudioSupportRail({
   const sectionDivider = <div className="mx-3 my-2 h-px bg-[var(--nw-glass-border)]" />
 
   return (
-    <NovelShellRail className="w-[360px] shrink-0 flex flex-col min-h-0 h-full rounded-[16px] border border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-[24px] shadow-[var(--nw-copilot-panel-shadow)] overflow-hidden p-3">
+    <NovelShellRail className="w-[360px] p-3">
       <div className="flex h-full min-h-0 flex-col gap-3" data-testid="studio-assistant-rail" data-world-entry-stage={worldEntryStage}>
         <div className="nw-scrollbar-thin min-h-0 flex-1 overflow-y-auto pr-1" data-testid="studio-support-rail-sections">
           <div className="space-y-1">

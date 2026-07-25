@@ -32,6 +32,8 @@ import {
   serializeChaptersToPlainText,
 } from '@/lib/chaptersPlainText'
 import { useDebouncedAutoSave } from '@/hooks/useDebouncedAutoSave'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useContinuationSetupState } from '@/hooks/novel/useContinuationSetupState'
 import { useStudioArtifactState } from '@/hooks/novel/useStudioArtifactState'
 import { getActiveWarnings, setActiveWarnings } from '@/lib/postcheckActiveWarningsStorage'
@@ -150,6 +152,7 @@ export function NovelStudioPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const novelId = Number(novelIdParam)
   const { locale, t } = useUiLocale()
+  const { confirm: confirmDialog, dialogProps: confirmDialogProps } = useConfirmDialog()
   const { routeState, shellState } = useNovelShell()
   const { drawerWidth } = shellState
   const { isOpen: isWorkbenchOpen, focusedSessionId, openDrawer } = useNovelCopilot()
@@ -376,9 +379,15 @@ export function NovelStudioPage() {
     updateChapter.mutate({ title: newTitle })
   }
 
-  const handleDeleteChapter = () => {
+  const handleDeleteChapter = async () => {
     if (activeChapterNum === null) return
-    if (!window.confirm(t('studio.chapter.deleteConfirm', { chapter: activeChapterReference ?? `Ch. ${activeChapterNum}` }))) return
+    const confirmed = await confirmDialog({
+      title: t('studio.chapter.delete'),
+      description: t('studio.chapter.deleteConfirm', { chapter: activeChapterReference ?? `Ch. ${activeChapterNum}` }),
+      confirmText: t('studio.chapter.delete'),
+      tone: 'destructive',
+    })
+    if (!confirmed) return
     deleteChapter.mutate(activeChapterNum, {
       onSuccess: () => {
         cancelAutoSave()
@@ -739,7 +748,7 @@ export function NovelStudioPage() {
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
           <NovelShellLayout className="flex-1 min-h-0 gap-3 overflow-hidden p-0">
-            <NovelShellRail className="w-[280px] shrink-0 flex flex-col min-h-0 h-full rounded-[16px] border border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-[24px] shadow-[var(--nw-copilot-panel-shadow)] overflow-hidden">
+            <NovelShellRail className="w-[280px]">
               <StudioNavigationRail
                 novelTitle={novel.title}
                 searchQuery={searchQuery}
@@ -786,7 +795,7 @@ export function NovelStudioPage() {
             </NovelShellRail>
 
           {/* ── Content Area ── */}
-          <ArtifactStage className="flex-1 min-w-0 flex flex-col rounded-[16px] border border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-[24px] shadow-[var(--nw-copilot-panel-shadow)] overflow-hidden">
+          <ArtifactStage variant="glass">
             {hasResultsContext ? (
               <div className={activeStage === 'results' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
               <ContinuationResultsStage
@@ -1031,7 +1040,7 @@ export function NovelStudioPage() {
                                       type="button"
                                       onClick={() => {
                                         setShowMoreActions(false)
-                                        handleDeleteChapter()
+                                        void handleDeleteChapter()
                                       }}
                                       className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-sm text-[hsl(var(--color-danger))] transition-colors hover:bg-[hsl(var(--color-danger)/0.10)]"
                                     >
@@ -1082,7 +1091,7 @@ export function NovelStudioPage() {
               <NovelCopilotDrawer novelId={novelId} onLocateTarget={handleStudioLocateTarget} />
             </Suspense>
           ) : showInjectionSummaryRail && resultsDebug ? (
-            <NovelShellRail className="w-[360px] shrink-0 flex flex-col min-h-0 h-full rounded-[16px] border border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-[24px] shadow-[var(--nw-copilot-panel-shadow)] overflow-hidden">
+            <NovelShellRail className="w-[360px]">
               <InjectionSummaryPanel
                 debug={resultsDebug}
                 activeCategory={injectionSummaryPanelState?.injectionCategory ?? undefined}
@@ -1122,6 +1131,7 @@ export function NovelStudioPage() {
           </NovelShellLayout>
         </div>
       )}
+      <ConfirmDialog {...confirmDialogProps} />
     </PageShell>
   )
 }

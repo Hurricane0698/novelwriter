@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { NOVEL_SHELL_GLASS_PANEL } from '@/components/novel-shell/panelRecipe'
 import { cn } from '@/lib/utils'
 
 export function NovelShellRail({
@@ -9,7 +10,13 @@ export function NovelShellRail({
   className?: string
 }) {
   return (
-    <aside className={cn('shrink-0 overflow-hidden', className)}>
+    <aside
+      className={cn(
+        'flex h-full min-h-0 shrink-0 flex-col overflow-hidden',
+        NOVEL_SHELL_GLASS_PANEL,
+        className,
+      )}
+    >
       {children}
     </aside>
   )

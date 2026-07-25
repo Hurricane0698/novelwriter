@@ -88,8 +88,9 @@ test.describe('Library', () => {
     await page.goto('/library')
     await expect(page.getByText(NOVELS[0].title)).toBeVisible()
 
-    page.once('dialog', (d) => d.accept())
     await page.getByRole('link', { name: new RegExp(NOVELS[0].title) }).getByRole('button', { name: '删除' }).click()
+    await expect(page.getByTestId('confirm-dialog')).toBeVisible()
+    await page.getByTestId('confirm-ok').click()
 
     await expect(page.getByText(NOVELS[0].title)).not.toBeVisible()
   })
