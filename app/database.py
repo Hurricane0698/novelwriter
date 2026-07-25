@@ -16,11 +16,7 @@ if not DATABASE_URL:
     DATABASE_URL = f"sqlite:///{DATA_DIR}/novels.db"
 
 _is_sqlite = DATABASE_URL.startswith("sqlite")
-# First desktop launch runs long seeding/bootstrap write transactions while the
-# background worker opens its first polling connections; installed-product storm
-# conditions (WebView2 first-run, Defender scans) stretch single operations to
-# 30-70s, so the busy timeout must cover that window instead of the 5s default.
-_SQLITE_BUSY_TIMEOUT_MILLISECONDS = 60_000
+_SQLITE_BUSY_TIMEOUT_MILLISECONDS = 5000
 
 if _is_sqlite:
     engine = create_engine(

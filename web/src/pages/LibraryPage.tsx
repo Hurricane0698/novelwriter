@@ -13,15 +13,8 @@ import { GlassCard } from '@/components/GlassCard'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { ApiError, api } from '@/services/api'
 import { novelKeys } from '@/hooks/novel/keys'
-import { buildDemoStudioPath, findSeededDemoNovel } from '@/lib/demoProject'
 import { trackHostedAnalyticsEvent } from '@/lib/hostedAnalytics'
 import { buildNovelListQueryOptions } from '@/lib/novelListQuery'
-import {
-  DEMO_FIRST_ONBOARDING_STEPS,
-  clearDemoFirstWritingOnboardingDismissed,
-  countVisitedDemoFirstWritingOnboardingSteps,
-  getDemoFirstWritingOnboardingState,
-} from '@/lib/demoFirstOnboardingStorage'
 import { clearWorldOnboardingDismissed } from '@/lib/worldOnboardingStorage'
 
 export function LibraryPage() {
@@ -35,18 +28,10 @@ export function LibraryPage() {
   const { data: novels = [], isLoading: loading, error } = useQuery({
     ...buildNovelListQueryOptions(),
   })
-  const demoNovel = findSeededDemoNovel(novels)
-  const demoGuideState = demoNovel
-    ? getDemoFirstWritingOnboardingState(demoNovel.id, demoNovel.created_at)
-    : null
-  const demoGuideProgressCount = demoGuideState
-    ? countVisitedDemoFirstWritingOnboardingSteps(demoGuideState)
-    : 0
 
   const deleteNovel = useMutation({
     mutationFn: (vars: { id: number, created_at?: string | null }) => api.deleteNovel(vars.id),
     onSuccess: (_data, vars) => {
-      clearDemoFirstWritingOnboardingDismissed(vars.id, vars.created_at)
       clearWorldOnboardingDismissed(vars.id, vars.created_at)
       queryClient.invalidateQueries({ queryKey: novelKeys.all })
     },
@@ -112,35 +97,6 @@ export function LibraryPage() {
       {t('library.create')}
     </NwButton>
   )
-
-  const openDemoGuide = () => {
-    if (!demoNovel) return
-    const shouldForceGuideOpen = demoGuideState?.status === 'completed' || demoGuideState?.status === 'skipped'
-    navigate(buildDemoStudioPath(demoNovel.id, { forceGuideOpen: shouldForceGuideOpen }))
-  }
-
-  const demoDescription = !demoNovel || !demoGuideState
-    ? ''
-    : demoGuideState.status === 'in_progress'
-      ? t('library.demo.description.inProgress', {
-        title: demoNovel.title,
-        current: demoGuideProgressCount,
-        total: DEMO_FIRST_ONBOARDING_STEPS.length,
-      })
-      : demoGuideState.status === 'completed'
-        ? t('library.demo.description.completed', { title: demoNovel.title })
-        : demoGuideState.status === 'skipped'
-          ? t('library.demo.description.skipped', { title: demoNovel.title })
-          : t('library.demo.description', { title: demoNovel.title })
-  const demoOpenLabel = !demoGuideState
-    ? t('library.demo.open')
-    : demoGuideState.status === 'in_progress'
-      ? t('library.demo.resume')
-      : demoGuideState.status === 'completed'
-        ? t('library.demo.reopen')
-        : demoGuideState.status === 'skipped'
-          ? t('library.demo.reopen')
-          : t('library.demo.start')
 
   return (
     <PageShell className="h-screen" navbarProps={{ position: 'static' }} mainClassName="overflow-hidden">
@@ -210,44 +166,6 @@ export function LibraryPage() {
         {/* Empty */}
         {!loading && !error && novels.length === 0 && (
           <EmptyState onCreate={() => handleCreate('library_empty_state')} />
-        )}
-
-        {!loading && !error && demoNovel && (
-          <GlassCard
-            className="flex flex-col gap-4 rounded-[28px] border border-[hsl(var(--accent)/0.22)] bg-[linear-gradient(135deg,hsl(var(--accent)/0.12),transparent_55%)] p-6"
-            data-testid="library-demo-entry"
-          >
-            <div className="space-y-2">
-              <span className="inline-flex items-center rounded-full border border-[hsl(var(--accent)/0.24)] bg-[hsl(var(--accent)/0.12)] px-3 py-1 text-[11px] font-semibold tracking-[0.18em] text-[hsl(var(--accent))] uppercase">
-                {t('library.demo.badge')}
-              </span>
-              <div className="space-y-1">
-                <h2 className="m-0 text-xl font-semibold text-foreground">
-                  {t('library.demo.title')}
-                </h2>
-                <p className="m-0 max-w-3xl text-sm leading-6 text-muted-foreground">
-                  {demoDescription}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
-              <NwButton
-                variant="accent"
-                className="rounded-full px-5 py-2.5 text-sm font-semibold"
-                onClick={openDemoGuide}
-              >
-                {demoOpenLabel}
-              </NwButton>
-              <NwButton
-                variant="glass"
-                className="rounded-full px-5 py-2.5 text-sm font-semibold"
-                onClick={() => handleCreate('library_demo_card')}
-              >
-                {t('library.demo.upload')}
-              </NwButton>
-            </div>
-          </GlassCard>
         )}
 
         {/* Card Grid */}

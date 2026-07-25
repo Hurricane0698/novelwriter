@@ -30,10 +30,6 @@ struct DesktopState {
     tray: Mutex<Option<TrayIcon>>,
     log_guard: Mutex<Option<DesktopLogGuard>>,
     exit_requested: AtomicBool,
-    // Startup failures are stored here so the local shell page can pull them via
-    // the `startup_status` command; navigation with a `?failure=` query alone can
-    // race a webview that has not finished loading yet and end up blank.
-    startup_failure: Mutex<Option<&'static str>>,
 }
 
 impl DesktopState {
@@ -45,7 +41,6 @@ impl DesktopState {
             tray: Mutex::new(None),
             log_guard: Mutex::new(None),
             exit_requested: AtomicBool::new(false),
-            startup_failure: Mutex::new(None),
         }
     }
 }
@@ -74,7 +69,7 @@ pub fn run() {
     };
 
     let app = tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![open_logs, quit, startup_status])
+        .invoke_handler(tauri::generate_handler![open_logs, quit])
         .setup(|app| setup(app).map_err(Into::into))
         .build(context)
         .expect("build NovWr desktop application");
@@ -164,6 +159,7 @@ fn start_runtime(app: AppHandle) {
 }
 
 fn start_runtime_inner(app: &AppHandle) -> Result<(), StartupError> {
+    platform::require_windows_11_x64().map_err(StartupError::Platform)?;
     let state = app.state::<DesktopState>();
     state
         .paths
@@ -176,9 +172,6 @@ fn start_runtime_inner(app: &AppHandle) -> Result<(), StartupError> {
         .lock()
         .expect("desktop logging mutex poisoned") = Some(log_guard);
     info!("starting NovWr desktop shell");
-
-    // Logging is initialized first so unsupported platforms still leave a trace.
-    platform::require_supported_windows_x64().map_err(StartupError::Platform)?;
 
     let jwt_secret = secret::load_or_create_secret(&state.paths.secret)
         .map_err(StartupError::PersistentSecret)?;
@@ -274,24 +267,13 @@ fn navigate_to_application(app: &AppHandle) -> tauri::Result<()> {
     main_window(app)?.navigate(url)
 }
 
-fn show_failure_window(app: &AppHandle, summary: &'static str) {
+fn show_failure_window(app: &AppHandle, summary: &str) {
     let state = app.state::<DesktopState>();
-    // Store before navigating: if navigation races the initial page load, the
-    // shell page pulls this via `startup_status` once it is ready.
-    *state
-        .startup_failure
-        .lock()
-        .expect("desktop startup failure mutex poisoned") = Some(summary);
     let mut url = state.local_shell_url.clone();
     url.set_query(None);
     url.query_pairs_mut().append_pair("failure", summary);
-    match main_window(app) {
+    match main_window(app).and_then(|window| window.navigate(url).map(|_| window)) {
         Ok(window) => {
-            if let Err(error) = window.navigate(url) {
-                error!(error = %error, "navigate to desktop failure page");
-            }
-            // Show the window even if navigation failed: a visible "starting"
-            // shell page beats an invisible process stuck in the tray.
             let _ = window.unminimize();
             let _ = window.show();
             let _ = window.set_focus();
@@ -407,14 +389,6 @@ fn quit(app: AppHandle) {
     request_exit(&app);
 }
 
-#[tauri::command]
-fn startup_status(app: AppHandle) -> Option<&'static str> {
-    *app.state::<DesktopState>()
-        .startup_failure
-        .lock()
-        .expect("desktop startup failure mutex poisoned")
-}
-
 #[derive(Debug, thiserror::Error)]
 enum StartupError {
     #[error(transparent)]
@@ -436,7 +410,7 @@ enum StartupError {
 impl StartupError {
     fn user_summary(&self) -> &'static str {
         match self {
-            Self::Platform(_) => "NovWr 需要 Windows 10（2004 及以上）或 Windows 11 的 x64 版本。",
+            Self::Platform(_) => "NovWr 需要 Windows 11 x64。",
             Self::CreateDirectories(_) => "无法创建 NovWr 数据目录。",
             Self::Logging(_) => "无法创建 NovWr 日志。",
             Self::PersistentSecret(_) => "桌面安全配置无效。",

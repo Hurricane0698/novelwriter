@@ -19,5 +19,5 @@ pub fn run() {
 
 #[cfg(not(target_os = "windows"))]
 pub fn run() {
-    panic!("NovWr desktop shell supports Windows x64 only");
+    panic!("NovWr desktop shell supports Windows 11 x64 only");
 }

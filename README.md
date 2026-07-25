@@ -158,7 +158,7 @@ novwr uninstall
 
 ### Windows 桌面版（本机运行，免 Docker）
 
-> 适合 Windows 用户；不需要 Docker，也不需要命令行。支持 Windows 10（2004 及以上）与 Windows 11 x64。
+> 适合 Windows 用户；不需要 Docker，也不需要命令行。目前在 Windows 11 x64 上验证。
 
 1. 从 [Releases](https://github.com/Hurricane0698/novelwriter/releases/latest) 下载 `NovWr_x.y.z_x64-setup.exe`
 2. 双击安装（当前用户安装，无需管理员权限）
