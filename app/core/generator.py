@@ -2,11 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 """
-Generator utilities for continuation and outline generation.
-
-This module provides:
-1. Continuation prompt assembly with WorldModel context injection
-2. Multi-model routing support
+Continuation generation: prompt assembly with WorldModel context injection,
+plus sync and streaming generation drivers sharing one finalize/persist path.
 """
 
 from typing import AsyncGenerator, List
@@ -16,7 +13,7 @@ import re
 from sqlalchemy.orm import Session
 import logging
 
-from app.models import Novel, Outline, Continuation
+from app.models import Novel, Continuation
 from app.core.ai_client import ai_client
 from app.core.continuation_text import format_chapter_heading_for_prompt, format_next_chapter_reference
 from app.core.text import PromptKey, get_prompt
@@ -99,6 +96,48 @@ def _compute_max_tokens(
     return default_tokens
 
 
+def _finalize_generated_content(
+    content: str,
+    *,
+    target_chars: int | None,
+    language: str | None,
+) -> str:
+    """Shared post-generation pipeline: strip think blocks, trim to target."""
+    content = _sanitize_continuation_content(content)
+    if target_chars:
+        content = _trim_to_target_chars(content, target_chars, language=language)
+    return content
+
+
+def _persist_continuation(
+    db: Session,
+    *,
+    novel_id: int,
+    chapter_number: int,
+    content: str,
+    prompt_used: str,
+) -> Continuation:
+    """Persist one continuation variant; rolls back and re-raises on failure."""
+    continuation = Continuation(
+        novel_id=novel_id,
+        chapter_number=chapter_number,
+        content=content,
+        prompt_used=prompt_used,
+    )
+    db.add(continuation)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            db.expunge(continuation)
+        except Exception:
+            pass
+        raise
+    db.refresh(continuation)
+    return continuation
+
+
 def _trim_to_target_chars(text: str, target_chars: int, *, language: str | None = None) -> str:
     settings = get_settings()
     overrun_ratio = max(1.0, settings.continuation_trim_overrun_ratio)
@@ -112,7 +151,6 @@ def _trim_to_target_chars(text: str, target_chars: int, *, language: str | None 
 async def _build_continuation_prompt(
     db: Session,
     novel_id: int,
-    use_core_memory: bool = True,
     prompt: str | None = None,
     max_tokens: int | None = None,
     target_chars: int | None = None,
@@ -162,14 +200,6 @@ async def _build_continuation_prompt(
             f"Novel {novel_id} has no chapters. Cannot generate continuation without existing content."
         )
 
-    outlines = (
-        db.query(Outline)
-        .filter(Outline.novel_id == novel_id)
-        .order_by(Outline.chapter_end.desc())
-        .limit(2)
-        .all()
-    )
-
     recent_content = "\n\n".join(
         format_chapter_heading_for_prompt(
             ch.chapter_number,
@@ -179,12 +209,6 @@ async def _build_continuation_prompt(
         ) + f"\n{ch.content}"
         for ch in recent_chapters
     )
-
-    outline_heading_fmt = get_snippet(SnippetKey.OUTLINE_HEADING_FMT, prompt_locale)
-    outline_content = "\n\n".join(
-        outline_heading_fmt.format(start=o.chapter_start, end=o.chapter_end) + f"\n{o.outline_text}"
-        for o in outlines
-    ) if outlines else get_snippet(SnippetKey.NO_OUTLINE, prompt_locale)
 
     next_chapter = get_next_missing_chapter_number(db, novel_id)
     latest_recent_chapter = recent_chapters[-1]
@@ -196,7 +220,7 @@ async def _build_continuation_prompt(
     )
 
     world_context_section = ""
-    if use_core_memory and world_context and world_context.strip():
+    if world_context and world_context.strip():
         world_context_section = f"\n<world_knowledge>\n{world_context.strip()}\n</world_knowledge>\n"
         try:
             systems = (world_debug_summary or {}).get("injected_systems") or []
@@ -227,7 +251,6 @@ async def _build_continuation_prompt(
         title=novel.title,
         next_chapter=next_chapter,
         next_chapter_reference=next_chapter_reference,
-        outline=outline_content,
         world_context=combined_context,
         narrative_constraints=f"\n{constraints_section}\n" if constraints_section else "",
     )
@@ -262,7 +285,6 @@ async def continue_novel(
     db: Session,
     novel_id: int,
     num_versions: int = 1,
-    use_core_memory: bool = True,
     prompt: str | None = None,
     max_tokens: int | None = None,
     target_chars: int | None = None,
@@ -296,7 +318,6 @@ async def continue_novel(
     generation_prompt, effective_max_tokens, build_info = await _build_continuation_prompt(
         db=db,
         novel_id=novel_id,
-        use_core_memory=use_core_memory,
         prompt=prompt,
         max_tokens=max_tokens,
         target_chars=target_chars,
@@ -324,20 +345,16 @@ async def continue_novel(
             user_id=user_id,
         )
 
-        content = _sanitize_continuation_content(content)
-
-        if target_chars:
-            content = _trim_to_target_chars(content, target_chars, language=novel_language)
-
-        continuation = Continuation(
+        content = _finalize_generated_content(
+            content, target_chars=target_chars, language=novel_language,
+        )
+        continuation = _persist_continuation(
+            db,
             novel_id=novel_id,
             chapter_number=next_chapter,
             content=content,
             prompt_used=generation_prompt,
         )
-        db.add(continuation)
-        db.commit()
-        db.refresh(continuation)
         continuations.append(continuation)
 
     return continuations
@@ -347,7 +364,6 @@ async def continue_novel_stream(
     db: Session,
     novel_id: int,
     num_versions: int = 1,
-    use_core_memory: bool = True,
     prompt: str | None = None,
     max_tokens: int | None = None,
     target_chars: int | None = None,
@@ -365,7 +381,6 @@ async def continue_novel_stream(
     generation_prompt, effective_max_tokens, build_info = await _build_continuation_prompt(
         db=db,
         novel_id=novel_id,
-        use_core_memory=use_core_memory,
         prompt=prompt,
         max_tokens=max_tokens,
         target_chars=target_chars,
@@ -418,26 +433,18 @@ async def continue_novel_stream(
         )
         yield _error_event(code="llm_stream_failed", message="续写生成失败，请重试", message_key="continuation.error.llm_stream_failed", variant=0)
     else:
-        full_content = _sanitize_continuation_content(full_content)
-        if target_chars:
-            full_content = _trim_to_target_chars(full_content, target_chars, language=novel_language)
-
-        continuation = Continuation(
-            novel_id=novel_id,
-            chapter_number=next_chapter,
-            content=full_content,
-            prompt_used=generation_prompt,
+        full_content = _finalize_generated_content(
+            full_content, target_chars=target_chars, language=novel_language,
         )
-        db.add(continuation)
         try:
-            db.commit()
-            db.refresh(continuation)
+            continuation = _persist_continuation(
+                db,
+                novel_id=novel_id,
+                chapter_number=next_chapter,
+                content=full_content,
+                prompt_used=generation_prompt,
+            )
         except Exception:
-            db.rollback()
-            try:
-                db.expunge(continuation)
-            except Exception:
-                pass
             logger.exception(
                 "continue_novel_stream: variant 0 DB persist failed (request_id=%s, novel_id=%s)",
                 request_id,
@@ -467,9 +474,9 @@ async def continue_novel_stream(
                     user_id=user_id,
                 )
 
-                content = _sanitize_continuation_content(content)
-                if target_chars:
-                    content = _trim_to_target_chars(content, target_chars, language=novel_language)
+                content = _finalize_generated_content(
+                    content, target_chars=target_chars, language=novel_language,
+                )
                 return {"variant": variant_idx, "ok": True, "content": content}
             except Exception:
                 logger.exception(
@@ -491,22 +498,15 @@ async def continue_novel_stream(
                 continue
 
             content = str(result["content"])
-            c = Continuation(
-                novel_id=novel_id,
-                chapter_number=next_chapter,
-                content=content,
-                prompt_used=generation_prompt,
-            )
-            db.add(c)
             try:
-                db.commit()
-                db.refresh(c)
+                c = _persist_continuation(
+                    db,
+                    novel_id=novel_id,
+                    chapter_number=next_chapter,
+                    content=content,
+                    prompt_used=generation_prompt,
+                )
             except Exception:
-                db.rollback()
-                try:
-                    db.expunge(c)
-                except Exception:
-                    pass
                 logger.exception(
                     "continue_novel_stream: variant %s DB persist failed (request_id=%s, novel_id=%s)",
                     variant_idx,

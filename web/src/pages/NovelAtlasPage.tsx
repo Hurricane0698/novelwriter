@@ -45,7 +45,13 @@ import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { api } from '@/services/api'
 import { novelKeys } from '@/hooks/novel/keys'
 import { trackHostedAnalyticsEvent } from '@/lib/hostedAnalytics'
+import { isSeededDemoNovel } from '@/lib/demoProject'
 import { getWindowIndexPollingInterval } from '@/lib/windowIndexStatus'
+import {
+  countVisitedDemoFirstWritingOnboardingSteps,
+  getDemoFirstWritingOnboardingState,
+  markDemoFirstWritingOnboardingStepVisited,
+} from '@/lib/demoFirstOnboardingStorage'
 import {
   isWorldEntryPendingExpired,
   resolvePendingWorldEntryHandoffFromBootstrapJob,
@@ -300,6 +306,28 @@ export function NovelAtlasPage() {
     })
   }, [invalidNovelId, nid, tab])
 
+  useEffect(() => {
+    if (invalidNovelId || !isSeededDemoNovel(novel)) return
+    const previous = getDemoFirstWritingOnboardingState(nid, novel?.created_at)
+    if (previous.visited.atlas) return
+    const next = markDemoFirstWritingOnboardingStepVisited(nid, novel?.created_at, 'atlas')
+    const progressCount = countVisitedDemoFirstWritingOnboardingSteps(next)
+    void trackHostedAnalyticsEvent('demo_guide_step_complete', {
+      novelId: nid,
+      meta: {
+        step: 'atlas',
+        progress_count: progressCount,
+      },
+    })
+    if (previous.status !== 'completed' && next.status === 'completed') {
+      void trackHostedAnalyticsEvent('demo_guide_completed', {
+        novelId: nid,
+        meta: {
+          progress_count: progressCount,
+        },
+      })
+    }
+  }, [invalidNovelId, nid, novel])
 
   const setSelectedEntity = useCallback((entityId: number | null) => {
     setSearchParams((prev) => {

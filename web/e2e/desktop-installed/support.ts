@@ -286,10 +286,9 @@ export async function testDesktopLlmConnection(page: Page) {
 }
 
 export async function assertSeededDemoVisible(page: Page) {
-  // The seeded sample renders as a normal library work card; there is no
-  // dedicated guided-demo entry anymore.
-  const demoCard = page.locator('a[href^="/novel/"]', { hasText: '西游记' })
-  await expect(demoCard.first()).toBeVisible({ timeout: INSTALLED_STORM_TIMEOUT_MS })
+  const demoEntry = page.getByTestId('library-demo-entry')
+  await expect(demoEntry).toBeVisible({ timeout: INSTALLED_STORM_TIMEOUT_MS })
+  await expect(demoEntry).toContainText('西游记')
 }
 
 export async function assertUploadedNovelVisible(

@@ -81,6 +81,11 @@ function buildArgs(overrides?: Partial<Parameters<typeof useStudioOnboardingStat
     novel: buildNovel(),
     locale: 'zh',
     t: (key: string) => key,
+    searchParams: new URLSearchParams('stage=entity&chapter=3'),
+    activeStage: 'entity' as const,
+    activeChapterNum: 3,
+    chapterLoading: false,
+    showWorkbenchRail: false,
     worldEntityCount: 1,
     worldSystemCount: 0,
     worldLoading: false,
@@ -88,6 +93,10 @@ function buildArgs(overrides?: Partial<Parameters<typeof useStudioOnboardingStat
     bootstrapJob: null,
     bootstrapTriggerPending: false,
     triggerInitialBootstrap: vi.fn(),
+    openDemoChapter: vi.fn(),
+    openDemoWriteStage: vi.fn(),
+    openDemoAtlas: vi.fn(),
+    openDemoCopilot: vi.fn(),
     dismissWorldOnboardingRoute: vi.fn(),
     ...overrides,
   }
@@ -171,6 +180,58 @@ describe('useStudioOnboardingState', () => {
 
     await waitFor(() => {
       expect(mockTrackHostedAnalyticsEvent).not.toHaveBeenCalledWith('world_onboarding_view', expect.anything())
+    })
+  })
+
+  it('collapses a completed demo guide into the reopen affordance unless the URL forces it open', () => {
+    localStorage.setItem(
+      'novwr_demo_first_onboarding_dismissed_7_2026-03-01T00:00:00Z',
+      JSON.stringify({
+        version: 2,
+        status: 'completed',
+        visited: {
+          chapter: true,
+          atlas: true,
+          write: true,
+          copilot: true,
+        },
+      }),
+    )
+
+    const { result: defaultResult } = renderHook(() => useStudioOnboardingState(buildArgs({
+      novel: buildNovel({ is_seeded_demo: true }),
+    })))
+
+    expect(defaultResult.current.showDemoGuideExpanded).toBe(false)
+    expect(defaultResult.current.showDemoGuideReopen).toBe(true)
+
+    const { result: forcedOpenResult } = renderHook(() => useStudioOnboardingState(buildArgs({
+      novel: buildNovel({ is_seeded_demo: true }),
+      searchParams: new URLSearchParams('stage=entity&chapter=3&demoGuide=open'),
+    })))
+
+    expect(forcedOpenResult.current.showDemoGuideExpanded).toBe(true)
+    expect(forcedOpenResult.current.showDemoGuideReopen).toBe(false)
+  })
+
+  it('marks demo-guide steps in storage and forwards the matching navigation callback', () => {
+    const openDemoWriteStage = vi.fn()
+
+    const { result } = renderHook(() => useStudioOnboardingState(buildArgs({
+      novel: buildNovel({ is_seeded_demo: true }),
+      openDemoWriteStage,
+    })))
+
+    act(() => {
+      result.current.handleOpenDemoWriteStage()
+    })
+
+    expect(openDemoWriteStage).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(localStorage.getItem('novwr_demo_first_onboarding_dismissed_7_2026-03-01T00:00:00Z') ?? '{}')).toMatchObject({
+      status: 'in_progress',
+      visited: {
+        write: true,
+      },
     })
   })
 

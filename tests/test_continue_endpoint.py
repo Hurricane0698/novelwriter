@@ -587,7 +587,7 @@ async def test_build_continuation_prompt_uses_novel_language_for_prompt_locale(d
         if key == PromptKey.SYSTEM:
             return "system prompt"
         if key == PromptKey.CONTINUATION:
-            return "title={title}\nnext={next_chapter}\noutline={outline}\n{world_context}\n{narrative_constraints}"
+            return "title={title}\nnext={next_chapter}\n{world_context}\n{narrative_constraints}"
         raise AssertionError(f"unexpected key: {key}")
 
     monkeypatch.setattr(generator_mod, "get_prompt", fake_get_prompt)
@@ -595,7 +595,6 @@ async def test_build_continuation_prompt_uses_novel_language_for_prompt_locale(d
     _prompt, _max_tokens, build_info = await generator_mod._build_continuation_prompt(
         db,
         novel.id,
-        use_core_memory=False,
         context_chapters=2,
     )
 
@@ -621,7 +620,6 @@ async def test_build_continuation_prompt_uses_internal_chapter_reference_even_wi
     prompt, _max_tokens, build_info = await generator_mod._build_continuation_prompt(
         db,
         novel.id,
-        use_core_memory=False,
         context_chapters=2,
     )
 
