@@ -92,6 +92,10 @@ export function installInstalledProductFailureGuard(page: Page) {
   })
   page.on('requestfailed', (request) => {
     if (!isInstalledAsset(request.url())) return
+    // Navigating away legitimately aborts in-flight lazy chunks and font
+    // loads (net::ERR_ABORTED); the guard only cares about assets the server
+    // failed to deliver.
+    if (request.failure()?.errorText === 'net::ERR_ABORTED') return
     record(`asset request failed: ${request.url()} (${request.failure()?.errorText ?? 'unknown error'})`)
   })
   page.on('response', (response) => {
