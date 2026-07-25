@@ -49,7 +49,7 @@ test.describe('Library', () => {
     await page.goto('/library')
 
     await expect(page.getByText('我的作品库')).toBeVisible()
-    await expect(page.getByText('还没有作品，开始创作你的第一部小说吧')).toBeVisible()
+    await expect(page.getByText('还没有作品。上传 .txt / .md 文件即可导入并开始续写。')).toBeVisible()
   })
 
   test('shows error state on API failure', async ({ page }) => {
