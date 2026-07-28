@@ -336,7 +336,8 @@ function Invoke-InstalledProductPlaywright {
         [Parameter(Mandatory)] [string] $LlmBaseUrl,
         [Parameter(Mandatory)] [string] $LlmApiKey,
         [Parameter(Mandatory)] [string] $LlmModel,
-        [Parameter(Mandatory)] [int] $TimeoutSeconds
+        [Parameter(Mandatory)] [int] $TimeoutSeconds,
+        [hashtable] $AdditionalEnvironment = @{}
     )
 
     $StdoutPath = Join-Path $env:RUNNER_TEMP "novwr-playwright-${Phase}.stdout.log"
@@ -348,6 +349,12 @@ function Invoke-InstalledProductPlaywright {
         NOVWR_DESKTOP_E2E_LLM_BASE_URL = $LlmBaseUrl
         NOVWR_DESKTOP_E2E_LLM_API_KEY = $LlmApiKey
         NOVWR_DESKTOP_E2E_LLM_MODEL = $LlmModel
+    }
+    foreach ($Entry in $AdditionalEnvironment.GetEnumerator()) {
+        if ($PlaywrightEnvironment.Contains($Entry.Key)) {
+            throw "Additional Playwright environment duplicates reserved key '$($Entry.Key)'."
+        }
+        $PlaywrightEnvironment[$Entry.Key] = $Entry.Value
     }
     $PreviousEnvironment = @{}
     try {
@@ -399,6 +406,93 @@ function Invoke-InstalledProductPlaywright {
         throw "Installed-product Playwright ${Phase} failed with exit code $($Process.ExitCode)."
     }
     Write-PlaywrightSuccessOutput -Phase $Phase -StdoutPath $StdoutPath
+}
+
+function Get-FreeLoopbackPort {
+    $Listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+    try {
+        $Listener.Start()
+        return ([Net.IPEndPoint]$Listener.LocalEndpoint).Port
+    } finally {
+        $Listener.Stop()
+    }
+}
+
+function Assert-StartupFailureSurface {
+    param(
+        [Parameter(Mandatory)] [string] $DesktopExecutable,
+        [Parameter(Mandatory)] [string] $WebRoot,
+        [Parameter(Mandatory)] [string] $StatePath,
+        [Parameter(Mandatory)] [string] $LlmBaseUrl,
+        [Parameter(Mandatory)] [string] $LlmApiKey,
+        [Parameter(Mandatory)] [string] $LlmModel,
+        [Parameter(Mandatory)] [int] $TimeoutSeconds
+    )
+
+    $PortBlocker = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
+    $DebugPort = Get-FreeLoopbackPort
+    $DesktopProcess = $null
+    try {
+        $PortBlocker.Start()
+
+        $StartInfo = [Diagnostics.ProcessStartInfo]::new()
+        $StartInfo.FileName = $DesktopExecutable
+        $StartInfo.UseShellExecute = $false
+        $StartInfo.Environment["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--remote-debugging-port=$DebugPort"
+        $DesktopProcess = [Diagnostics.Process]::new()
+        $DesktopProcess.StartInfo = $StartInfo
+        if (-not $DesktopProcess.Start()) {
+            throw "The installed NovWr failure-path process did not start."
+        }
+
+        Wait-ForVisibleMainWindowHandle `
+            -DesktopProcessHandle $DesktopProcess `
+            -TimeoutSeconds $WindowStateTimeoutSeconds | Out-Null
+        $CdpUrl = "http://127.0.0.1:$DebugPort"
+        Wait-ForCondition `
+            -TimeoutSeconds $WindowStateTimeoutSeconds `
+            -FailureMessage "The NovWr failure-path WebView2 debug endpoint did not become ready." `
+            -Condition {
+                try {
+                    $Version = Invoke-RestMethod -Uri "$CdpUrl/json/version" -TimeoutSec 2
+                    return -not [string]::IsNullOrWhiteSpace([string]$Version.webSocketDebuggerUrl)
+                } catch {
+                    return $false
+                }
+            }
+
+        Invoke-InstalledProductPlaywright `
+            -Phase "startup-failure" `
+            -SpecPath "e2e/desktop-installed/startup-failure.spec.ts" `
+            -WebRoot $WebRoot `
+            -StatePath $StatePath `
+            -LlmBaseUrl $LlmBaseUrl `
+            -LlmApiKey $LlmApiKey `
+            -LlmModel $LlmModel `
+            -TimeoutSeconds $TimeoutSeconds `
+            -AdditionalEnvironment @{
+                NOVWR_DESKTOP_E2E_CDP_URL = $CdpUrl
+            }
+    } finally {
+        if ($null -ne $DesktopProcess) {
+            try {
+                if (-not $DesktopProcess.HasExited) {
+                    $DesktopProcess.Kill($true)
+                }
+                if (-not $DesktopProcess.WaitForExit($CleanupTimeoutSeconds * 1000)) {
+                    throw "The NovWr failure-path process did not exit after termination."
+                }
+            } finally {
+                $DesktopProcess.Dispose()
+            }
+        }
+        $PortBlocker.Stop()
+    }
+
+    Wait-ForCondition `
+        -TimeoutSeconds $CleanupTimeoutSeconds `
+        -FailureMessage "Port 8000 remained occupied after the failure-surface regression." `
+        -Condition { return Test-PortBindable }
 }
 
 function Test-PortBindable {
@@ -1043,6 +1137,15 @@ try {
         throw "The installed app root must contain exactly one desktop executable; found $($TopLevelExecutables.Count)."
     }
     $DesktopExecutable = $TopLevelExecutables[0].FullName
+
+    Assert-StartupFailureSurface `
+        -DesktopExecutable $DesktopExecutable `
+        -WebRoot $WebRoot `
+        -StatePath $PlaywrightStatePath `
+        -LlmBaseUrl $LlmConfigBaseUrl `
+        -LlmApiKey $LlmConfigApiKey `
+        -LlmModel $LlmConfigModel `
+        -TimeoutSeconds $PlaywrightTimeoutSeconds
 
     $InitialTopology = Start-AndVerifyDesktop -DesktopExecutable $DesktopExecutable -InstallRoot $InstallRoot
     $InitialProcessIds = (($InitialTopology.All.ProcessId | Sort-Object) -join ",")

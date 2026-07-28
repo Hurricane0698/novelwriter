@@ -6,6 +6,7 @@ use std::thread;
 use anyhow::{Context, Result as AnyResult};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
+use tauri::webview::PageLoadPayload;
 use tauri::{App, AppHandle, Manager, RunEvent, Url, WebviewWindow, WindowEvent};
 use tracing::{error, info, warn};
 
@@ -25,7 +26,10 @@ const TRAY_QUIT_ID: &str = "quit";
 
 struct DesktopState {
     paths: AppPaths,
-    local_shell_url: Url,
+    // `WebviewWindow::url()` is still `about:blank` during `setup`. Capture the
+    // bundled shell URL from the page-load hook instead so failure navigation
+    // can never turn `about:blank` into an inert white page.
+    local_shell_url: Mutex<Option<Url>>,
     supervisor: Mutex<Option<RuntimeSupervisor>>,
     tray: Mutex<Option<TrayIcon>>,
     log_guard: Mutex<Option<DesktopLogGuard>>,
@@ -37,10 +41,10 @@ struct DesktopState {
 }
 
 impl DesktopState {
-    fn new(paths: AppPaths, local_shell_url: Url) -> Self {
+    fn new(paths: AppPaths) -> Self {
         Self {
             paths,
-            local_shell_url,
+            local_shell_url: Mutex::new(None),
             supervisor: Mutex::new(None),
             tray: Mutex::new(None),
             log_guard: Mutex::new(None),
@@ -75,6 +79,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![open_logs, quit, startup_status])
+        .on_page_load(handle_page_load)
         .setup(|app| setup(app).map_err(Into::into))
         .build(context)
         .expect("build NovWr desktop application");
@@ -104,16 +109,14 @@ pub fn run() {
 }
 
 fn setup(app: &mut App) -> AnyResult<()> {
-    let window = app
-        .get_webview_window(MAIN_WINDOW_LABEL)
+    app.get_webview_window(MAIN_WINDOW_LABEL)
         .context("configured main window is missing")?;
-    let local_shell_url = window.url().context("read local shell URL")?;
     let local_data_root = app
         .path()
         .local_data_dir()
         .context("resolve Windows LocalAppData")?;
     let paths = AppPaths::from_local_data_root(local_data_root);
-    app.manage(DesktopState::new(paths, local_shell_url));
+    app.manage(DesktopState::new(paths));
 
     let tray = build_tray(app).context("create NovWr tray icon")?;
     *app.state::<DesktopState>()
@@ -124,6 +127,40 @@ fn setup(app: &mut App) -> AnyResult<()> {
     let handle = app.handle().clone();
     thread::spawn(move || start_runtime(handle));
     Ok(())
+}
+
+fn handle_page_load(webview: &tauri::Webview, payload: &PageLoadPayload<'_>) {
+    if webview.label() != MAIN_WINDOW_LABEL {
+        return;
+    }
+    // Record both Started and Finished events. A very fast runtime can navigate
+    // away before the shell's Finished event, but Started already carries the
+    // real Tauri URL and is enough to establish the trusted fallback origin.
+    let Some(local_shell_url) = normalized_local_shell_url(payload.url()) else {
+        return;
+    };
+    let Some(state) = webview.try_state::<DesktopState>() else {
+        return;
+    };
+    *state
+        .local_shell_url
+        .lock()
+        .expect("desktop local shell URL mutex poisoned") = Some(local_shell_url);
+}
+
+fn normalized_local_shell_url(url: &Url) -> Option<Url> {
+    let is_local_shell = matches!(
+        (url.scheme(), url.host_str()),
+        ("http" | "https", Some("tauri.localhost")) | ("tauri", Some("localhost"))
+    );
+    if !is_local_shell {
+        return None;
+    }
+
+    let mut normalized = url.clone();
+    normalized.set_query(None);
+    normalized.set_fragment(None);
+    Some(normalized)
 }
 
 fn build_tray(app: &App) -> tauri::Result<TrayIcon> {
@@ -276,22 +313,31 @@ fn navigate_to_application(app: &AppHandle) -> tauri::Result<()> {
 
 fn show_failure_window(app: &AppHandle, summary: &'static str) {
     let state = app.state::<DesktopState>();
-    // Store before navigating: if navigation races the initial page load, the
-    // shell page pulls this via `startup_status` once it is ready.
+    // Store before touching the window. On an early startup failure the
+    // configured shell may not have loaded yet, so it polls this state instead
+    // of being redirected away from its pending initial navigation.
     *state
         .startup_failure
         .lock()
         .expect("desktop startup failure mutex poisoned") = Some(summary);
-    let mut url = state.local_shell_url.clone();
-    url.set_query(None);
-    url.query_pairs_mut().append_pair("failure", summary);
+    let local_shell_url = state
+        .local_shell_url
+        .lock()
+        .expect("desktop local shell URL mutex poisoned")
+        .clone();
     match main_window(app) {
         Ok(window) => {
-            if let Err(error) = window.navigate(url) {
-                error!(error = %error, "navigate to desktop failure page");
+            // Once the app has navigated to its HTTP SPA, a later runtime exit
+            // must return to the bundled failure shell. During initial startup,
+            // `None` deliberately means "leave the configured page load alone."
+            if let Some(mut url) = local_shell_url {
+                url.query_pairs_mut().append_pair("failure", summary);
+                if let Err(error) = window.navigate(url) {
+                    error!(error = %error, "navigate to desktop failure page");
+                }
             }
-            // Show the window even if navigation failed: a visible "starting"
-            // shell page beats an invisible process stuck in the tray.
+            // Show the window even if navigation failed: the shell's status
+            // polling still turns an already-loaded page into a useful error.
             let _ = window.unminimize();
             let _ = window.show();
             let _ = window.set_focus();
@@ -456,6 +502,33 @@ mod tests {
     fn normal_close_hides_but_explicit_exit_closes() {
         assert_eq!(close_disposition(false), CloseDisposition::Hide);
         assert_eq!(close_disposition(true), CloseDisposition::Exit);
+    }
+
+    #[test]
+    fn local_shell_url_is_recorded_only_for_tauri_origins() {
+        let http_shell =
+            Url::parse("http://tauri.localhost/index.html?failure=old#status").unwrap();
+        let https_shell = Url::parse("https://tauri.localhost/").unwrap();
+        let custom_scheme_shell = Url::parse("tauri://localhost/index.html").unwrap();
+        let app = Url::parse(APP_URL).unwrap();
+        let initial_blank = Url::parse("about:blank").unwrap();
+
+        assert_eq!(
+            normalized_local_shell_url(&http_shell).unwrap().as_str(),
+            "http://tauri.localhost/index.html"
+        );
+        assert_eq!(
+            normalized_local_shell_url(&https_shell).unwrap().as_str(),
+            "https://tauri.localhost/"
+        );
+        assert_eq!(
+            normalized_local_shell_url(&custom_scheme_shell)
+                .unwrap()
+                .as_str(),
+            "tauri://localhost/index.html"
+        );
+        assert!(normalized_local_shell_url(&app).is_none());
+        assert!(normalized_local_shell_url(&initial_blank).is_none());
     }
 
     #[test]
