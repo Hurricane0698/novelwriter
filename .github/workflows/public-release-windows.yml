@@ -1,0 +1,55 @@
+name: Publish Windows desktop release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: public-windows-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  desktop:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-windows-desktop.yml
+
+  upload-desktop-setup:
+    name: Upload Windows desktop setup
+    needs: desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows desktop setup
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.desktop.outputs.setup_artifact_name }}
+          path: ${{ runner.temp }}/desktop-setup
+
+      - name: Upload setup executable to this public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+          setup_files=("$RUNNER_TEMP"/desktop-setup/NovWr_*_x64-setup.exe)
+          if [ "${#setup_files[@]}" -ne 1 ]; then
+            echo "Expected exactly one Windows desktop setup executable, found ${#setup_files[@]}." >&2
+            exit 1
+          fi
+
+          expected_name="NovWr_${TAG_NAME#v}_x64-setup.exe"
+          actual_name="$(basename "${setup_files[0]}")"
+          if [ "$actual_name" != "$expected_name" ]; then
+            echo "Setup executable ${actual_name} does not match tag-derived name ${expected_name}; bump the desktop version before tagging." >&2
+            exit 1
+          fi
+
+          gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release upload "$TAG_NAME" "${setup_files[0]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

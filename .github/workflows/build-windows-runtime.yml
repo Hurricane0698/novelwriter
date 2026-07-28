@@ -1,0 +1,217 @@
+name: Build Windows runtime
+
+on:
+  workflow_call:
+    outputs:
+      runtime_artifact_name:
+        description: Fixed artifact containing the Windows x64 onedir runtime.
+        value: ${{ jobs.build.outputs.runtime_artifact_name }}
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Windows runtime (x64)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      runtime_artifact_name: ${{ steps.artifact.outputs.runtime_artifact_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          architecture: x64
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version-file: pyproject.toml
+          enable-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.5
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build packaged runtime
+        shell: pwsh
+        run: ./scripts/build_windows_runtime.ps1
+
+      - name: Smoke packaged runtime
+        shell: pwsh
+        env:
+          NOVWR_DESKTOP_DATA_DIR: ${{ runner.temp }}\NovWr\data
+          NOVWR_DESKTOP_JWT_SECRET: windows-runtime-ci-secret-0123456789abcdef
+          NOVWR_DESKTOP_LLM_CONFIG_PATH: ${{ runner.temp }}\NovWr\llm-config.json
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          function Write-ProcessLogs {
+            param(
+              [Parameter(Mandatory)] [string] $Label,
+              [Parameter(Mandatory)] [string] $StdoutPath,
+              [Parameter(Mandatory)] [string] $StderrPath
+            )
+
+            Write-Output "$Label stdout:"
+            if (Test-Path -LiteralPath $StdoutPath -PathType Leaf) {
+              Get-Content -LiteralPath $StdoutPath -Raw -ErrorAction SilentlyContinue
+            }
+            Write-Output "$Label stderr:"
+            if (Test-Path -LiteralPath $StderrPath -PathType Leaf) {
+              Get-Content -LiteralPath $StderrPath -Raw -ErrorAction SilentlyContinue
+            }
+          }
+
+          function Wait-ForGracefulExit {
+            param(
+              [Parameter(Mandatory)] [System.Diagnostics.Process] $Process,
+              [Parameter(Mandatory)] [string] $Label,
+              [Parameter(Mandatory)] [string] $StdoutPath,
+              [Parameter(Mandatory)] [string] $StderrPath
+            )
+
+            if (-not $Process.WaitForExit(30000)) {
+              Write-ProcessLogs -Label $Label -StdoutPath $StdoutPath -StderrPath $StderrPath
+              & taskkill.exe /PID $Process.Id /T /F | Out-Null
+              throw "$Label did not exit within 30 seconds of the desktop shutdown event."
+            }
+            if ($Process.ExitCode -ne 0) {
+              Write-ProcessLogs -Label $Label -StdoutPath $StdoutPath -StderrPath $StderrPath
+              throw "$Label exited with code $($Process.ExitCode) after the desktop shutdown event."
+            }
+          }
+
+          New-Item -ItemType Directory -Force -Path $env:NOVWR_DESKTOP_DATA_DIR | Out-Null
+          $runtime = Join-Path $PWD "desktop/runtime-dist/novwr-runtime/novwr-runtime.exe"
+          & $runtime bootstrap
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged bootstrap failed."
+          }
+          if (-not (Test-Path (Join-Path $env:NOVWR_DESKTOP_DATA_DIR "novels.db"))) {
+            throw "Packaged bootstrap did not create novels.db."
+          }
+
+          $stdout = Join-Path $env:RUNNER_TEMP "novwr-runtime-serve.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "novwr-runtime-serve.stderr.log"
+          $workerOut = Join-Path $env:RUNNER_TEMP "novwr-runtime-worker.stdout.log"
+          $workerErr = Join-Path $env:RUNNER_TEMP "novwr-runtime-worker.stderr.log"
+          $shutdownEventName = "Local\io.github.hurricane0698.novwr.runtime-smoke.$PID.$([guid]::NewGuid().ToString('N'))"
+          $createdNew = $false
+          $shutdownEvent = [System.Threading.EventWaitHandle]::new(
+            $false,
+            [System.Threading.EventResetMode]::ManualReset,
+            $shutdownEventName,
+            [ref]$createdNew
+          )
+          if (-not $createdNew) {
+            $shutdownEvent.Dispose()
+            throw "The packaged runtime smoke shutdown event already existed."
+          }
+          $env:NOVWR_DESKTOP_SHUTDOWN_EVENT = $shutdownEventName
+
+          $server = $null
+          $worker = $null
+          try {
+            $server = Start-Process `
+              -FilePath $runtime `
+              -ArgumentList "serve" `
+              -PassThru `
+              -NoNewWindow `
+              -RedirectStandardOutput $stdout `
+              -RedirectStandardError $stderr
+
+            $healthy = $false
+            for ($attempt = 0; $attempt -lt 45; $attempt++) {
+              if ($server.HasExited) {
+                Write-ProcessLogs -Label "server" -StdoutPath $stdout -StderrPath $stderr
+                throw "Packaged server exited before becoming healthy."
+              }
+              try {
+                $health = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/health" -TimeoutSec 2
+                if ($health.status -eq "healthy") {
+                  $healthy = $true
+                  break
+                }
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if (-not $healthy) {
+              Write-ProcessLogs -Label "server" -StdoutPath $stdout -StderrPath $stderr
+              throw "Packaged server did not become healthy."
+            }
+            $spa = Invoke-WebRequest -Uri "http://127.0.0.1:8000/" -UseBasicParsing -TimeoutSec 5
+            if ($spa.StatusCode -ne 200 -or $spa.Content -notmatch '<div id="root">') {
+              throw "Packaged SPA static delivery failed."
+            }
+
+            $worker = Start-Process `
+              -FilePath $runtime `
+              -ArgumentList "worker" `
+              -PassThru `
+              -NoNewWindow `
+              -RedirectStandardOutput $workerOut `
+              -RedirectStandardError $workerErr
+            Start-Sleep -Seconds 3
+            if ($worker.HasExited) {
+              Write-ProcessLogs -Label "worker" -StdoutPath $workerOut -StderrPath $workerErr
+              throw "Packaged worker exited unexpectedly."
+            }
+            if ($server.HasExited) {
+              Write-ProcessLogs -Label "server" -StdoutPath $stdout -StderrPath $stderr
+              throw "Packaged server exited before the shutdown smoke."
+            }
+
+            if (-not $shutdownEvent.Set()) {
+              throw "Failed to signal the packaged runtime shutdown event."
+            }
+            Wait-ForGracefulExit `
+              -Process $server `
+              -Label "server" `
+              -StdoutPath $stdout `
+              -StderrPath $stderr
+            Wait-ForGracefulExit `
+              -Process $worker `
+              -Label "worker" `
+              -StdoutPath $workerOut `
+              -StderrPath $workerErr
+          } finally {
+            $shutdownEvent.Set() | Out-Null
+            foreach ($process in @($server, $worker)) {
+              if ($null -ne $process -and -not $process.HasExited) {
+                & taskkill.exe /PID $process.Id /T /F | Out-Null
+              }
+            }
+            $shutdownEvent.Dispose()
+            Remove-Item Env:NOVWR_DESKTOP_SHUTDOWN_EVENT -ErrorAction SilentlyContinue
+          }
+
+      - name: Export artifact metadata
+        id: artifact
+        shell: pwsh
+        run: '"runtime_artifact_name=novwr-windows-runtime-x64" >> $env:GITHUB_OUTPUT'
+
+      - name: Upload Windows runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: novwr-windows-runtime-x64
+          path: desktop/runtime-dist/novwr-runtime
+          if-no-files-found: error
+          retention-days: 7

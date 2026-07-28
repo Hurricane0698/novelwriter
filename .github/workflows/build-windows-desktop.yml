@@ -1,0 +1,113 @@
+name: Build Windows desktop
+
+on:
+  workflow_call:
+    outputs:
+      setup_artifact_name:
+        description: Fixed artifact containing the Windows 11 x64 current-user setup executable.
+        value: ${{ jobs.desktop.outputs.setup_artifact_name }}
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    name: Package Windows runtime prerequisite
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-windows-runtime.yml
+
+  desktop:
+    name: Build and smoke Windows desktop (x64)
+    needs: runtime
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      setup_artifact_name: ${{ steps.artifact.outputs.setup_artifact_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.5
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            web/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Download packaged runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.runtime.outputs.runtime_artifact_name }}
+          path: ${{ runner.temp }}\novwr-runtime
+
+      - name: Build locked Tauri NSIS setup
+        shell: pwsh
+        run: |
+          ./scripts/build_windows_desktop.ps1 `
+            -RuntimeArtifactDirectory (Join-Path $env:RUNNER_TEMP "novwr-runtime")
+
+      - name: Install locked installed-product browser dependencies
+        shell: pwsh
+        run: |
+          Push-Location web
+          try {
+            npm ci
+            if ($LASTEXITCODE -ne 0) {
+              throw "npm ci failed for the locked installed-product browser dependencies."
+            }
+            npx --no-install playwright install chromium
+            if ($LASTEXITCODE -ne 0) {
+              throw "The locked Playwright CLI failed to install Chromium."
+            }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Smoke installed desktop product
+        shell: pwsh
+        env:
+          CI: 'true'
+          NOVWR_INSTALLER_SMOKE_ALLOW_DATA_RESET: '1'
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+          $SetupFiles = @(
+            Get-ChildItem -LiteralPath "desktop/desktop-dist" -Filter "*-setup.exe" -File
+          )
+          if ($SetupFiles.Count -ne 1) {
+            throw "Expected exactly one desktop setup executable; found $($SetupFiles.Count)."
+          }
+          ./scripts/smoke_windows_desktop_installer.ps1 -SetupPath $SetupFiles[0].FullName
+
+      - name: Upload installed-product Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: novwr-windows-desktop-installed-playwright-failure
+          path: web/test-results/desktop-installed
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Export artifact metadata
+        id: artifact
+        shell: pwsh
+        run: '"setup_artifact_name=novwr-windows-desktop-x64-setup" >> $env:GITHUB_OUTPUT'
+
+      - name: Upload Windows desktop setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: novwr-windows-desktop-x64-setup
+          path: desktop/desktop-dist/NovWr_*_x64-setup.exe
+          if-no-files-found: error
+          retention-days: 7
