@@ -8,7 +8,19 @@ test('installed desktop renders its local startup failure instead of a blank pag
     throw new Error('NOVWR_DESKTOP_E2E_CDP_URL is required')
   }
 
-  const browser = await playwright.chromium.connectOverCDP(cdpUrl)
+  // WebView2 rejects `/json/version/` with a trailing slash, while Playwright
+  // appends one when given the HTTP origin. Resolve the exact endpoint first
+  // and connect with the browser WebSocket URL it returns.
+  const versionResponse = await fetch(`${cdpUrl}/json/version`)
+  if (!versionResponse.ok) {
+    throw new Error(`WebView2 CDP version request returned HTTP ${versionResponse.status}`)
+  }
+  const version = (await versionResponse.json()) as { webSocketDebuggerUrl?: unknown }
+  if (typeof version.webSocketDebuggerUrl !== 'string' || !version.webSocketDebuggerUrl) {
+    throw new Error('WebView2 CDP version response is missing webSocketDebuggerUrl')
+  }
+
+  const browser = await playwright.chromium.connectOverCDP(version.webSocketDebuggerUrl)
   try {
     let shellPage: Page | undefined
 
