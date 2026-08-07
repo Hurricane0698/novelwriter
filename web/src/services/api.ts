@@ -5,6 +5,7 @@ import type {
   ChapterCreateRequest,
   ChapterUpdateRequest,
   ContinueRequest,
+  NovelOutline,
   ContinueResponse,
   Continuation,
   StreamEvent,
@@ -216,8 +217,15 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
-  deleteChapter: (novelId: number, num: number) =>
-    request<void>(`/api/novels/${novelId}/chapters/${num}`, { method: 'DELETE' }),
+  deleteChapter: (novelId: number, num: number) => request<void>(`/api/novels/${novelId}/chapters/${num}`, { method: 'DELETE' }),
+  listOutlines: (novelId: number) => request<NovelOutline[]>(`/api/novels/${novelId}/outlines`),
+  createOutline: (novelId: number, start_chapter: number, end_chapter: number) =>
+    request<NovelOutline>(`/api/novels/${novelId}/outlines`, {
+      method: 'POST',
+      body: JSON.stringify({ start_chapter, end_chapter }),
+    }),
+  deleteOutline: (novelId: number, outlineId: number) =>
+    request<void>(`/api/novels/${novelId}/outlines/${outlineId}`, { method: 'DELETE' }),
 
   continueNovel: (
     novelId: number,

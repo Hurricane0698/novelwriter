@@ -1,9 +1,10 @@
 services:
   scngs:
     build: .
+    env_file:
+      - .env
     ports:
-      # Default to localhost-only to keep selfhost mode private-by-default.
-      - "127.0.0.1:8000:8000"
+      - "0.0.0.0:18000:8000"
     volumes:
       - scngs-data:/data
     environment:
@@ -12,6 +13,8 @@ services:
       - SCNGS_DATA_DIR=/data
   scngs-worker:
     build: .
+    env_file:
+      - .env
     command: ["sh", "-c", "python -m app.selfhost_db_bootstrap && python -m app.workers.background_jobs"]
     volumes:
       - scngs-data:/data

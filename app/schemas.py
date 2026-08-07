@@ -248,18 +248,36 @@ class ContinuationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ContinueRequest(BaseModel):
-    ALLOWED_TARGET_CHARS: ClassVar[set[int]] = {2000, 3000, 4000}
+class NovelOutlineResponse(BaseModel):
+    id: int
+    novel_id: int
+    start_chapter: int
+    end_chapter: int
+    title: str
+    content: str
+    model: str | None = None
+    created_at: datetime
+    updated_at: datetime
 
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NovelOutlineCreateRequest(BaseModel):
+    start_chapter: int = Field(ge=1)
+    end_chapter: int = Field(ge=1)
+
+
+class ContinueRequest(BaseModel):
     num_versions: int = Field(default=1, ge=1, le=2)
     prompt: str | None = Field(default=None, max_length=2000, description="用户续写指令")
-    max_tokens: int | None = Field(default=None, ge=100, le=16000, description="生成的最大 token 数")
-    target_chars: int | None = Field(default=None, description="目标续写字数（2000/3000/4000）")
+    max_tokens: int | None = Field(default=None, ge=100, le=32000, description="生成的最大 token 数")
+    target_chars: int | None = Field(default=None, ge=1000, le=20000, description="自定义目标续写字数（1000-20000）")
     context_chapters: int | None = Field(
         default=None,
         ge=1,
         description=f"用于续写上下文的最近章节数（仅允许 1-{MAX_CONTEXT_CHAPTERS}，超过时按 {MAX_CONTEXT_CHAPTERS} 处理）",
     )
+    outline_ids: List[int] = Field(default_factory=list, max_length=30)
     temperature: float | None = Field(
         default=None,
         ge=0.0,
@@ -269,8 +287,6 @@ class ContinueRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_target_chars(self):
-        if self.target_chars is not None and self.target_chars not in self.ALLOWED_TARGET_CHARS:
-            raise ValueError(f"target_chars must be one of {sorted(self.ALLOWED_TARGET_CHARS)}")
         if self.context_chapters is not None and self.context_chapters > MAX_CONTEXT_CHAPTERS:
             self.context_chapters = MAX_CONTEXT_CHAPTERS
         return self

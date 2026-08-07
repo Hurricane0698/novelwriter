@@ -20,6 +20,7 @@ from app.models import (  # noqa: F401 - register models with Base.metadata
     Exploration,
     ExplorationChapter,
     Novel,
+    NovelOutline,
     NovelIngestJob,
     TokenUsage,
     User,

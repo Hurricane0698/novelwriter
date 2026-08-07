@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings
 
 
 MIN_CONTEXT_CHAPTERS = 1
-MAX_CONTEXT_CHAPTERS = 5
+MAX_CONTEXT_CHAPTERS = 10000
 DEFAULT_CONTEXT_CHAPTERS = 5
 
 
@@ -15,11 +15,17 @@ def clamp_context_chapters(value: int) -> int:
     return max(MIN_CONTEXT_CHAPTERS, min(MAX_CONTEXT_CHAPTERS, int(value)))
 
 
-def resolve_context_chapters(value: int | None, *, default: int | None = None) -> int:
+def resolve_context_chapters(
+    value: int | None,
+    *,
+    default: int | None = None,
+    max_value: int | None = None,
+) -> int:
+    upper_bound = MAX_CONTEXT_CHAPTERS if max_value is None else max(MIN_CONTEXT_CHAPTERS, int(max_value))
     if value is None:
         baseline = DEFAULT_CONTEXT_CHAPTERS if default is None else int(default)
-        return clamp_context_chapters(baseline)
-    return clamp_context_chapters(value)
+        return max(MIN_CONTEXT_CHAPTERS, min(upper_bound, baseline))
+    return max(MIN_CONTEXT_CHAPTERS, min(upper_bound, int(value)))
 
 
 def normalize_hosted_invite_code(value: str) -> str:
@@ -74,7 +80,7 @@ class Settings(BaseSettings):
 
     max_context_chapters: int = DEFAULT_CONTEXT_CHAPTERS
     default_continuation_tokens: int = 4000
-    max_continuation_tokens: int = 16000
+    max_continuation_tokens: int = 32000
     continuation_min_target_ratio: float = 0.9
     continuation_chars_to_tokens_ratio: float = 2.5
     continuation_token_buffer_ratio: float = 0.1

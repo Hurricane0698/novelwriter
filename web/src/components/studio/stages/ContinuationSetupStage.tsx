@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { novelKeys } from '@/hooks/novel/keys'
 import { api } from '@/services/api'
-import { LENGTH_OPTIONS } from '@/hooks/novel/useContinuationSetupState'
+
 
 /**
  * Embeddable continuation-setup stage for the Studio center area.
@@ -34,10 +34,18 @@ export function ContinuationSetupStage({
   onAdvancedOpenChange,
   contextChapters,
   onContextChaptersChange,
+  contextChapterLimit,
   numVersions,
   onNumVersionsChange,
   temperature,
   onTemperatureChange,
+  outlines,
+  selectedOutlineIds,
+  onSelectedOutlineIdsChange,
+  outlineRange,
+  onOutlineRangeChange,
+  outlineGenerating,
+  onCreateOutline,
   onGenerate,
   assistOpen,
   onToggleAssist,
@@ -53,10 +61,18 @@ export function ContinuationSetupStage({
   onAdvancedOpenChange: (next: boolean) => void
   contextChapters: string
   onContextChaptersChange: (next: string) => void
+  contextChapterLimit: number
   numVersions: string
   onNumVersionsChange: (next: string) => void
   temperature: string
   onTemperatureChange: (next: string) => void
+  outlines: Array<{ id: number; start_chapter: number; end_chapter: number; title: string; content: string }>
+  selectedOutlineIds: number[]
+  onSelectedOutlineIdsChange: (next: number[]) => void
+  outlineRange: string
+  onOutlineRangeChange: (next: string) => void
+  outlineGenerating: boolean
+  onCreateOutline: () => void
   onGenerate: () => void
   assistOpen?: boolean
   onToggleAssist?: () => void
@@ -68,6 +84,18 @@ export function ContinuationSetupStage({
   })
 
   const wordCount = chapter?.content?.length ?? 0
+  const parsedContextChapters = Number.parseInt(contextChapters, 10)
+  const effectiveContextChapters = Number.isFinite(parsedContextChapters)
+    ? Math.max(1, Math.min(contextChapterLimit, parsedContextChapters))
+    : 1
+  const parsedTargetChars = Number.parseInt(selectedLength, 10)
+  const effectiveTargetChars = Number.isFinite(parsedTargetChars)
+    ? Math.max(1000, Math.min(20000, parsedTargetChars))
+    : 3000
+  // Conservative estimate for Chinese prose: ~5k chars/chapter and ~2 chars/token.
+  const estimatedSourceTokens = Math.ceil(effectiveContextChapters * 5000 / 2)
+  const estimatedOutputTokens = Math.ceil(effectiveTargetChars * 1.1 / 2)
+  const estimatedTotalTokens = estimatedSourceTokens + estimatedOutputTokens + 5000
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -116,35 +144,12 @@ export function ContinuationSetupStage({
           />
         </div>
 
-        {/* Length */}
+        {/* Custom length */}
         <div className="space-y-2">
           <label className="text-sm font-medium text-foreground">
             {t('continuation.setup.length')}
           </label>
-          <div className="flex gap-2">
-            {LENGTH_OPTIONS.map(opt => {
-              const isDisabled = opt.disabled
-              const isSelected = !isDisabled && selectedLength === opt.value
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => !isDisabled && onSelectedLengthChange(opt.value)}
-                  disabled={isDisabled}
-                  className={cn(
-                    'flex-1 h-9 rounded-[10px] border text-sm font-mono transition-colors',
-                    isDisabled
-                      ? 'bg-muted/50 border-muted text-muted-foreground/40 cursor-not-allowed'
-                      : isSelected
-                      ? 'bg-[hsl(var(--accent)/0.12)] border-accent text-accent font-semibold'
-                      : 'bg-[var(--nw-glass-bg)] border-[var(--nw-glass-border)] text-muted-foreground hover:bg-[var(--nw-glass-bg-hover)]'
-                  )}
-                >
-                  {opt.label}
-                </button>
-              )
-            })}
-          </div>
+          <AdvancedRow label="目标字数" desc="1000–20000" value={selectedLength} onChange={onSelectedLengthChange} type="number" min={1000} max={20000} step={100} />
         </div>
 
         {/* Advanced Toggle */}
@@ -170,7 +175,25 @@ export function ContinuationSetupStage({
         >
           <div className="overflow-hidden">
             <GlassCard className="rounded-xl p-4 flex flex-col gap-4">
-              <AdvancedRow label={t('continuation.setup.contextChapters')} desc="1–5" value={contextChapters} onChange={onContextChaptersChange} type="number" min={1} max={5} step={1} />
+              <AdvancedRow label={t('continuation.setup.contextChapters')} desc={`1–${contextChapterLimit}（全书）`} value={contextChapters} onChange={onContextChaptersChange} type="number" min={1} max={contextChapterLimit} step={1} />
+              <p className="-mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                预计上下文约 {Math.round(estimatedSourceTokens / 100) / 10}k tokens；含本次输出约 {Math.round(estimatedTotalTokens / 100) / 10}k tokens。
+              </p>
+              <div className="border-t border-border/50 pt-3">
+                <div className="mb-2 text-xs font-medium text-foreground">剧情大纲</div>
+                <div className="flex gap-2">
+                  <input className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs" placeholder="例如 1-100" value={outlineRange} onChange={(e) => onOutlineRangeChange(e.target.value)} />
+                  <NwButton type="button" variant="accentOutline" className="h-8 px-3 text-xs" onClick={onCreateOutline} disabled={outlineGenerating}>{outlineGenerating ? '生成中…' : '生成大纲'}</NwButton>
+                </div>
+                <div className="mt-2 max-h-40 space-y-1 overflow-auto">
+                  {outlines.length === 0 ? <div className="text-[11px] text-muted-foreground">还没有生成的大纲</div> : outlines.map((outline) => (
+                    <label key={outline.id} className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1 text-xs hover:bg-muted/40">
+                      <input type="checkbox" className="mt-0.5" checked={selectedOutlineIds.includes(outline.id)} onChange={(e) => onSelectedOutlineIdsChange(e.target.checked ? [...selectedOutlineIds, outline.id] : selectedOutlineIds.filter((id) => id !== outline.id))} />
+                      <span className="min-w-0 truncate">{outline.title || `第${outline.start_chapter}—${outline.end_chapter}章`}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <AdvancedRow label={t('continuation.setup.numVersions')} desc="1–2" value={numVersions} onChange={onNumVersionsChange} type="number" min={1} max={2} step={1} />
               <AdvancedRow label={t('continuation.setup.temperature')} desc="0.0–2.0" value={temperature} onChange={onTemperatureChange} type="number" min={0} max={2} step={0.1} />
             </GlassCard>

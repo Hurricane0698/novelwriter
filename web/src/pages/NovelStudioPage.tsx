@@ -250,7 +250,7 @@ export function NovelStudioPage() {
   const latestChapterReference = latestChapterMeta ? formatChapterBadgeLabel(latestChapterMeta) : null
 
   // Continuation setup state hoisted at page level so it survives stage mount/unmount.
-  const continuationState = useContinuationSetupState(novelId, latestChapterNum)
+  const continuationState = useContinuationSetupState(novelId, latestChapterNum, novel?.total_chapters ?? chaptersMeta.length)
 
   const updateChapter = useUpdateChapter(novelId, activeChapterNum ?? 0)
   const createChapter = useCreateChapter(novelId)
@@ -825,10 +825,18 @@ export function NovelStudioPage() {
                 onAdvancedOpenChange={continuationState.setAdvancedOpen}
                 contextChapters={continuationState.contextChapters}
                 onContextChaptersChange={continuationState.setContextChapters}
+                contextChapterLimit={novel?.total_chapters ?? chaptersMeta.length}
                 numVersions={continuationState.numVersions}
                 onNumVersionsChange={continuationState.setNumVersions}
                 temperature={continuationState.temperature}
                 onTemperatureChange={continuationState.setTemperature}
+                outlines={continuationState.outlines}
+                selectedOutlineIds={continuationState.selectedOutlineIds}
+                onSelectedOutlineIdsChange={continuationState.setSelectedOutlineIds}
+                outlineRange={continuationState.outlineRange}
+                onOutlineRangeChange={continuationState.setOutlineRange}
+                outlineGenerating={continuationState.outlineGenerating}
+                onCreateOutline={continuationState.handleCreateOutline}
                 onGenerate={continuationState.handleGenerate}
                 assistOpen={showAssistRail}
                 onToggleAssist={handleToggleAssist}

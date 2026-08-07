@@ -19,7 +19,7 @@ from app.core.continuation_text import (
     format_recent_chapters_for_prompt,
     format_world_context_for_prompt,
 )
-from app.models import User
+from app.models import NovelOutline, User
 from app.schemas import ContinueDebugSummary, ContinueRequest
 
 from . import novel_support
@@ -106,9 +106,11 @@ def _prepare_continuation_context(
 
     novel = novel_support.get_accessible_novel(db, novel_id, current_user)
 
+    book_chapters = max(1, int(getattr(novel, "total_chapters", 0) or 1))
     effective_context_chapters = resolve_context_chapters(
         req.context_chapters,
         default=settings.max_context_chapters,
+        max_value=book_chapters,
     )
 
     recent_chapters = load_recent_chapters(db, novel_id, effective_context_chapters)
@@ -127,6 +129,22 @@ def _prepare_continuation_context(
         raise HTTPException(status_code=500, detail="Context assembly failed")
 
     world_context = format_world_context_for_prompt(writer_ctx, locale=novel_language)
+    if req.outline_ids:
+        outlines = (
+            db.query(NovelOutline)
+            .filter(NovelOutline.novel_id == novel_id, NovelOutline.id.in_(req.outline_ids))
+            .all()
+        )
+        found = {int(row.id) for row in outlines}
+        missing = [int(row_id) for row_id in req.outline_ids if int(row_id) not in found]
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Outline not found: {missing[0]}")
+        outline_sections = [
+            f"【第{row.start_chapter}—{row.end_chapter}章剧情大纲】\n{row.content.strip()}"
+            for row in sorted(outlines, key=lambda item: (item.start_chapter, item.end_chapter, item.id))
+        ]
+        outline_context = "\n\n<selected_plot_outlines>\n" + "\n\n".join(outline_sections) + "\n</selected_plot_outlines>\n"
+        world_context = outline_context + world_context
     narrative_constraints = extract_narrative_constraints(writer_ctx)
     debug_summary = _build_continue_debug_summary(
         writer_ctx,

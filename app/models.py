@@ -87,6 +87,27 @@ class Continuation(Base):
     novel = relationship("Novel", back_populates="continuations")
 
 
+class NovelOutline(Base):
+    """An AI-generated summary for an explicitly selected chapter range."""
+
+    __tablename__ = "novel_outlines"
+    __table_args__ = (
+        Index("ix_novel_outlines_novel_range", "novel_id", "start_chapter", "end_chapter"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    novel_id = Column(Integer, ForeignKey("novels.id"), nullable=False)
+    start_chapter = Column(Integer, nullable=False)
+    end_chapter = Column(Integer, nullable=False)
+    title = Column(String(255), nullable=False, default="")
+    content = Column(Text, nullable=False)
+    model = Column(String(255), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    novel = relationship("Novel")
+
+
 class ContinuationRun(Base):
     """Durable idempotency record for a single continuation request attempt."""
 

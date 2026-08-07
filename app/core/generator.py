@@ -85,7 +85,7 @@ def _compute_max_tokens(
     default_tokens: int,
     chars_to_tokens_ratio: float,
     token_buffer_ratio: float,
-    cap: int = 16000,
+    cap: int = 32000,
 ) -> int:
     if target_chars:
         estimated = math.ceil(target_chars * chars_to_tokens_ratio)
@@ -192,6 +192,7 @@ async def _build_continuation_prompt(
     effective_context_chapters = resolve_context_chapters(
         context_chapters,
         default=settings.max_context_chapters,
+        max_value=max(1, int(getattr(novel, "total_chapters", 0) or 1)),
     )
     recent_chapters = load_recent_chapters(db, novel_id, effective_context_chapters)
 
