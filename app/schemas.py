@@ -276,6 +276,31 @@ class ContinuationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class NovelOutlineResponse(BaseModel):
+    id: int
+    novel_id: int
+    start_chapter: int
+    end_chapter: int
+    title: str
+    content: str
+    model: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NovelOutlineCreateRequest(BaseModel):
+    start_chapter: int = Field(ge=1)
+    end_chapter: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def _validate_range_order(self):
+        if self.start_chapter > self.end_chapter:
+            raise ValueError("start_chapter must not exceed end_chapter")
+        return self
+
+
 class ContinueRequest(BaseModel):
     ALLOWED_TARGET_CHARS: ClassVar[set[int]] = {2000, 3000, 4000}
 
@@ -288,6 +313,7 @@ class ContinueRequest(BaseModel):
         ge=1,
         description=f"用于续写上下文的最近章节数（仅允许 1-{MAX_CONTEXT_CHAPTERS}，超过时按 {MAX_CONTEXT_CHAPTERS} 处理）",
     )
+    outline_ids: List[Annotated[int, Field(gt=0)]] = Field(default_factory=list, max_length=10)
     temperature: float | None = Field(
         default=None,
         ge=0.0,
@@ -301,6 +327,8 @@ class ContinueRequest(BaseModel):
             raise ValueError(f"target_chars must be one of {sorted(self.ALLOWED_TARGET_CHARS)}")
         if self.context_chapters is not None and self.context_chapters > MAX_CONTEXT_CHAPTERS:
             self.context_chapters = MAX_CONTEXT_CHAPTERS
+        if len(set(self.outline_ids)) != len(self.outline_ids):
+            raise ValueError("outline_ids must not contain duplicates")
         return self
 class UploadResponse(BaseModel):
     novel_id: int

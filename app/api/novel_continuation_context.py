@@ -12,19 +12,76 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings, resolve_context_chapters
 from app.core.chapter_numbering import load_recent_chapters
-from app.core.context_assembly import apply_writer_context_budget, assemble_writer_context
+from app.core.context_assembly import (
+    DEFAULT_WORLD_CONTEXT_TOKEN_BUDGET,
+    apply_writer_context_budget,
+    assemble_writer_context,
+)
 from app.core.continuation_text import (
     append_user_instruction_for_relevance,
     extract_narrative_constraints,
     format_recent_chapters_for_prompt,
     format_world_context_for_prompt,
 )
-from app.models import User
+from app.models import NovelOutline, User
 from app.schemas import ContinueDebugSummary, ContinueRequest
 
 from . import novel_support
 
 logger = logging.getLogger(__name__)
+
+
+def _outline_error(code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=422, detail={"code": code, "message": message})
+
+
+def _format_selected_outlines(
+    db: Session,
+    *,
+    novel_id: int,
+    outline_ids: list[int],
+    locale: str | None,
+) -> str:
+    if not outline_ids:
+        return ""
+
+    rows = (
+        db.query(NovelOutline)
+        .filter(
+            NovelOutline.novel_id == novel_id,
+            NovelOutline.id.in_(outline_ids),
+        )
+        .all()
+    )
+    rows_by_id = {int(row.id): row for row in rows}
+    missing = [outline_id for outline_id in outline_ids if outline_id not in rows_by_id]
+    if missing:
+        raise _outline_error(
+            "outline_not_found",
+            f"Selected outline {missing[0]} no longer exists.",
+        )
+
+    use_chinese = str(locale or "").lower().startswith("zh")
+    sections: list[str] = []
+    for outline_id in outline_ids:
+        row = rows_by_id[outline_id]
+        if use_chinese:
+            heading = f"第{row.start_chapter}—{row.end_chapter}章剧情大纲"
+        else:
+            heading = f"Plot outline for chapters {row.start_chapter}–{row.end_chapter}"
+        sections.append(f"[{heading}]\n{row.content.strip()}")
+
+    context = (
+        "\n<selected_plot_outlines>\n"
+        + "\n\n".join(sections)
+        + "\n</selected_plot_outlines>\n"
+    )
+    if len(context) > get_settings().outline_context_max_chars:
+        raise _outline_error(
+            "outline_context_too_large",
+            "The selected outlines are too long to inject together. Select fewer outlines.",
+        )
+    return context
 
 
 def _build_continue_debug_summary(
@@ -118,15 +175,29 @@ def _prepare_continuation_context(
     novel_language = getattr(novel, "language", None)
     recent_text = format_recent_chapters_for_prompt(recent_chapters, locale=novel_language)
     relevance_text = append_user_instruction_for_relevance(recent_text, req.prompt, locale=novel_language)
+    outline_context = _format_selected_outlines(
+        db,
+        novel_id=novel_id,
+        outline_ids=req.outline_ids,
+        locale=novel_language,
+    )
+    remaining_world_context_budget = max(
+        1,
+        DEFAULT_WORLD_CONTEXT_TOKEN_BUDGET - len(outline_context),
+    )
 
     try:
         writer_ctx = assemble_writer_context(db, novel_id, chapter_text=relevance_text)
-        writer_ctx = apply_writer_context_budget(writer_ctx)
+        writer_ctx = apply_writer_context_budget(
+            writer_ctx,
+            max_estimated_tokens=remaining_world_context_budget,
+        )
     except Exception:
         logger.exception("assemble_writer_context failed for novel %s", novel_id)
         raise HTTPException(status_code=500, detail="Context assembly failed")
 
     world_context = format_world_context_for_prompt(writer_ctx, locale=novel_language)
+    world_context = outline_context + world_context
     narrative_constraints = extract_narrative_constraints(writer_ctx)
     debug_summary = _build_continue_debug_summary(
         writer_ctx,

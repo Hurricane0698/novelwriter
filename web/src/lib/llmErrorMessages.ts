@@ -45,10 +45,15 @@ export function getLlmApiErrorMessage(err: ApiError, locale?: UiLocale): string 
     case 'ai_budget_meter_unavailable':
       return translateUiMessage(effectiveLocale, 'llm.error.budgetUnavailable')
     case 'world_generate_llm_unavailable':
+    case 'outline_generation_llm_unavailable':
       return translateUiMessage(effectiveLocale, 'llm.error.modelUnavailable')
     case 'continuation_duplicate_request':
     case 'continuation_request_still_running':
       return translateUiMessage(effectiveLocale, 'continuation.results.alreadyRunning')
+    case 'outline_not_found':
+      return translateUiMessage(effectiveLocale, 'continuation.setup.outline.error.notFound')
+    case 'outline_context_too_large':
+      return translateUiMessage(effectiveLocale, 'continuation.setup.outline.error.selectedTooLarge')
     case 'world_generate_duplicate_request':
       return translateUiMessage(effectiveLocale, 'worldModel.generate.conflict')
     case 'bootstrap_index_already_fresh':

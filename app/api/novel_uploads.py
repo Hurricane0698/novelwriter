@@ -253,6 +253,12 @@ def delete_novel(
         where_sql="novel_id = :novel_id",
         params={"novel_id": novel_id},
     )
+    novel_support.safe_delete_where(
+        db,
+        table="novel_outlines",
+        where_sql="novel_id = :novel_id",
+        params={"novel_id": novel_id},
+    )
 
     novel_support.safe_delete_where(
         db,

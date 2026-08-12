@@ -294,6 +294,30 @@ describe('api service', () => {
     expect(headers['X-LLM-Model']).toBe('m')
   })
 
+  it('createOutline forwards selfhost BYOK headers and the selected range', async () => {
+    setSelfhostLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      id: 9,
+      novel_id: 7,
+      start_chapter: 1,
+      end_chapter: 20,
+      title: '第1—20章剧情大纲',
+      content: '摘要',
+      model: 'm',
+      created_at: '2026-08-12T00:00:00Z',
+      updated_at: '2026-08-12T00:00:00Z',
+    }), { status: 201 }))
+
+    await api.createOutline(7, 1, 20)
+
+    const init = vi.mocked(fetch).mock.calls[0][1]
+    const headers = init.headers as Record<string, string>
+    expect(headers['X-LLM-Base-Url']).toBe('http://example.com/v1')
+    expect(headers['X-LLM-Api-Key']).toBe('sk-test')
+    expect(headers['X-LLM-Model']).toBe('m')
+    expect(init.body).toBe(JSON.stringify({ start_chapter: 1, end_chapter: 20 }))
+  })
+
   it.each([
     {
       field: 'base URL',

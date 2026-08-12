@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     # little over target to severing mid-plot). 1.0 disables forward overshoot.
     continuation_trim_overrun_ratio: float = 1.15
 
+    # Manually ranged outline generation and prompt-injection budgets.
+    outline_max_range_chapters: int = 100
+    outline_source_max_chars: int = 120_000
+    outline_context_max_chars: int = 40_000
+    outline_generation_max_tokens: int = 4_000
+
     # World generation from free-text settings
     world_generation_chunk_chars: int = 7000
     world_generation_chunk_overlap_chars: int = 500
@@ -229,6 +235,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 "max_background_concurrent_llm_calls cannot exceed max_concurrent_llm_calls"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_outline_limits(self) -> "Settings":
+        for field_name in (
+            "outline_max_range_chapters",
+            "outline_source_max_chars",
+            "outline_context_max_chars",
+            "outline_generation_max_tokens",
+        ):
+            if int(getattr(self, field_name)) < 1:
+                raise ValueError(f"{field_name} must be >= 1")
         return self
 
     @classmethod

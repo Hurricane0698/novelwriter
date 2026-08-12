@@ -1,22 +1,24 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronUp, Sparkles, Trash2 } from 'lucide-react'
 import { AssistToggleButton } from '@/components/studio/AssistToggleButton'
 import { useQuery } from '@tanstack/react-query'
 import { GlassCard } from '@/components/GlassCard'
 import { AdvancedRow } from '@/components/workspace/AdvancedRow'
 import { NwButton } from '@/components/ui/nw-button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { PlainTextContent } from '@/components/ui/plain-text-content'
 import { MarkdownContent } from '@/components/ui/markdown-content'
 import { cn } from '@/lib/utils'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { novelKeys } from '@/hooks/novel/keys'
 import { api } from '@/services/api'
 import { LENGTH_OPTIONS } from '@/hooks/novel/useContinuationSetupState'
 import { isMarkdownContentFormat } from '@/lib/novelContentFormat'
-import type { NovelContentFormat } from '@/types/api'
+import type { NovelContentFormat, NovelOutline } from '@/types/api'
 
 /**
  * Embeddable continuation-setup stage for the Studio center area.
@@ -42,6 +44,17 @@ export function ContinuationSetupStage({
   onNumVersionsChange,
   temperature,
   onTemperatureChange,
+  outlines,
+  outlinesLoading,
+  outlineError,
+  selectedOutlineIds,
+  onSelectedOutlineIdsChange,
+  outlineRange,
+  onOutlineRangeChange,
+  outlineGenerating,
+  outlineDeletingId,
+  onCreateOutline,
+  onDeleteOutline,
   onGenerate,
   assistOpen,
   onToggleAssist,
@@ -62,11 +75,23 @@ export function ContinuationSetupStage({
   onNumVersionsChange: (next: string) => void
   temperature: string
   onTemperatureChange: (next: string) => void
+  outlines: NovelOutline[]
+  outlinesLoading: boolean
+  outlineError: string | null
+  selectedOutlineIds: number[]
+  onSelectedOutlineIdsChange: (next: number[]) => void
+  outlineRange: string
+  onOutlineRangeChange: (next: string) => void
+  outlineGenerating: boolean
+  outlineDeletingId: number | null
+  onCreateOutline: () => void
+  onDeleteOutline: (outlineId: number) => Promise<void>
   onGenerate: () => void
   assistOpen?: boolean
   onToggleAssist?: () => void
 }) {
   const { t } = useUiLocale()
+  const { confirm, dialogProps } = useConfirmDialog()
   const isMarkdown = isMarkdownContentFormat(contentFormat)
   const { data: chapter, isLoading: chapterLoading } = useQuery({
     queryKey: novelKeys.chapter(novelId, chapterNum),
@@ -74,6 +99,15 @@ export function ContinuationSetupStage({
   })
 
   const wordCount = chapter?.content?.length ?? 0
+  const handleDeleteOutline = async (outline: NovelOutline) => {
+    const confirmed = await confirm({
+      title: t('continuation.setup.outline.delete'),
+      description: t('continuation.setup.outline.deleteConfirm', { title: outline.title }),
+      confirmText: t('continuation.setup.outline.delete'),
+      tone: 'destructive',
+    })
+    if (confirmed) await onDeleteOutline(outline.id)
+  }
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -137,14 +171,14 @@ export function ContinuationSetupStage({
             {t('continuation.setup.length')}
           </label>
           <div className="flex gap-2">
-            {LENGTH_OPTIONS.map(opt => {
-              const isDisabled = opt.disabled
-              const isSelected = !isDisabled && selectedLength === opt.value
+            {LENGTH_OPTIONS.map(option => {
+              const isDisabled = option.disabled
+              const isSelected = !isDisabled && selectedLength === option.value
               return (
                 <button
-                  key={opt.value}
+                  key={option.value}
                   type="button"
-                  onClick={() => !isDisabled && onSelectedLengthChange(opt.value)}
+                  onClick={() => !isDisabled && onSelectedLengthChange(option.value)}
                   disabled={isDisabled}
                   className={cn(
                     'flex-1 h-9 rounded-[10px] border text-sm font-mono transition-colors',
@@ -155,7 +189,7 @@ export function ContinuationSetupStage({
                       : 'bg-[var(--nw-glass-bg)] border-[var(--nw-glass-border)] text-muted-foreground hover:bg-[var(--nw-glass-bg-hover)]'
                   )}
                 >
-                  {opt.label}
+                  {option.label}
                 </button>
               )
             })}
@@ -186,6 +220,76 @@ export function ContinuationSetupStage({
           <div className="overflow-hidden">
             <GlassCard className="rounded-xl p-4 flex flex-col gap-4">
               <AdvancedRow label={t('continuation.setup.contextChapters')} desc="1–5" value={contextChapters} onChange={onContextChaptersChange} type="number" min={1} max={5} step={1} />
+              <div className="border-t border-border/50 pt-3">
+                <div className="mb-1 text-xs font-medium text-foreground">
+                  {t('continuation.setup.outline.title')}
+                </div>
+                <p className="mb-2 text-[11px] leading-relaxed text-muted-foreground">
+                  {t('continuation.setup.outline.description')}
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                    aria-label={t('continuation.setup.outline.rangeLabel')}
+                    placeholder={t('continuation.setup.outline.rangePlaceholder')}
+                    value={outlineRange}
+                    onChange={event => onOutlineRangeChange(event.target.value)}
+                  />
+                  <NwButton
+                    variant="accentOutline"
+                    className="h-8 px-3 text-xs"
+                    onClick={onCreateOutline}
+                    disabled={outlineGenerating || outlineRange.trim().length === 0}
+                  >
+                    {outlineGenerating
+                      ? t('continuation.setup.outline.generating')
+                      : t('continuation.setup.outline.create')}
+                  </NwButton>
+                </div>
+                {outlineError ? (
+                  <p className="mt-2 text-[11px] leading-relaxed text-[hsl(var(--color-danger))]" role="alert">
+                    {outlineError}
+                  </p>
+                ) : null}
+                <div className="mt-2 max-h-40 space-y-1 overflow-auto">
+                  {outlinesLoading ? (
+                    <div className="text-[11px] text-muted-foreground">
+                      {t('continuation.setup.outline.loading')}
+                    </div>
+                  ) : outlines.length === 0 ? (
+                    <div className="text-[11px] text-muted-foreground">
+                      {t('continuation.setup.outline.empty')}
+                    </div>
+                  ) : outlines.map(outline => (
+                    <div key={outline.id} className="flex items-start gap-1 rounded-md px-1 py-1 text-xs hover:bg-muted/40">
+                      <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={selectedOutlineIds.includes(outline.id)}
+                          onChange={event => onSelectedOutlineIdsChange(
+                            event.target.checked
+                              ? [...selectedOutlineIds, outline.id]
+                              : selectedOutlineIds.filter(id => id !== outline.id)
+                          )}
+                        />
+                        <span className="min-w-0 truncate" title={outline.title}>
+                          {outline.title}
+                        </span>
+                      </label>
+                      <NwButton
+                        variant="ghost"
+                        className="h-6 w-6 shrink-0 p-0 text-[hsl(var(--color-danger))]"
+                        aria-label={t('continuation.setup.outline.deleteNamed', { title: outline.title })}
+                        disabled={outlineDeletingId === outline.id}
+                        onClick={() => void handleDeleteOutline(outline)}
+                      >
+                        <Trash2 size={12} />
+                      </NwButton>
+                    </div>
+                  ))}
+                </div>
+              </div>
               <AdvancedRow label={t('continuation.setup.numVersions')} desc="1–2" value={numVersions} onChange={onNumVersionsChange} type="number" min={1} max={2} step={1} />
               <AdvancedRow label={t('continuation.setup.temperature')} desc="0.0–2.0" value={temperature} onChange={onTemperatureChange} type="number" min={0} max={2} step={0.1} />
             </GlassCard>
@@ -206,6 +310,7 @@ export function ContinuationSetupStage({
           {t('continuation.setup.generate')}
         </NwButton>
       </aside>
+      <ConfirmDialog {...dialogProps} />
     </div>
   )
 }

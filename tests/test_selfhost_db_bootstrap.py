@@ -352,13 +352,30 @@ def test_matches_unversioned_baseline_for_markdown_source_contract():
         "novels": {"content_format"},
         "chapters": {"source_volume_title"},
         "novel_ingest_jobs": {"error_code"},
+        "novel_outlines": {
+            _MISSING_TABLE,
+            "novel_id",
+            "start_chapter",
+            "end_chapter",
+            "title",
+            "content",
+            "model",
+            "created_at",
+            "updated_at",
+        },
     }
 
     assert _matching_unversioned_upgrade_baseline(missing_columns) == "040"
 
 
 def test_matches_latest_safe_baseline_when_schema_is_current():
-    assert _matching_unversioned_upgrade_baseline({}) == "040"
+    assert _matching_unversioned_upgrade_baseline({}) == "041"
+
+
+def test_matches_unversioned_baseline_missing_only_novel_outlines():
+    assert _matching_unversioned_upgrade_baseline(
+        {"novel_outlines": {_MISSING_TABLE}},
+    ) == "041"
 
 
 def test_revision_032_upgrade_creates_generation_admission_tables_and_preserves_data(

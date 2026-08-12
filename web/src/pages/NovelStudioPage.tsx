@@ -1182,6 +1182,17 @@ export function NovelStudioPage() {
                 onNumVersionsChange={continuationState.setNumVersions}
                 temperature={continuationState.temperature}
                 onTemperatureChange={continuationState.setTemperature}
+                outlines={continuationState.outlines}
+                outlinesLoading={continuationState.outlinesLoading}
+                outlineError={continuationState.outlineError}
+                selectedOutlineIds={continuationState.selectedOutlineIds}
+                onSelectedOutlineIdsChange={continuationState.setSelectedOutlineIds}
+                outlineRange={continuationState.outlineRange}
+                onOutlineRangeChange={continuationState.setOutlineRange}
+                outlineGenerating={continuationState.outlineGenerating}
+                outlineDeletingId={continuationState.outlineDeletingId}
+                onCreateOutline={continuationState.handleCreateOutline}
+                onDeleteOutline={continuationState.handleDeleteOutline}
                 onGenerate={continuationState.handleGenerate}
                 assistOpen={showAssistRail}
                 onToggleAssist={handleToggleAssist}

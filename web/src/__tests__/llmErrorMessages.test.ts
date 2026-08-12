@@ -94,6 +94,22 @@ describe('llmErrorMessages', () => {
     expect(getLlmApiErrorMessage(bootstrapErr)).toContain('已经是最新状态')
   })
 
+  it('maps selected outline validation errors without backend diagnostics', () => {
+    const missingErr = new ApiError(422, 'HTTP 422', {
+      code: 'outline_not_found',
+      detail: { code: 'outline_not_found', message: 'missing outline id 123' },
+    })
+    const oversizedErr = new ApiError(422, 'HTTP 422', {
+      code: 'outline_context_too_large',
+      detail: { code: 'outline_context_too_large', message: 'internal size details' },
+    })
+
+    expect(getLlmApiErrorMessage(missingErr)).toContain('已不存在')
+    expect(getLlmApiErrorMessage(missingErr)).not.toContain('123')
+    expect(getLlmApiErrorMessage(oversizedErr, 'en')).toContain('too large')
+    expect(getLlmApiErrorMessage(oversizedErr, 'en')).not.toContain('internal size')
+  })
+
   it('warns when the current BYOK config is partial', () => {
     expect(
       getLlmConfigWarning({ baseUrl: 'https://example.com/v1', apiKey: '', model: '' }),

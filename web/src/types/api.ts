@@ -155,7 +155,20 @@ export interface ContinueRequest {
   max_tokens?: number
   target_chars?: number
   context_chapters?: number
+  outline_ids?: number[]
   temperature?: number
+}
+
+export interface NovelOutline {
+  id: number
+  novel_id: number
+  start_chapter: number
+  end_chapter: number
+  title: string
+  content: string
+  model?: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface PostcheckWarning {
