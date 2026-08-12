@@ -11,6 +11,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.content_formats import PLAIN_TEXT_CONTENT_FORMAT
 from app.core.indexing.lifecycle import (
     enqueue_window_index_rebuild_job,
     mark_window_index_inputs_changed,
@@ -87,6 +88,7 @@ def seed_demo_novel(db: Session, user: User) -> int | None:
         title=DEMO_TITLE,
         author=DEMO_AUTHOR,
         file_path=str(DEMO_TXT),
+        content_format=PLAIN_TEXT_CONTENT_FORMAT,
         total_chapters=len(chapters),
         owner_id=user.id,
     )

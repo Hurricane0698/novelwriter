@@ -13,9 +13,13 @@ from app.core.derived_assets import DERIVED_ASSET_KIND_WINDOW_INDEX
 from app.core.ingest import (
     enqueue_next_deferred_window_index_build,
     enqueue_novel_ingest_job,
+    inspect_novel_ingest_job,
+    is_novel_ingest_retry_allowed,
+    reset_novel_ingest_job_for_retry,
     resolve_ingest_policy,
     run_novel_ingest_job_until_idle,
 )
+from app.core.ingest.job_store import claim_novel_ingest_job
 from app.core.bootstrap import (
     BOOTSTRAP_RESULT_QUEUED_SOURCE_INGEST_AUTO,
     build_bootstrap_trigger_result,
@@ -315,7 +319,22 @@ def test_ingest_policy_treats_within_upload_limit_huge_manuscript_as_deferred_la
     )
 
 
-def test_status_endpoint_surfaces_failed_ingest_as_retryable(client, db, tmp_path, user):
+@pytest.mark.parametrize(
+    "error_code",
+    [
+        "source_missing",
+        "source_encoding_unsupported",
+        "markdown_structure_invalid",
+        None,
+    ],
+)
+def test_status_endpoint_and_retry_admission_share_terminal_ingest_contract(
+    client,
+    db,
+    tmp_path,
+    user,
+    error_code,
+):
     file_path = _write_source(tmp_path, "failed.txt", "坏掉的内容")
     novel = Novel(title="T", author="A", language="zh", file_path=file_path, owner_id=user.id)
     db.add(novel)
@@ -326,16 +345,18 @@ def test_status_endpoint_surfaces_failed_ingest_as_retryable(client, db, tmp_pat
         status="failed",
         stage="failed",
         source_bytes=10,
-        error="稿件解析失败，请检查章节格式后重试",
+        error_code=error_code,
+        error="稿件源文件需要修复后重新上传",
     )
     db.add(job)
     db.commit()
 
     response = client.get(f"/api/novels/{novel.id}/status")
+    retry_response = client.post(f"/api/novels/{novel.id}/ingest/retry")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["readiness"] == "failed_retryable"
+    assert payload["readiness"] == "failed_terminal"
     assert payload["capabilities"] == {
         "chapters_available": False,
         "whole_book_index_available": False,
@@ -344,7 +365,10 @@ def test_status_endpoint_surfaces_failed_ingest_as_retryable(client, db, tmp_pat
     }
     assert payload["ingest"]["status"] == "failed"
     assert payload["ingest"]["stage"] == "failed"
-    assert payload["ingest"]["error"] == "稿件解析失败，请检查章节格式后重试"
+    assert payload["ingest"]["error_code"] == error_code
+    assert payload["ingest"]["error"] == "稿件源文件需要修复后重新上传"
+    assert retry_response.status_code == 409
+    assert retry_response.json()["detail"]["code"] == "ingest_retry_not_allowed"
 
 
 def test_status_endpoint_surfaces_huge_within_upload_limit_file_as_deferred_large(client, db, tmp_path, user):
@@ -462,13 +486,17 @@ def test_retry_endpoint_resets_failed_ingest_job_to_accepted(client, db, tmp_pat
             status="failed",
             stage="failed",
             source_bytes=128,
-            error="稿件解析失败，请检查章节格式后重试",
+            error_code="ingest_internal_error",
+            error="稿件导入失败，请稍后重试",
         )
     )
     db.commit()
 
+    status_response = client.get(f"/api/novels/{novel.id}/status")
     response = client.post(f"/api/novels/{novel.id}/ingest/retry")
 
+    assert status_response.status_code == 200
+    assert status_response.json()["readiness"] == "failed_retryable"
     assert response.status_code == 202
     payload = response.json()
     assert payload["window_index"]["readiness"] == "accepting"
@@ -479,7 +507,167 @@ def test_retry_endpoint_resets_failed_ingest_job_to_accepted(client, db, tmp_pat
     assert job is not None
     assert job.status == "queued"
     assert job.stage == "accepted"
+    assert job.error_code is None
     assert job.error is None
+
+
+def test_retry_reset_admits_failed_job_only_once(db, tmp_path, user):
+    novel = Novel(
+        title="T",
+        author="A",
+        language="zh",
+        file_path=_write_source(tmp_path, "retry-once.txt", "第一章\n正文"),
+        owner_id=user.id,
+    )
+    db.add(novel)
+    db.commit()
+    db.refresh(novel)
+    job = NovelIngestJob(
+        novel_id=novel.id,
+        status="failed",
+        stage="failed",
+        source_bytes=64,
+        error_code="ingest_internal_error",
+        error="稿件导入失败，请稍后重试",
+        finished_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    db.add(job)
+    db.commit()
+
+    assert reset_novel_ingest_job_for_retry(db, novel_id=novel.id) is True
+    assert reset_novel_ingest_job_for_retry(db, novel_id=novel.id) is False
+    db.commit()
+    db.refresh(job)
+
+    assert job.status == "queued"
+    assert job.stage == "accepted"
+    assert job.error_code is None
+    assert job.error is None
+    assert job.finished_at is None
+
+
+def test_retry_reset_preserves_running_claim_after_failed_snapshot(db, tmp_path, user):
+    novel = Novel(
+        title="T",
+        author="A",
+        language="zh",
+        file_path=_write_source(tmp_path, "retry-claimed.txt", "第一章\n正文"),
+        owner_id=user.id,
+    )
+    db.add(novel)
+    db.commit()
+    db.refresh(novel)
+    db.add(
+        NovelIngestJob(
+            novel_id=novel.id,
+            status="failed",
+            stage="failed",
+            source_bytes=64,
+            error_code="ingest_internal_error",
+            error="稿件导入失败，请稍后重试",
+        )
+    )
+    db.commit()
+
+    failed_snapshot = inspect_novel_ingest_job(db, novel_id=novel.id)
+    assert failed_snapshot is not None
+    assert is_novel_ingest_retry_allowed(failed_snapshot) is True
+
+    assert reset_novel_ingest_job_for_retry(db, novel_id=novel.id) is True
+    db.commit()
+    claim = claim_novel_ingest_job(
+        novel_id=novel.id,
+        session_factory=TestingSessionLocal,
+        worker_id="retry-race-worker",
+        settings=_selfhost_llm_missing_settings(),
+    )
+    assert claim is not None
+    running_snapshot = inspect_novel_ingest_job(db, novel_id=novel.id)
+    assert running_snapshot is not None
+    assert running_snapshot.status == "running"
+    assert running_snapshot.lease_owner == "retry-race-worker"
+    assert running_snapshot.lease_expires_at is not None
+
+    assert reset_novel_ingest_job_for_retry(db, novel_id=novel.id) is False
+    db.rollback()
+    after_reset = inspect_novel_ingest_job(db, novel_id=novel.id)
+
+    assert after_reset is not None
+    assert after_reset.status == running_snapshot.status
+    assert after_reset.stage == running_snapshot.stage
+    assert after_reset.lease_owner == running_snapshot.lease_owner
+    assert after_reset.lease_expires_at == running_snapshot.lease_expires_at
+
+
+def test_retry_endpoint_returns_conflict_when_job_is_claimed_after_snapshot(
+    client,
+    db,
+    tmp_path,
+    user,
+    monkeypatch,
+):
+    from app.api import novel_uploads as novel_uploads_api
+
+    novel = Novel(
+        title="T",
+        author="A",
+        language="zh",
+        file_path=_write_source(tmp_path, "retry-endpoint-race.txt", "第一章\n正文"),
+        owner_id=user.id,
+    )
+    db.add(novel)
+    db.commit()
+    db.refresh(novel)
+    db.add(
+        NovelIngestJob(
+            novel_id=novel.id,
+            status="failed",
+            stage="failed",
+            source_bytes=64,
+            error_code="ingest_internal_error",
+            error="稿件导入失败，请稍后重试",
+        )
+    )
+    db.commit()
+
+    original_inspect = novel_uploads_api.inspect_novel_ingest_job
+    race_injected = False
+
+    def inspect_then_claim(session, *, novel_id: int):
+        nonlocal race_injected
+        snapshot = original_inspect(session, novel_id=novel_id)
+        if snapshot is not None and not race_injected:
+            race_injected = True
+            assert reset_novel_ingest_job_for_retry(session, novel_id=novel_id) is True
+            session.commit()
+            claim = claim_novel_ingest_job(
+                novel_id=novel_id,
+                session_factory=TestingSessionLocal,
+                worker_id="endpoint-race-worker",
+                settings=_selfhost_llm_missing_settings(),
+            )
+            assert claim is not None
+        return snapshot
+
+    monkeypatch.setattr(
+        novel_uploads_api,
+        "inspect_novel_ingest_job",
+        inspect_then_claim,
+    )
+
+    response = client.post(f"/api/novels/{novel.id}/ingest/retry")
+
+    assert race_injected is True
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "ingest_retry_not_allowed",
+        "message": "Novel ingest retry is not allowed",
+    }
+    db.expire_all()
+    job = db.query(NovelIngestJob).filter(NovelIngestJob.novel_id == novel.id).one()
+    assert job.status == "running"
+    assert job.lease_owner == "endpoint-race-worker"
+    assert job.lease_expires_at is not None
 
 
 def test_deferred_window_index_build_waits_until_ingest_queue_is_idle(db, tmp_path, user):

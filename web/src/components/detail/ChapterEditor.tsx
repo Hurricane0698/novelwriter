@@ -1,11 +1,20 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { Check, Redo2, Undo2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NwButton } from '@/components/ui/nw-button'
 import { GlassCard } from '@/components/GlassCard'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
+import { MarkdownContent } from '@/components/ui/markdown-content'
+import type { TextAnnotation } from '@/components/ui/annotated-text'
+import {
+  MARKDOWN_CHAPTER_BODY_INVALID,
+  type ChapterMutationErrorCode,
+} from '@/lib/chapterMutationError'
+import { isMarkdownContentFormat } from '@/lib/novelContentFormat'
+import type { NovelContentFormat } from '@/types/api'
 
 export type AutoSaveStatus = 'saved' | 'unsaved' | 'idle'
+export type ChapterEditorSaveErrorCode = ChapterMutationErrorCode | 'chapter_save_failed'
 
 /**
  * Scroll a textarea so that the character at `charIndex` is visible.
@@ -44,11 +53,14 @@ export function ChapterEditor({
   onSelectionChange,
   cursorInfo,
   autoSaveStatus,
+  saveErrorCode,
   onUndo,
   onRedo,
   onCancel,
   onSave,
   warningTerms,
+  previewAnnotations,
+  contentFormat,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
   value: string
@@ -56,19 +68,29 @@ export function ChapterEditor({
   onSelectionChange: () => void
   cursorInfo: { para: number; col: number }
   autoSaveStatus: AutoSaveStatus
+  saveErrorCode: ChapterEditorSaveErrorCode | null
   onUndo: () => void
   onRedo: () => void
   onCancel: () => void
   onSave: () => void
   warningTerms?: { code: string; term: string }[]
+  previewAnnotations?: TextAnnotation[]
+  contentFormat: NovelContentFormat
 }) {
   const { t } = useUiLocale()
   const wordCount = value.replace(/\s/g, '').length
+  const [markdownTab, setMarkdownTab] = useState<'source' | 'preview'>('source')
+  const isMarkdown = isMarkdownContentFormat(contentFormat)
+  const saveErrorMessage = saveErrorCode === null
+    ? null
+    : saveErrorCode === MARKDOWN_CHAPTER_BODY_INVALID
+      ? t('editor.error.markdownChapterBodyInvalid')
+      : t('editor.error.saveFailed')
 
   // Track last-found offset per term so repeated clicks cycle through occurrences
   const lastPosRef = useRef<Map<string, number>>(new Map())
 
-  const handleJumpToTerm = (term: string) => {
+  const jumpTextareaToTerm = (term: string) => {
     const ta = textareaRef.current
     if (!ta) return
     const lastPos = lastPosRef.current.get(term) ?? -1
@@ -82,6 +104,15 @@ export function ChapterEditor({
     ta.focus()
     ta.setSelectionRange(idx, idx + term.length)
     scrollTextareaTo(ta, idx)
+  }
+
+  const handleJumpToTerm = (term: string) => {
+    if (isMarkdown && markdownTab === 'preview') {
+      setMarkdownTab('source')
+      requestAnimationFrame(() => jumpTextareaToTerm(term))
+      return
+    }
+    jumpTextareaToTerm(term)
   }
 
   return (
@@ -103,6 +134,25 @@ export function ChapterEditor({
         >
           <Redo2 size={16} />
         </NwButton>
+        {isMarkdown ? (
+          <div className="ml-2 flex items-center rounded-lg border border-[var(--nw-glass-border)] bg-[hsl(var(--foreground)/0.03)] p-0.5">
+            {(['source', 'preview'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setMarkdownTab(tab)}
+                className={cn(
+                  'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                  markdownTab === tab
+                    ? 'bg-[hsl(var(--accent)/0.15)] text-accent'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {tab === 'source' ? t('editor.markdown.source') : t('editor.markdown.preview')}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {warningTerms && warningTerms.length > 0 && (
@@ -123,15 +173,31 @@ export function ChapterEditor({
         </div>
       )}
 
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onSelect={onSelectionChange}
-        onClick={onSelectionChange}
-        onKeyUp={onSelectionChange}
-        className="flex-1 resize-none bg-transparent px-8 py-6 outline-none text-[15px] leading-[2] text-foreground caret-accent nw-scrollbar-thin"
-      />
+      {isMarkdown && markdownTab === 'preview' ? (
+        <div className="min-h-0 flex-1 overflow-auto px-8 py-6 nw-scrollbar-thin" data-testid="markdown-editor-preview">
+          <MarkdownContent content={value} maxWidth annotations={previewAnnotations} />
+        </div>
+      ) : (
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onSelect={onSelectionChange}
+          onClick={onSelectionChange}
+          onKeyUp={onSelectionChange}
+          className="flex-1 resize-none bg-transparent px-8 py-6 outline-none text-[15px] leading-[2] text-foreground caret-accent nw-scrollbar-thin"
+        />
+      )}
+
+      {saveErrorMessage ? (
+        <div
+          role="alert"
+          data-testid="chapter-editor-save-error"
+          className="shrink-0 border-t border-[hsl(var(--color-danger)/0.25)] bg-[hsl(var(--color-danger)/0.08)] px-4 py-2 text-sm text-[hsl(var(--color-danger))]"
+        >
+          {saveErrorMessage}
+        </div>
+      ) : null}
 
       <div className="flex items-center justify-between px-4 py-2 border-t border-[var(--nw-glass-border)]">
         <div className="flex items-center gap-4 text-xs text-muted-foreground">

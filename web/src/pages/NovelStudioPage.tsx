@@ -1,14 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import '@/lib/uiMessagePacks/novel'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { MoreHorizontal, Pencil, Trash2, Upload } from 'lucide-react'
 import { AssistToggleButton } from '@/components/studio/AssistToggleButton'
 import { ChapterContent } from '@/components/detail/ChapterContent'
-import { ChapterEditor } from '@/components/detail/ChapterEditor'
+import {
+  ChapterEditor,
+  type ChapterEditorSaveErrorCode,
+} from '@/components/detail/ChapterEditor'
 import { PageShell } from '@/components/layout/PageShell'
 import { NwButton } from '@/components/ui/nw-button'
 import { GlassSurface } from '@/components/ui/glass-surface'
@@ -29,8 +32,14 @@ import {
   formatChapterLabel,
   getChapterDisplayTitle,
   matchesChapterSearch,
-  serializeChaptersToPlainText,
 } from '@/lib/chaptersPlainText'
+import {
+  getNativeNovelFileContract,
+  serializeChapterToNativeFormat,
+  serializeChaptersToNativeFormat,
+} from '@/lib/chaptersNativeFormat'
+import { isMarkdownChapterBodyInvalidError } from '@/lib/chapterMutationError'
+import type { Novel } from '@/types/api'
 import { useDebouncedAutoSave } from '@/hooks/useDebouncedAutoSave'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -78,7 +87,7 @@ import {
   buildRelationshipResearchCopilotLaunchArgs,
 } from '@/components/novel-copilot/novelCopilotLauncher'
 import { useStudioCopilotTargetNavigation } from '@/components/novel-copilot/useCopilotTargetNavigation'
-import type { TextAnnotation } from '@/components/ui/plain-text-content'
+import type { TextAnnotation } from '@/components/ui/annotated-text'
 import {
   resolveInjectionSummaryNavigationTarget,
   type InjectionSummaryCategory,
@@ -148,6 +157,7 @@ function isUploadEntryLocationState(value: unknown): boolean {
 export function NovelStudioPage() {
   const { novelId: novelIdParam } = useParams<{ novelId: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const novelId = Number(novelIdParam)
@@ -188,8 +198,70 @@ export function NovelStudioPage() {
   const [titleDraft, setTitleDraft] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [editorContent, setEditorContent] = useState('')
+  const [editorSaveError, setEditorSaveError] = useState<{
+    novelId: number
+    chapterNumber: number
+    locationKey: string
+    saveGeneration: number
+    code: ChapterEditorSaveErrorCode
+  } | null>(null)
+  const [chapterCreateError, setChapterCreateError] = useState<{
+    novelId: number
+    locationKey: string
+    createGeneration: number
+  } | null>(null)
+  const [nativeExportError, setNativeExportError] = useState<{
+    novelId: number
+    locationKey: string
+    exportGeneration: number
+  } | null>(null)
+  const [ingestRetryError, setIngestRetryError] = useState<{
+    novelId: number
+    locationKey: string
+    retryGeneration: number
+  } | null>(null)
   const [showMoreActions, setShowMoreActions] = useState(false)
   const [assistOpen, setAssistOpen] = useState(true)
+
+  const exportGenerationRef = useRef(0)
+  const exportNovelContextRef = useRef({ novelId, locationKey: location.key })
+
+  const ingestRetryGenerationRef = useRef(0)
+  const ingestRetryNovelContextRef = useRef({ novelId, locationKey: location.key })
+
+  const chapterCreateGenerationRef = useRef(0)
+  const chapterCreateNovelContextRef = useRef({ novelId, locationKey: location.key })
+
+  useLayoutEffect(() => {
+    const nextContext = { novelId, locationKey: location.key }
+    if (
+      exportNovelContextRef.current.novelId !== nextContext.novelId
+      || exportNovelContextRef.current.locationKey !== nextContext.locationKey
+    ) {
+      exportNovelContextRef.current = nextContext
+      exportGenerationRef.current += 1
+    }
+    if (
+      ingestRetryNovelContextRef.current.novelId !== nextContext.novelId
+      || ingestRetryNovelContextRef.current.locationKey !== nextContext.locationKey
+    ) {
+      ingestRetryNovelContextRef.current = nextContext
+      ingestRetryGenerationRef.current += 1
+    }
+    if (
+      chapterCreateNovelContextRef.current.novelId !== nextContext.novelId
+      || chapterCreateNovelContextRef.current.locationKey !== nextContext.locationKey
+    ) {
+      chapterCreateNovelContextRef.current = nextContext
+      chapterCreateGenerationRef.current += 1
+    }
+  }, [location.key, novelId])
+
+  useLayoutEffect(() => () => {
+    exportGenerationRef.current += 1
+    ingestRetryGenerationRef.current += 1
+    chapterCreateGenerationRef.current += 1
+  }, [])
 
   const { data: worldEntities = [], isLoading: worldEntitiesLoading } = useWorldEntities(novelId)
   const { data: worldSystems = [], isLoading: worldSystemsLoading } = useWorldSystems(novelId)
@@ -218,6 +290,80 @@ export function NovelStudioPage() {
     enabled: !!novelIdParam,
     refetchInterval: (query) => getWindowIndexPollingInterval(query.state.data?.window_index ?? null),
   })
+  const cancelNovelDetailFetch = useCallback(async (targetNovelId: number) => {
+    await queryClient.cancelQueries({
+      queryKey: novelKeys.detail(targetNovelId),
+      exact: true,
+    })
+  }, [queryClient])
+  const fetchAuthoritativeNovelDetail = useCallback(async (targetNovelId: number) => {
+    const queryKey = novelKeys.detail(targetNovelId)
+    await cancelNovelDetailFetch(targetNovelId)
+    await queryClient.invalidateQueries({ queryKey, exact: true, refetchType: 'none' })
+    return queryClient.fetchQuery({
+      queryKey,
+      queryFn: () => api.getNovel(targetNovelId),
+    })
+  }, [cancelNovelDetailFetch, queryClient])
+  const retryNovelIngest = useMutation({
+    mutationFn: ({ targetNovelId }: {
+      targetNovelId: number
+      requestLocationKey: string
+      retryGeneration: number
+    }) => (
+      api.retryNovelIngest(targetNovelId)
+    ),
+    onMutate: async ({ targetNovelId, requestLocationKey, retryGeneration }) => {
+      await cancelNovelDetailFetch(targetNovelId)
+      if (
+        ingestRetryNovelContextRef.current.novelId === targetNovelId
+        && ingestRetryNovelContextRef.current.locationKey === requestLocationKey
+        && ingestRetryGenerationRef.current === retryGeneration
+      ) {
+        setIngestRetryError(null)
+      }
+    },
+    onSuccess: async (updatedNovel, { targetNovelId, requestLocationKey, retryGeneration }) => {
+      await cancelNovelDetailFetch(targetNovelId)
+      queryClient.setQueryData(novelKeys.detail(targetNovelId), updatedNovel)
+      if (
+        ingestRetryNovelContextRef.current.novelId === targetNovelId
+        && ingestRetryNovelContextRef.current.locationKey === requestLocationKey
+        && ingestRetryGenerationRef.current === retryGeneration
+      ) {
+        setIngestRetryError(null)
+      }
+    },
+    onError: async (_error, { targetNovelId, requestLocationKey, retryGeneration }) => {
+      let refreshedNovel: Novel | null = null
+      try {
+        refreshedNovel = await fetchAuthoritativeNovelDetail(targetNovelId)
+      } catch {
+        // The original retry failure remains authoritative for visible feedback.
+      }
+
+      if (
+        ingestRetryNovelContextRef.current.novelId !== targetNovelId
+        || ingestRetryNovelContextRef.current.locationKey !== requestLocationKey
+        || ingestRetryGenerationRef.current !== retryGeneration
+      ) {
+        return
+      }
+      const refreshedRetryStillFailed = (
+        refreshedNovel?.window_index?.readiness === 'failed_retryable'
+        && refreshedNovel.window_index.ingest?.status === 'failed'
+      )
+      if (refreshedNovel !== null && !refreshedRetryStillFailed) {
+        setIngestRetryError(null)
+        return
+      }
+      setIngestRetryError({
+        novelId: targetNovelId,
+        locationKey: requestLocationKey,
+        retryGeneration,
+      })
+    },
+  })
   const { data: bootstrapJob, isLoading: bootstrapLoading } = useBootstrapStatus(novelId, {
     refetchWhenMissing: novel?.window_index?.ingest?.bootstrap_plan != null,
   })
@@ -245,6 +391,42 @@ export function NovelStudioPage() {
     }
     return chaptersMeta[0]?.chapter_number ?? null
   }, [chaptersMeta, routeState.chapterNum])
+  const chapterCreateErrorVisible = (
+    chapterCreateError?.novelId === novelId
+    && chapterCreateError.locationKey === location.key
+  )
+  const editorSaveGenerationRef = useRef(0)
+  const editorSaveContextRef = useRef({
+    novelId,
+    chapterNumber: activeChapterNum,
+    locationKey: location.key,
+  })
+  useLayoutEffect(() => {
+    const nextContext = {
+      novelId,
+      chapterNumber: activeChapterNum,
+      locationKey: location.key,
+    }
+    if (
+      editorSaveContextRef.current.novelId !== nextContext.novelId
+      || editorSaveContextRef.current.chapterNumber !== nextContext.chapterNumber
+      || editorSaveContextRef.current.locationKey !== nextContext.locationKey
+    ) {
+      editorSaveContextRef.current = nextContext
+      editorSaveGenerationRef.current += 1
+    }
+  }, [activeChapterNum, location.key, novelId])
+  const editorSaveErrorCode = (
+    editorSaveError?.novelId === novelId
+    && editorSaveError.chapterNumber === activeChapterNum
+    && editorSaveError.locationKey === location.key
+  )
+    ? editorSaveError.code
+    : null
+  const nativeExportErrorVisible = (
+    nativeExportError?.novelId === novelId
+    && nativeExportError.locationKey === location.key
+  )
   const latestChapterNum = chaptersMeta.length > 0 ? chaptersMeta[chaptersMeta.length - 1].chapter_number : null
   const latestChapterMeta = chaptersMeta.length > 0 ? chaptersMeta[chaptersMeta.length - 1] : null
   const latestChapterReference = latestChapterMeta ? formatChapterBadgeLabel(latestChapterMeta) : null
@@ -263,10 +445,55 @@ export function NovelStudioPage() {
   } = useDebouncedAutoSave<string>({
     delayMs: AUTO_SAVE_DELAY,
     save: async (content) => {
-      if (activeChapterNum === null) return
-      await updateChapter.mutateAsync({ content })
+      const savingNovelId = novelId
+      const savingChapterNumber = activeChapterNum
+      const savingLocationKey = location.key
+      if (savingChapterNumber === null) return
+      const saveGeneration = editorSaveGenerationRef.current + 1
+      editorSaveGenerationRef.current = saveGeneration
+      setEditorSaveError(null)
+      const isCurrentSave = () => (
+        editorSaveGenerationRef.current === saveGeneration
+        && editorSaveContextRef.current.novelId === savingNovelId
+        && editorSaveContextRef.current.chapterNumber === savingChapterNumber
+        && editorSaveContextRef.current.locationKey === savingLocationKey
+      )
+      try {
+        await updateChapter.mutateAsync({ content })
+        if (isCurrentSave()) {
+          setEditorSaveError(null)
+        }
+      } catch (error) {
+        if (isCurrentSave()) {
+          setEditorSaveError({
+            novelId: savingNovelId,
+            chapterNumber: savingChapterNumber,
+            locationKey: savingLocationKey,
+            saveGeneration,
+            code: isMarkdownChapterBodyInvalidError(error) ? error.code : 'chapter_save_failed',
+          })
+        }
+        throw error
+      }
     },
   })
+  const saveCurrentEditorNow = useCallback(async (): Promise<boolean> => {
+    const targetNovelId = novelId
+    const targetChapterNumber = activeChapterNum
+    const targetLocationKey = location.key
+    if (targetChapterNumber === null) return false
+    const savePromise = saveNowAutoSave(editorContent)
+    // useDebouncedAutoSave invokes the current save callback synchronously before
+    // yielding, so this is the generation reserved for this manual save.
+    const saveGeneration = editorSaveGenerationRef.current
+    await savePromise
+    return (
+      editorSaveGenerationRef.current === saveGeneration
+      && editorSaveContextRef.current.novelId === targetNovelId
+      && editorSaveContextRef.current.chapterNumber === targetChapterNumber
+      && editorSaveContextRef.current.locationKey === targetLocationKey
+    )
+  }, [activeChapterNum, editorContent, location.key, novelId, saveNowAutoSave])
 
   const { data: chapter, isLoading: chapterLoading } = useQuery({
     queryKey: novelKeys.chapter(novelId, activeChapterNum ?? 0),
@@ -299,7 +526,7 @@ export function NovelStudioPage() {
 
   // Read-mode: full annotations with popovers
   const chapterDriftAnnotations: TextAnnotation[] = (() => {
-    if (editMode || activeChapterWarnings.length === 0) return []
+    if (activeChapterWarnings.length === 0) return []
     return activeChapterWarnings.map(w => ({
       id: `drift-${w.code}-${w.term}`,
       term: w.term,
@@ -330,44 +557,115 @@ export function NovelStudioPage() {
   useEffect(() => {
     // Prevent autosave timers from leaking across chapter switches.
     cancelAutoSave()
-  }, [activeChapterNum, cancelAutoSave])
+  }, [activeChapterNum, cancelAutoSave, location.key, novelId])
 
   const handleEditorChange = (val: string) => {
+    editorSaveGenerationRef.current += 1
+    setEditorSaveError(null)
     setEditorContent(val)
     scheduleAutoSave(val)
   }
   const handleSave = () => {
     if (activeChapterNum === null) return
-    void saveNowAutoSave(editorContent)
-      .then(() => setEditMode(false))
+    void saveCurrentEditorNow()
+      .then((isCurrentSave) => {
+        if (isCurrentSave) setEditMode(false)
+      })
       .catch(() => {
         // Keep the editor open; user can retry.
       })
   }
   const handleCancelEdit = () => {
+    editorSaveGenerationRef.current += 1
     cancelAutoSave()
     setEditorContent(chapter?.content ?? '')
+    setEditorSaveError(null)
     setEditMode(false)
   }
   const handleExportAll = async () => {
+    const exportingNovelId = novelId
+    const exportingLocationKey = location.key
+    const exportGeneration = exportGenerationRef.current + 1
+    exportGenerationRef.current = exportGeneration
+    setNativeExportError(null)
+    const isCurrentExport = () => (
+      exportGenerationRef.current === exportGeneration
+      && exportNovelContextRef.current.novelId === exportingNovelId
+      && exportNovelContextRef.current.locationKey === exportingLocationKey
+    )
     try {
-      const allChapters = await api.listChapters(novelId)
-      const content = serializeChaptersToPlainText(allChapters)
+      const allChapters = await api.listChapters(exportingNovelId)
+      if (!isCurrentExport()) return
+      if (!novel) return
+      const fileContract = getNativeNovelFileContract(novel.content_format)
+      const content = serializeChaptersToNativeFormat(allChapters, novel.content_format)
       downloadTextFile(
-        `${novel?.title ?? 'novel'}_all_chapters_${new Date().toISOString().slice(0, 10)}.txt`,
-        content
+        `${novel.title}_all_chapters_${new Date().toISOString().slice(0, 10)}${fileContract.extension}`,
+        content,
+        fileContract.mimeType,
       )
-    } catch { /* ignore */ }
+    } catch {
+      if (isCurrentExport()) {
+        setNativeExportError({
+          novelId: exportingNovelId,
+          locationKey: exportingLocationKey,
+          exportGeneration,
+        })
+      }
+    }
+  }
+  const handleExportChapter = () => {
+    if (!novel || !chapter) return
+    const exportGeneration = exportGenerationRef.current + 1
+    exportGenerationRef.current = exportGeneration
+    setNativeExportError(null)
+    try {
+      const fileContract = getNativeNovelFileContract(novel.content_format)
+      downloadTextFile(
+        `${novel.title}_${formatChapterBadgeLabel(chapter)}${fileContract.extension}`,
+        serializeChapterToNativeFormat(chapter, novel.content_format),
+        fileContract.mimeType,
+      )
+    } catch {
+      setNativeExportError({ novelId, locationKey: location.key, exportGeneration })
+    }
   }
   const handleCreateChapter = () => {
+    const targetNovelId = novelId
+    const targetLocationKey = location.key
+    const createGeneration = chapterCreateGenerationRef.current + 1
+    chapterCreateGenerationRef.current = createGeneration
+    setChapterCreateError(null)
     createChapter.mutate({ title: '', content: '' }, {
       onSuccess: (nc) => {
+        if (
+          chapterCreateNovelContextRef.current.novelId !== targetNovelId
+          || chapterCreateNovelContextRef.current.locationKey !== targetLocationKey
+          || chapterCreateGenerationRef.current !== createGeneration
+        ) {
+          return
+        }
+        editorSaveGenerationRef.current += 1
         cancelAutoSave()
         setEditorContent('')
+        setEditorSaveError(null)
         setEditingTitle(false)
         setEditMode(true)
         setShowMoreActions(false)
         navigateToChapterStage(nc.chapter_number)
+      },
+      onError: () => {
+        if (
+          chapterCreateNovelContextRef.current.novelId === targetNovelId
+          && chapterCreateNovelContextRef.current.locationKey === targetLocationKey
+          && chapterCreateGenerationRef.current === createGeneration
+        ) {
+          setChapterCreateError({
+            novelId: targetNovelId,
+            locationKey: targetLocationKey,
+            createGeneration,
+          })
+        }
       },
     })
   }
@@ -390,6 +688,7 @@ export function NovelStudioPage() {
     if (!confirmed) return
     deleteChapter.mutate(activeChapterNum, {
       onSuccess: () => {
+        editorSaveGenerationRef.current += 1
         cancelAutoSave()
         // Clean up persisted drift warnings for the deleted chapter
         setActiveWarnings(novelId, activeChapterNum, [])
@@ -564,8 +863,9 @@ export function NovelStudioPage() {
     }
 
     if (editMode) {
-      void saveNowAutoSave(editorContent)
-        .then(() => {
+      void saveCurrentEditorNow()
+        .then((isCurrentSave) => {
+          if (!isCurrentSave) return
           setEditMode(false)
           commitNavigation()
         })
@@ -576,7 +876,7 @@ export function NovelStudioPage() {
     }
 
     commitNavigation()
-  }, [applyWorldEntryRouteSearchParams, atlasStudioOrigin, editMode, editorContent, navigate, novelId, saveNowAutoSave, warmAtlasAssist])
+  }, [applyWorldEntryRouteSearchParams, atlasStudioOrigin, editMode, navigate, novelId, saveCurrentEditorNow, warmAtlasAssist])
   const handleReturnToArtifact = () => {
     if (hasResultsContext) {
       navigateToResultsStage()
@@ -659,6 +959,16 @@ export function NovelStudioPage() {
     return undefined
   }, [activeStage, effectiveStudioEntityId, effectiveStudioEntityName, openEntityCopilot, openRelationshipCopilot, t])
   const worldLoading = worldEntitiesLoading || worldSystemsLoading || bootstrapLoading
+  const handleRetryNovelIngest = () => {
+    const retryGeneration = ingestRetryGenerationRef.current + 1
+    ingestRetryGenerationRef.current = retryGeneration
+    setIngestRetryError(null)
+    retryNovelIngest.mutate({
+      targetNovelId: novelId,
+      requestLocationKey: location.key,
+      retryGeneration,
+    })
+  }
   const {
     bootstrapError,
     chaptersAvailable,
@@ -690,10 +1000,22 @@ export function NovelStudioPage() {
         },
       )
     },
+    retryIngest: handleRetryNovelIngest,
+    returnToLibrary: () => navigate('/library'),
     dismissWorldOnboardingRoute: () => {
       navigate(`/world/${novelId}`)
     },
   })
+  const visiblePreparationGate = (
+    preparationGate
+    && ingestRetryError?.novelId === novelId
+    && ingestRetryError.locationKey === location.key
+  )
+    ? {
+        ...preparationGate,
+        error: t('studio.preparation.retryFailed'),
+      }
+    : preparationGate
 
   const handleToggleAssist = useCallback(() => {
     setAssistOpen(current => !current)
@@ -728,16 +1050,23 @@ export function NovelStudioPage() {
   const currentChapterIdentity = chapter ?? currentMeta ?? null
   const displayTitle = currentChapterIdentity ? getChapterDisplayTitle(currentChapterIdentity.title) : ''
   const activeChapterReference = currentChapterIdentity ? formatChapterBadgeLabel(currentChapterIdentity) : null
-  const showEntryStage = preparationGate !== null || showWorldOnboarding
+  const showEntryStage = visiblePreparationGate !== null || showWorldOnboarding
 
   return (
     <PageShell className="h-screen" navbarProps={{ position: 'static' }} mainClassName="min-h-0 flex-1 overflow-hidden">
       {showEntryStage ? (
         <StudioOnboardingStage
           novelId={novelId}
-          preparationGate={preparationGate}
+          preparationGate={visiblePreparationGate}
           showWorldOnboarding={showWorldOnboarding}
           bootstrapPending={triggerBootstrap.isPending}
+          preparationActionPending={
+            triggerBootstrap.isPending
+            || (
+              retryNovelIngest.isPending
+              && retryNovelIngest.variables?.targetNovelId === novelId
+            )
+          }
           bootstrapError={bootstrapError}
           chaptersAvailable={chaptersAvailable}
           worldGenOpen={worldGenOpen}
@@ -747,6 +1076,24 @@ export function NovelStudioPage() {
         />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+          {chapterCreateErrorVisible ? (
+            <div
+              role="alert"
+              data-testid="chapter-create-error"
+              className="shrink-0 rounded-[12px] border border-[hsl(var(--color-danger)/0.25)] bg-[hsl(var(--color-danger)/0.08)] px-4 py-2 text-sm text-[hsl(var(--color-danger))]"
+            >
+              {t('studio.chapter.createFailed')}
+            </div>
+          ) : null}
+          {nativeExportErrorVisible ? (
+            <div
+              role="alert"
+              data-testid="native-export-error"
+              className="shrink-0 rounded-[12px] border border-[hsl(var(--color-danger)/0.25)] bg-[hsl(var(--color-danger)/0.08)] px-4 py-2 text-sm text-[hsl(var(--color-danger))]"
+            >
+              {t('studio.actions.exportFailed')}
+            </div>
+          ) : null}
           <NovelShellLayout className="flex-1 min-h-0 gap-3 overflow-hidden p-0">
             <NovelShellRail className="w-[280px]">
               <StudioNavigationRail
@@ -759,7 +1106,9 @@ export function NovelStudioPage() {
                 }))}
                 selectedChapterNumber={activeChapterNum}
                 onSelectChapter={(chapterNumber) => {
+                  editorSaveGenerationRef.current += 1
                   cancelAutoSave()
+                  setEditorSaveError(null)
                   setEditingTitle(false)
                   setEditorContent('')
                   setEditMode(false)
@@ -773,8 +1122,9 @@ export function NovelStudioPage() {
                 onContinuation={() => {
                   // Save-first: if editing, flush autosave before switching stage
                   if (editMode) {
-                    saveNowAutoSave(editorContent)
-                      .then(() => {
+                    saveCurrentEditorNow()
+                      .then((isCurrentSave) => {
+                        if (!isCurrentSave) return
                         setEditMode(false)
                         navigateToWriteStage()
                       })
@@ -800,6 +1150,8 @@ export function NovelStudioPage() {
               <div className={activeStage === 'results' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
               <ContinuationResultsStage
                 novelId={novelId}
+                contentFormat={novel.content_format}
+                isActive={activeStage === 'results'}
                 activeChapterNum={activeChapterNum}
                 activeChapterReference={activeChapterReference}
                 showInjectionSummaryRail={showInjectionSummaryRail}
@@ -815,6 +1167,7 @@ export function NovelStudioPage() {
               /* ── Write Stage ── */
               <ContinuationSetupStage
                 novelId={novelId}
+                contentFormat={novel.content_format}
                 chapterNum={latestChapterNum}
                 chapterReference={latestChapterReference}
                 instruction={continuationState.instruction}
@@ -982,11 +1335,14 @@ export function NovelStudioPage() {
                         <NwButton
                           onClick={() => {
                             if (activeChapterNum === null) return
+                            editorSaveGenerationRef.current += 1
                             if (!editMode) {
                               setEditorContent(chapter?.content ?? '')
                               cancelAutoSave()
+                              setEditorSaveError(null)
                             } else {
                               cancelAutoSave()
+                              setEditorSaveError(null)
                             }
                             setEditMode(!editMode)
                           }}
@@ -1021,6 +1377,17 @@ export function NovelStudioPage() {
                                 variant="floating"
                                 className="absolute right-0 top-[calc(100%+8px)] z-20 min-w-[188px] rounded-[16px] p-1.5"
                               >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setShowMoreActions(false)
+                                    handleExportChapter()
+                                  }}
+                                  className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
+                                >
+                                  <Upload size={14} className="text-muted-foreground" />
+                                  <span>{t('studio.actions.exportChapter')}</span>
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -1069,16 +1436,20 @@ export function NovelStudioPage() {
                       onSelectionChange={handleSelectionChange}
                       cursorInfo={cursorInfo}
                       autoSaveStatus={autoSaveStatus}
+                      saveErrorCode={editorSaveErrorCode}
                       onUndo={handleUndo}
                       onRedo={handleRedo}
                       onCancel={handleCancelEdit}
                       onSave={handleSave}
                       warningTerms={editorWarningTerms}
+                      previewAnnotations={chapterDriftAnnotations}
+                      contentFormat={novel.content_format}
                   />
                 ) : (
                   <ChapterContent
                     isLoading={chapterLoading}
                     content={chapter?.content ?? null}
+                    contentFormat={novel.content_format}
                     annotations={chapterDriftAnnotations}
                   />
                 )}

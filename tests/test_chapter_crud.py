@@ -130,11 +130,12 @@ class TestCreateChapter:
     def test_create_chapter_auto_number(self, client, db, novel):
         resp = client.post(
             f"/api/novels/{novel.id}/chapters",
-            json={"title": "自动编号章", "content": "自动内容"},
+            json={"content": "自动内容"},
         )
         assert resp.status_code == 201
         data = resp.json()
         assert data["chapter_number"] == 3  # total_chapters was 2
+        assert data["title"] == ""
         assert data["source_chapter_label"] is None
         assert data["source_chapter_number"] is None
 
@@ -205,6 +206,58 @@ class TestCreateChapter:
         )
         assert resp.status_code == 409
 
+    @pytest.mark.parametrize("line_break", ["\n", "\r"])
+    def test_create_chapter_rejects_multiline_title(
+        self, client, db, novel, line_break
+    ):
+        resp = client.post(
+            f"/api/novels/{novel.id}/chapters",
+            json={
+                "chapter_number": 3,
+                "title": f"第三章{line_break}越界标题",
+                "content": "内容三",
+            },
+        )
+
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == [
+            {
+                "type": "chapter_title_multiline",
+                "loc": ["body", "title"],
+                "msg": "Chapter title must be a single line",
+                "input": f"第三章{line_break}越界标题",
+            }
+        ]
+        assert (
+            db.query(Chapter)
+            .filter(Chapter.novel_id == novel.id, Chapter.chapter_number == 3)
+            .first()
+            is None
+        )
+
+    def test_create_markdown_chapter_rejects_structural_heading_in_body(
+        self, client, db, novel
+    ):
+        novel.content_format = "markdown"
+        db.commit()
+
+        resp = client.post(
+            f"/api/novels/{novel.id}/chapters",
+            json={"chapter_number": 3, "title": "第三章", "content": "## 越界章节\n正文"},
+        )
+
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == {
+            "code": "markdown_chapter_body_invalid",
+            "message": "Markdown chapter bodies cannot contain H1 or H2 headings",
+        }
+        assert (
+            db.query(Chapter)
+            .filter(Chapter.novel_id == novel.id, Chapter.chapter_number == 3)
+            .first()
+            is None
+        )
+
     def test_get_chapters_meta_preserves_source_metadata(self, client, db, novel):
         db.add(
             Chapter(
@@ -253,15 +306,40 @@ class TestUpdateChapter:
         assert data["title"] == "第一章"  # unchanged
         assert data["content"] == "仅更新内容"
 
-    def test_update_chapter_title_only(self, client, db, novel):
+    def test_update_chapter_allows_empty_title(self, client, db, novel):
         resp = client.put(
             f"/api/novels/{novel.id}/chapters/1",
-            json={"title": "仅更新标题"},
+            json={"title": ""},
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["title"] == "仅更新标题"
+        assert data["title"] == ""
         assert data["content"] == "内容一"  # unchanged
+
+    @pytest.mark.parametrize("line_break", ["\n", "\r"])
+    def test_update_chapter_rejects_multiline_title(
+        self, client, db, novel, line_break
+    ):
+        resp = client.put(
+            f"/api/novels/{novel.id}/chapters/1",
+            json={"title": f"新标题{line_break}越界标题"},
+        )
+
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == [
+            {
+                "type": "chapter_title_multiline",
+                "loc": ["body", "title"],
+                "msg": "Chapter title must be a single line",
+                "input": f"新标题{line_break}越界标题",
+            }
+        ]
+        chapter = (
+            db.query(Chapter)
+            .filter(Chapter.novel_id == novel.id, Chapter.chapter_number == 1)
+            .one()
+        )
+        assert chapter.title == "第一章"
 
     def test_update_chapter_empty_payload(self, client, novel):
         resp = client.put(
@@ -276,6 +354,26 @@ class TestUpdateChapter:
             json={"content": "不存在"},
         )
         assert resp.status_code == 404
+
+    def test_update_markdown_chapter_rejects_structural_heading_in_body(
+        self, client, db, novel
+    ):
+        novel.content_format = "markdown"
+        db.commit()
+
+        resp = client.put(
+            f"/api/novels/{novel.id}/chapters/1",
+            json={"content": "Title\n=====\n正文"},
+        )
+
+        assert resp.status_code == 422
+        db.refresh(novel)
+        chapter = (
+            db.query(Chapter)
+            .filter(Chapter.novel_id == novel.id, Chapter.chapter_number == 1)
+            .one()
+        )
+        assert chapter.content == "内容一"
 
 
 class TestDeleteChapter:

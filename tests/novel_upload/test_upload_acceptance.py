@@ -50,6 +50,7 @@ def test_selfhost_upload_persists_novel_and_chapters(db, tmp_path, monkeypatch, 
     assert novel.title == "T"
     assert novel.author == "A"
     assert novel.language == "zh"
+    assert novel.content_format == "plain_text"
     assert novel.owner_id == active_user.id
     assert novel.total_chapters == 0
     assert novel.window_index_status == "missing"
@@ -126,13 +127,175 @@ def test_upload_keeps_failed_ingest_state_after_accept(db, tmp_path, monkeypatch
     }
     assert status_payload["ingest"]["status"] == "failed"
     assert status_payload["ingest"]["stage"] == "failed"
-    assert status_payload["ingest"]["error"] == "稿件解析失败，请检查章节格式后重试"
+    assert status_payload["ingest"]["error_code"] == "ingest_internal_error"
+    assert status_payload["ingest"]["error"] == "稿件导入失败，请稍后重试"
 
     novel = db.get(Novel, novel_id)
     assert novel is not None
     assert novel.total_chapters == 0
     assert novel.window_index_status == "missing"
     assert db.query(Chapter).filter(Chapter.novel_id == novel.id).count() == 0
+
+
+def test_markdown_upload_round_trips_native_format_and_volume_metadata(
+    db,
+    tmp_path,
+    monkeypatch,
+    novels_api,
+    active_user,
+):
+    patch_upload_dir(monkeypatch, tmp_path)
+    app = make_novels_app(db, novels_api, active_user)
+    source = (
+        "# 第一卷\n"
+        "## 第一章 开端\n"
+        "\n"
+        "正文有 **强调**。\n"
+        "\n"
+        "### 小节\n"
+        "- 一\n"
+        "- 二\n"
+        "## 第二章 继续\n"
+        "尾声。\n"
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/novels/upload",
+            files={"file": ("novel.md", source.encode("utf-8"), "text/markdown")},
+            data={
+                "title": "Markdown Novel",
+                "author": "A",
+                "consent_acknowledged": "true",
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
+            },
+        )
+        assert response.status_code == 202
+        novel_id = response.json()["novel_id"]
+
+        run_ingest_and_index_jobs()
+
+        novel_response = client.get(f"/api/novels/{novel_id}")
+        chapters_response = client.get(f"/api/novels/{novel_id}/chapters")
+        meta_response = client.get(f"/api/novels/{novel_id}/chapters/meta")
+
+    assert novel_response.status_code == 200
+    assert novel_response.json()["content_format"] == "markdown"
+    assert chapters_response.status_code == 200
+    chapters = chapters_response.json()
+    assert [chapter["source_volume_title"] for chapter in chapters] == ["第一卷", "第一卷"]
+    assert chapters[0]["title"] == "开端"
+    assert chapters[0]["source_chapter_label"] == "第一章 开端"
+    assert chapters[0]["source_chapter_number"] == 1
+    assert chapters[0]["content"] == "\n正文有 **强调**。\n\n### 小节\n- 一\n- 二\n"
+    assert [chapter["source_volume_title"] for chapter in meta_response.json()] == [
+        "第一卷",
+        "第一卷",
+    ]
+
+    novel = db.get(Novel, novel_id)
+    assert novel is not None
+    assert novel.content_format == "markdown"
+
+
+def test_markdown_upload_reports_structure_error_without_retrying_same_file(
+    db,
+    tmp_path,
+    monkeypatch,
+    novels_api,
+    active_user,
+):
+    patch_upload_dir(monkeypatch, tmp_path)
+    app = make_novels_app(db, novels_api, active_user)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/novels/upload",
+            files={"file": ("disguised.md", b"plain body without h2", "text/markdown")},
+            data={
+                "title": "Broken",
+                "consent_acknowledged": "true",
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
+            },
+        )
+        novel_id = response.json()["novel_id"]
+        run_ingest_and_index_jobs()
+
+        status_response = client.get(f"/api/novels/{novel_id}/status")
+        retry_response = client.post(f"/api/novels/{novel_id}/ingest/retry")
+
+    assert status_response.status_code == 200
+    assert status_response.json()["readiness"] == "failed_terminal"
+    assert status_response.json()["ingest"]["error_code"] == "markdown_structure_invalid"
+    assert retry_response.status_code == 409
+    assert retry_response.json()["detail"]["code"] == "ingest_retry_not_allowed"
+
+
+def test_markdown_upload_reports_non_utf8_encoding(
+    db,
+    tmp_path,
+    monkeypatch,
+    novels_api,
+    active_user,
+):
+    patch_upload_dir(monkeypatch, tmp_path)
+    app = make_novels_app(db, novels_api, active_user)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/novels/upload",
+            files={"file": ("gbk.md", "## 第一章\n正文".encode("gbk"), "text/markdown")},
+            data={
+                "title": "GBK Markdown",
+                "consent_acknowledged": "true",
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
+            },
+        )
+        novel_id = response.json()["novel_id"]
+        run_ingest_and_index_jobs()
+        status_response = client.get(f"/api/novels/{novel_id}/status")
+
+    assert status_response.status_code == 200
+    assert status_response.json()["readiness"] == "failed_terminal"
+    assert status_response.json()["ingest"]["error_code"] == "source_encoding_unsupported"
+
+
+def test_upload_reports_missing_saved_source_without_retrying(
+    db,
+    tmp_path,
+    monkeypatch,
+    novels_api,
+    active_user,
+):
+    patch_upload_dir(monkeypatch, tmp_path)
+    app = make_novels_app(db, novels_api, active_user)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/novels/upload",
+            files={"file": ("novel.txt", novel_txt_bytes(), "text/plain")},
+            data={
+                "title": "Missing source",
+                "consent_acknowledged": "true",
+                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
+            },
+        )
+        novel_id = response.json()["novel_id"]
+        novel = db.get(Novel, novel_id)
+        assert novel is not None
+        Path(novel.file_path).unlink()
+
+        run_ingest_and_index_jobs()
+        status_response = client.get(f"/api/novels/{novel_id}/status")
+        retry_response = client.post(f"/api/novels/{novel_id}/ingest/retry")
+
+    assert status_response.status_code == 200
+    assert status_response.json()["readiness"] == "failed_terminal"
+    ingest = status_response.json()["ingest"]
+    assert ingest["status"] == "failed"
+    assert ingest["stage"] == "failed"
+    assert ingest["error_code"] == "source_missing"
+    assert retry_response.status_code == 409
 
 
 def test_get_novel_exposes_window_index_lifecycle_contract(

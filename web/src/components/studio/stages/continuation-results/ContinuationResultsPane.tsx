@@ -1,11 +1,15 @@
 import { Loader2 } from 'lucide-react'
 import { ProseWarningsPanel } from '@/components/generation/ProseWarningsPanel'
-import { PlainTextContent, type TextAnnotation } from '@/components/ui/plain-text-content'
+import { PlainTextContent } from '@/components/ui/plain-text-content'
+import { MarkdownContent } from '@/components/ui/markdown-content'
+import type { TextAnnotation } from '@/components/ui/annotated-text'
 import { NwButton } from '@/components/ui/nw-button'
-import type { Continuation, ProseWarning } from '@/types/api'
+import { isMarkdownContentFormat } from '@/lib/novelContentFormat'
+import type { Continuation, NovelContentFormat, ProseWarning } from '@/types/api'
 import type { ContinuationResultsT, VariantState } from './helpers'
 
 interface ContinuationResultsPaneProps {
+  contentFormat: NovelContentFormat
   isStreamMode: boolean
   isFallbackMode: boolean
   currentVariant?: VariantState
@@ -16,7 +20,40 @@ interface ContinuationResultsPaneProps {
   t: ContinuationResultsT
 }
 
+function ContinuationResultContent({
+  content,
+  contentFormat,
+  emptyLabel,
+  annotations,
+}: {
+  content: string | null | undefined
+  contentFormat: NovelContentFormat
+  emptyLabel: string
+  annotations?: TextAnnotation[]
+}) {
+  const className = 'flex-1 min-h-0 overflow-y-auto nw-scrollbar-thin'
+  if (isMarkdownContentFormat(contentFormat)) {
+    return (
+      <MarkdownContent
+        content={content}
+        className={className}
+        emptyLabel={emptyLabel}
+        annotations={annotations}
+      />
+    )
+  }
+  return (
+    <PlainTextContent
+      content={content}
+      className={className}
+      emptyLabel={emptyLabel}
+      annotations={annotations}
+    />
+  )
+}
+
 export function ContinuationResultsPane({
+  contentFormat,
   isStreamMode,
   isFallbackMode,
   currentVariant,
@@ -47,9 +84,9 @@ export function ContinuationResultsPane({
             </div>
           </div>
         ) : currentVariant.content ? (
-          <PlainTextContent
+          <ContinuationResultContent
             content={currentVariant.content}
-            className="flex-1 min-h-0 overflow-y-auto nw-scrollbar-thin"
+            contentFormat={contentFormat}
             emptyLabel={t('continuation.results.emptyContent')}
             annotations={driftAnnotations}
           />
@@ -58,16 +95,16 @@ export function ContinuationResultsPane({
             <Loader2 size={24} className="animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <PlainTextContent
+          <ContinuationResultContent
             content=""
-            className="flex-1 min-h-0 overflow-y-auto nw-scrollbar-thin"
+            contentFormat={contentFormat}
             emptyLabel={t('continuation.results.emptyContent')}
           />
         )
       ) : (
-        <PlainTextContent
+        <ContinuationResultContent
           content={currentLegacyVersion?.content}
-          className="flex-1 min-h-0 overflow-y-auto nw-scrollbar-thin"
+          contentFormat={contentFormat}
           emptyLabel={t('continuation.results.emptyContent')}
           annotations={driftAnnotations}
         />

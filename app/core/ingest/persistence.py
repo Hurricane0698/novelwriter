@@ -28,6 +28,7 @@ def replace_novel_chapters(
                 title=parsed_chapter.title,
                 source_chapter_label=parsed_chapter.source_chapter_label,
                 source_chapter_number=parsed_chapter.source_chapter_number,
+                source_volume_title=parsed_chapter.source_volume_title,
                 content=parsed_chapter.content,
             )
         )

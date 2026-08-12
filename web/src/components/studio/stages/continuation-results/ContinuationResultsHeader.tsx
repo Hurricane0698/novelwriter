@@ -1,7 +1,13 @@
 import { Check, Loader2, RefreshCw, Upload } from 'lucide-react'
 import { AssistToggleButton } from '@/components/studio/AssistToggleButton'
 import { NwButton } from '@/components/ui/nw-button'
+import {
+  MARKDOWN_CHAPTER_BODY_INVALID,
+  type ChapterMutationErrorCode,
+} from '@/lib/chapterMutationError'
 import type { ContinuationResultsT } from './helpers'
+
+export type ContinuationAdoptErrorCode = ChapterMutationErrorCode | 'chapter_adopt_failed'
 
 interface ContinuationResultsHeaderProps {
   activeChapterNum: number | null
@@ -12,6 +18,7 @@ interface ContinuationResultsHeaderProps {
   currentContent: string
   allDone: boolean
   createPending: boolean
+  adoptErrorCode: ContinuationAdoptErrorCode | null
   onAdopt: () => void
   onBackToWrite: () => void
   onExportAll: () => void
@@ -29,6 +36,7 @@ export function ContinuationResultsHeader({
   currentContent,
   allDone,
   createPending,
+  adoptErrorCode,
   onAdopt,
   onBackToWrite,
   onExportAll,
@@ -36,6 +44,12 @@ export function ContinuationResultsHeader({
   onToggleAssist,
   t,
 }: ContinuationResultsHeaderProps) {
+  const adoptErrorMessage = adoptErrorCode === null
+    ? null
+    : adoptErrorCode === MARKDOWN_CHAPTER_BODY_INVALID
+      ? t('continuation.results.adoptMarkdownChapterBodyInvalid')
+      : t('continuation.results.adoptFailed')
+
   return (
     <div className="shrink-0 border-b border-[var(--nw-glass-border)] pb-4">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -95,6 +109,15 @@ export function ContinuationResultsHeader({
           {onToggleAssist ? <AssistToggleButton active={assistOpen} onClick={onToggleAssist} /> : null}
         </div>
       </div>
+      {adoptErrorMessage ? (
+        <p
+          role="alert"
+          data-testid="continuation-adopt-error"
+          className="mt-3 rounded-[10px] border border-[hsl(var(--color-danger)/0.25)] bg-[hsl(var(--color-danger)/0.08)] px-3 py-2 text-sm text-[hsl(var(--color-danger))]"
+        >
+          {adoptErrorMessage}
+        </p>
+      ) : null}
     </div>
   )
 }

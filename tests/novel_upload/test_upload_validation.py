@@ -9,14 +9,14 @@ from app.api import novel_support
 from .support import make_app, make_novels_app, novel_txt_bytes, patch_upload_dir
 
 
-def test_upload_rejects_non_txt(db, tmp_path, monkeypatch, novels_api, active_user):
+def test_upload_rejects_unsupported_extension(db, tmp_path, monkeypatch, novels_api, active_user):
     patch_upload_dir(monkeypatch, tmp_path)
     app = make_novels_app(db, novels_api, active_user)
 
     with TestClient(app) as c:
         resp = c.post(
             "/api/novels/upload",
-            files={"file": ("novel.md", b"# hi", "text/markdown")},
+            files={"file": ("novel.docx", b"not a novel source", "application/octet-stream")},
             data={
                 "title": "T",
                 "author": "A",

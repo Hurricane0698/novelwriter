@@ -15,7 +15,6 @@ from app.config import get_settings
 from app.core.auth import get_current_user_or_default
 from app.core.events import ensure_project_start_event, record_event
 from app.core.ingest import (
-    INGEST_JOB_STATUS_FAILED,
     accept_novel_upload,
     inspect_novel_ingest_job,
     reset_novel_ingest_job_for_retry,
@@ -23,6 +22,11 @@ from app.core.ingest import (
 )
 from app.database import get_db
 from app.models import User
+from app.content_formats import (
+    MARKDOWN_CONTENT_FORMAT,
+    PLAIN_TEXT_CONTENT_FORMAT,
+    NovelContentFormat,
+)
 from app.schemas import (
     NovelResponse,
     UploadResponse,
@@ -31,6 +35,11 @@ from app.schemas import (
 from . import novel_support
 
 router = APIRouter(prefix="/api/novels", tags=["novels"])
+
+NOVEL_SOURCE_FORMAT_BY_EXTENSION: dict[str, NovelContentFormat] = {
+    ".txt": PLAIN_TEXT_CONTENT_FORMAT,
+    ".md": MARKDOWN_CONTENT_FORMAT,
+}
 
 
 @router.post("/upload", response_model=UploadResponse, status_code=202)
@@ -68,15 +77,14 @@ async def upload_novel(
             detail={"code": "upload_filename_missing", "message": "No filename provided"},
         )
 
-    allowed_extensions = {".txt"}
     original_name = file.filename.replace("\\", "/").split("/")[-1]
     ext = Path(original_name).suffix.lower()
-    if ext not in allowed_extensions:
+    if ext not in NOVEL_SOURCE_FORMAT_BY_EXTENSION:
         raise HTTPException(
             status_code=400,
             detail={
                 "code": "upload_type_not_supported",
-                "message": f"File type not supported. Allowed: {allowed_extensions}",
+                "message": "File type not supported. Allowed: .txt, .md",
             },
         )
 
@@ -129,6 +137,7 @@ async def upload_novel(
             owner_id=current_user.id,
             source_bytes=bytes_written,
             requested_language=language,
+            content_format=NOVEL_SOURCE_FORMAT_BY_EXTENSION[ext],
         )
         db.commit()
         db.refresh(novel)
@@ -177,19 +186,18 @@ def retry_novel_ingest(
 ):
     novel, has_payload = novel_support.fetch_novel_with_presence(db, novel_id, current_user)
 
-    ingest_job = inspect_novel_ingest_job(db, novel_id=novel_id)
-    if ingest_job is None:
+    if inspect_novel_ingest_job(db, novel_id=novel_id) is None:
         raise HTTPException(
             status_code=404,
             detail={"code": "ingest_job_not_found", "message": "Novel ingest job not found"},
         )
-    if ingest_job.status != INGEST_JOB_STATUS_FAILED:
+
+    if not reset_novel_ingest_job_for_retry(db, novel_id=novel_id):
+        db.rollback()
         raise HTTPException(
             status_code=409,
             detail={"code": "ingest_retry_not_allowed", "message": "Novel ingest retry is not allowed"},
         )
-
-    reset_novel_ingest_job_for_retry(db, novel_id=novel_id)
 
     db.commit()
     db.refresh(novel)

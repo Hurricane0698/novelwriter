@@ -48,7 +48,11 @@ function StudioPreparationGate({
             </div>
           ) : null}
           {error ? (
-            <div className="w-full rounded-2xl border border-[hsl(var(--color-warning)/0.3)] bg-[hsl(var(--color-warning)/0.08)] px-4 py-3 text-sm text-[hsl(var(--color-warning))] whitespace-pre-wrap">
+            <div
+              role="alert"
+              data-testid="studio-preparation-error"
+              className="w-full rounded-2xl border border-[hsl(var(--color-warning)/0.3)] bg-[hsl(var(--color-warning)/0.08)] px-4 py-3 text-sm text-[hsl(var(--color-warning))] whitespace-pre-wrap"
+            >
               {error}
             </div>
           ) : null}
@@ -89,6 +93,7 @@ export function StudioOnboardingStage({
   preparationGate,
   showWorldOnboarding,
   bootstrapPending,
+  preparationActionPending,
   bootstrapError,
   chaptersAvailable,
   worldGenOpen,
@@ -100,6 +105,7 @@ export function StudioOnboardingStage({
   preparationGate: StudioPreparationGateState | null
   showWorldOnboarding: boolean
   bootstrapPending: boolean
+  preparationActionPending: boolean
   bootstrapError: string | null
   chaptersAvailable: boolean
   worldGenOpen: boolean
@@ -116,7 +122,7 @@ export function StudioOnboardingStage({
         error={preparationGate.error}
         primaryActionLabel={preparationGate.primaryActionLabel}
         onPrimaryAction={preparationGate.onPrimaryAction}
-        primaryActionPending={bootstrapPending}
+        primaryActionPending={preparationActionPending}
         secondaryActionLabel={preparationGate.secondaryActionLabel}
         onSecondaryAction={preparationGate.onSecondaryAction}
       />

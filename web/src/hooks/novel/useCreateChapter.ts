@@ -18,6 +18,7 @@ export function useCreateChapter(novelId: number) {
           title: created.title,
           source_chapter_label: created.source_chapter_label,
           source_chapter_number: created.source_chapter_number,
+          source_volume_title: created.source_volume_title,
           created_at: created.created_at,
         }
         const filtered = old.filter((meta) => meta.chapter_number !== created.chapter_number)

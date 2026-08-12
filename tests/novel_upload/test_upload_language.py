@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 import app.core.ingest.worker as ingest_worker
 from app.api import novel_support
+from app.content_formats import PLAIN_TEXT_CONTENT_FORMAT, NovelContentFormat
 from app.core.parser import ParsedChapter
 
 from .support import (
@@ -124,7 +125,14 @@ def test_upload_passes_normalized_language_to_parser(db, tmp_path, monkeypatch, 
     patch_upload_dir(monkeypatch, tmp_path)
     seen: dict[str, str | None] = {"language": None}
 
-    def fake_parse(path: str, *, requested_language: str | None = None):
+    def fake_parse(
+        path: str,
+        *,
+        content_format: NovelContentFormat,
+        requested_language: str | None = None,
+    ):
+        assert path.endswith(".txt")
+        assert content_format == PLAIN_TEXT_CONTENT_FORMAT
         seen["language"] = requested_language
         return ParsedNovelIngest(
             source_chars=len("plain body"),
@@ -172,8 +180,14 @@ def test_upload_passes_detected_language_to_parser_when_language_omitted(
     patch_upload_dir(monkeypatch, tmp_path)
     seen: dict[str, str | None] = {"language": None}
 
-    def fake_parse(path: str, *, requested_language: str | None = None):
+    def fake_parse(
+        path: str,
+        *,
+        content_format: NovelContentFormat,
+        requested_language: str | None = None,
+    ):
         assert path.endswith(".txt")
+        assert content_format == PLAIN_TEXT_CONTENT_FORMAT
         seen["language"] = requested_language
         return ParsedNovelIngest(
             source_chars=len("Chapter 1 Beginning\nAlice walked home."),

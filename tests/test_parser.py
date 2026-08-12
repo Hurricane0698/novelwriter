@@ -117,7 +117,7 @@ def test_english_prologue_and_chapter_format():
         assert len(result) == 2
         assert result[0].source_chapter_label == "Prologue"
         assert result[0].source_chapter_number is None
-        assert result[0].title == ""
+        assert result[0].title == "Prologue"
         assert "Opening scene" in result[0].content
         assert result[1].source_chapter_label == "Chapter II Middle"
         assert result[1].source_chapter_number == 2
@@ -133,7 +133,7 @@ def test_japanese_chapter_format():
         result = parse_novel_file(path, language="ja")
         assert len(result) == 2
         assert result[0].source_chapter_label == "プロローグ"
-        assert result[0].title == ""
+        assert result[0].title == "プロローグ"
         assert "始まり" in result[0].content
         assert result[1].source_chapter_label == "第1話 出会い"
         assert result[1].source_chapter_number == 1
@@ -149,7 +149,7 @@ def test_korean_chapter_format():
         result = parse_novel_file(path, language="ko")
         assert len(result) == 2
         assert result[0].source_chapter_label == "프롤로그"
-        assert result[0].title == ""
+        assert result[0].title == "프롤로그"
         assert "시작이다" in result[0].content
         assert result[1].source_chapter_label == "제1장 만남"
         assert result[1].source_chapter_number == 1
@@ -165,7 +165,7 @@ def test_special_chapter_types():
         result = parse_novel_file(path)
         assert len(result) == 2
         assert result[0].source_chapter_label == "序章"
-        assert result[0].title == ""
+        assert result[0].title == "序章"
         assert "序章的内容" in result[0].content
         assert result[1].source_chapter_number == 1
         assert result[1].title == "正文"
@@ -212,7 +212,11 @@ def test_parse_source_file_matches_parser_output_for_chaptered_text():
     content = "第一章 开端\n这是第一章的内容。\n第二章 发展\n这是第二章的内容。\n"
     path = _write_tmp(content)
     try:
-        parsed = parse_source_file(path, requested_language=None)
+        parsed = parse_source_file(
+            path,
+            content_format="plain_text",
+            requested_language=None,
+        )
         direct = parse_novel_file(path)
         assert parsed.resolved_language == "zh"
         assert parsed.source_chars == len(content)
@@ -225,7 +229,11 @@ def test_parse_source_file_matches_parser_output_without_markers():
     content = "Just some text without any chapter markers."
     path = _write_tmp(content)
     try:
-        parsed = parse_source_file(path, requested_language="en")
+        parsed = parse_source_file(
+            path,
+            content_format="plain_text",
+            requested_language="en",
+        )
         direct = parse_novel_file(path, language="en")
         assert parsed.resolved_language == "en"
         assert parsed.source_chars == len(content)

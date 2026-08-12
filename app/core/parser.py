@@ -22,6 +22,7 @@ from app.language_policy import LanguageDetectionAccumulator
 __all__ = [
     "ParsedChapter",
     "ParsedChapterHeading",
+    "build_parsed_chapter",
     "chinese_to_arabic",
     "parse_chapter_heading",
     "parse_novel_file",
@@ -41,6 +42,7 @@ class ParsedChapter:
     content: str
     source_chapter_label: str | None = None
     source_chapter_number: int | None = None
+    source_volume_title: str | None = None
 
 
 def read_novel_file_text(file_path: str) -> str:
@@ -92,7 +94,7 @@ def parse_novel_text(
 
         chapter_content = content[content_start:content_end].strip()
         parsed_chapters.append(
-            _build_parsed_chapter(
+            build_parsed_chapter(
                 raw_label=raw_label,
                 chapter_content=chapter_content,
             )
@@ -179,7 +181,7 @@ def parse_novel_file_streaming(
         if chapter_regex.match(line):
             if current_heading is not None:
                 parsed_chapters.append(
-                    _build_parsed_chapter(
+                    build_parsed_chapter(
                         raw_label=current_heading,
                         chapter_content="".join(current_lines).strip(),
                     )
@@ -192,7 +194,7 @@ def parse_novel_file_streaming(
 
     if current_heading is not None:
         parsed_chapters.append(
-            _build_parsed_chapter(
+            build_parsed_chapter(
                 raw_label=current_heading,
                 chapter_content="".join(current_lines).strip(),
             )
@@ -237,10 +239,11 @@ def _find_chapter_heading_regex_in_file(
     return compiled_patterns[best_index]
 
 
-def _build_parsed_chapter(
+def build_parsed_chapter(
     *,
     raw_label: str,
     chapter_content: str,
+    source_volume_title: str | None = None,
 ) -> ParsedChapter:
     trimmed_label = raw_label.strip()
     parsed_heading = parse_chapter_heading(trimmed_label)
@@ -248,11 +251,17 @@ def _build_parsed_chapter(
         return ParsedChapter(
             title=trimmed_label,
             content=chapter_content,
+            source_volume_title=source_volume_title,
         )
 
+    editable_title = parsed_heading.title
+    if not editable_title and parsed_heading.source_number is None:
+        editable_title = parsed_heading.source_label
+
     return ParsedChapter(
-        title=parsed_heading.title,
+        title=editable_title,
         content=chapter_content,
         source_chapter_label=parsed_heading.source_label,
         source_chapter_number=parsed_heading.source_number,
+        source_volume_title=source_volume_title,
     )

@@ -182,7 +182,7 @@ EVENT_CATALOG: dict[str, dict[str, Any]] = {
         },
     },
     "novel_upload": {
-        "description": "User uploaded a novel (.txt file accepted for background ingest).",
+        "description": "User uploaded a .txt or .md novel for background ingest.",
         "funnel_position": 4,
         "question": "How many started a chapter-import project?",
         "meta_keys": {

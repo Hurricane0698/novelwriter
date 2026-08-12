@@ -172,6 +172,8 @@ export const api = {
   listNovels,
   getNovels: listNovels,
   getNovel: (id: number | string) => request<Novel>(`/api/novels/${encodeURIComponent(String(id))}`),
+  retryNovelIngest: (id: number) =>
+    request<Novel>(`/api/novels/${id}/ingest/retry`, { method: 'POST' }),
   deleteNovel: (id: number) =>
     request<void>(`/api/novels/${id}`, { method: 'DELETE' }),
   uploadNovel: async (

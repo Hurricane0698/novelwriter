@@ -1,8 +1,11 @@
+export type NovelContentFormat = 'plain_text' | 'markdown'
+
 export interface Novel {
   id: number
   title: string
   author: string
   language: string
+  content_format: NovelContentFormat
   total_chapters: number
   is_seeded_demo?: boolean
   window_index?: WindowIndexState
@@ -21,8 +24,19 @@ export type NovelIngestJobStage =
   | 'planning'
   | 'completed'
   | 'failed'
+export type NovelIngestErrorCode =
+  | 'source_missing'
+  | 'source_encoding_unsupported'
+  | 'markdown_structure_invalid'
+  | 'ingest_internal_error'
 export type NovelIngestSizeTier = 'normal' | 'large' | 'xlarge' | 'reject'
-export type WindowIndexReadinessStatus = 'accepting' | 'processing' | 'ready' | 'degraded_ready' | 'failed_retryable'
+export type WindowIndexReadinessStatus =
+  | 'accepting'
+  | 'processing'
+  | 'ready'
+  | 'degraded_ready'
+  | 'failed_retryable'
+  | 'failed_terminal'
 
 export interface WindowIndexJobMetrics {
   queue_wait_ms: number | null
@@ -78,6 +92,7 @@ export interface NovelIngestJob {
   auto_index_plan: string | null
   bootstrap_plan: string | null
   readiness_mode: string | null
+  error_code: NovelIngestErrorCode | null
   error: string | null
 }
 
@@ -93,8 +108,8 @@ export interface WindowIndexState {
   revision: number
   built_revision: number | null
   error: string | null
-  readiness?: WindowIndexReadinessStatus
-  capabilities?: WindowIndexCapabilities
+  readiness: WindowIndexReadinessStatus
+  capabilities: WindowIndexCapabilities
   ingest?: NovelIngestJob | null
   job: WindowIndexJob | null
 }
@@ -106,6 +121,7 @@ export interface ChapterMeta {
   title: string
   source_chapter_label: string | null
   source_chapter_number: number | null
+  source_volume_title: string | null
   created_at: string
 }
 
@@ -116,6 +132,7 @@ export interface Chapter {
   title: string
   source_chapter_label: string | null
   source_chapter_number: number | null
+  source_volume_title: string | null
   content: string
   created_at: string
   updated_at: string | null

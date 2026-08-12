@@ -66,7 +66,7 @@ export function LibraryPage() {
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    const title = file.name.replace(/\.txt$/i, '')
+    const title = file.name.replace(/\.(?:txt|md)$/i, '')
     const sourceSurface = pendingUploadSourceRef.current ?? 'unknown'
     setUploadingFileName(file.name)
     try {
@@ -113,7 +113,7 @@ export function LibraryPage() {
         ref={fileInputRef}
         data-testid="library-file-input"
         type="file"
-        accept=".txt"
+        accept=".txt,.md"
         className="hidden"
         disabled={uploadingFileName !== null}
         onChange={handleFileSelected}

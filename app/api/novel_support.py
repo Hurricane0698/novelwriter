@@ -23,6 +23,7 @@ from app.models import Novel, User
 from app.schemas import (
     DerivedAssetJobStatus,
     NovelIngestJobResponse,
+    NovelIngestErrorCode,
     NovelIngestJobStage,
     NovelIngestJobStatus,
     NovelIngestSizeTier,
@@ -234,6 +235,11 @@ def serialize_novel(
             auto_index_plan=readiness_state.ingest_job.auto_index_plan,
             bootstrap_plan=readiness_state.ingest_job.bootstrap_plan,
             readiness_mode=readiness_state.ingest_job.readiness_mode,
+            error_code=(
+                NovelIngestErrorCode(readiness_state.ingest_job.error_code)
+                if readiness_state.ingest_job.error_code
+                else None
+            ),
             error=readiness_state.ingest_job.error,
         )
     return NovelResponse(
@@ -241,6 +247,7 @@ def serialize_novel(
         title=novel.title,
         author=novel.author,
         language=novel.language,
+        content_format=novel.content_format,
         total_chapters=novel.total_chapters,
         is_seeded_demo=is_seeded_demo_novel(novel),
         window_index=WindowIndexStateResponse(

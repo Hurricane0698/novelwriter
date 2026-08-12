@@ -15,6 +15,10 @@ function localeOrDefault(locale?: UiLocale): UiLocale {
   return locale ?? readDocumentUiLocale() ?? 'zh'
 }
 
+function assertNeverReadiness(readiness: never): never {
+  throw new Error(`Unsupported window index readiness: ${String(readiness)}`)
+}
+
 export function isWindowIndexRebuilding(state: WindowIndexState | null | undefined): boolean {
   return Boolean(state?.readiness && ACTIVE_READINESS_STATES.has(state.readiness))
 }
@@ -45,6 +49,9 @@ function resolveWindowIndexStatusMeta(
     }
   }
 
+  // Persisted clients and pre-readiness API fixtures may still carry only the
+  // legacy `status` field. Normalize that shape at the boundary instead of
+  // letting an absent runtime value reach the exhaustive switch below.
   const capabilities = state.capabilities ?? {
     chapters_available: false,
     whole_book_index_available: state.status === 'fresh',
@@ -92,7 +99,7 @@ function resolveWindowIndexStatusMeta(
     }
   }
 
-  if (readiness === 'failed_retryable') {
+  if (readiness === 'failed_retryable' || readiness === 'failed_terminal') {
     return {
       text: translateUiMessage(locale, keys.failed),
       tone: 'warning',
@@ -100,7 +107,23 @@ function resolveWindowIndexStatusMeta(
     }
   }
 
-  if (readiness !== 'degraded_ready') {
+  if (readiness === 'degraded_ready') {
+    if (state.status === 'failed') {
+      return {
+        text: translateUiMessage(locale, keys.failed),
+        tone: 'warning',
+        requiresFallback: true,
+      }
+    }
+
+    if (capabilities.recent_fallback_only) {
+      return {
+        text: translateUiMessage(locale, state.status === 'stale' ? keys.pending : keys.missing),
+        tone: 'warning',
+        requiresFallback: true,
+      }
+    }
+
     return {
       text: translateUiMessage(locale, keys.missing),
       tone: 'warning',
@@ -108,27 +131,7 @@ function resolveWindowIndexStatusMeta(
     }
   }
 
-  if (state.status === 'failed') {
-    return {
-      text: translateUiMessage(locale, keys.failed),
-      tone: 'warning',
-      requiresFallback: true,
-    }
-  }
-
-  if (capabilities.recent_fallback_only) {
-    return {
-      text: translateUiMessage(locale, state.status === 'stale' ? keys.pending : keys.missing),
-      tone: 'warning',
-      requiresFallback: true,
-    }
-  }
-
-  return {
-    text: translateUiMessage(locale, keys.missing),
-    tone: 'warning',
-    requiresFallback: true,
-  }
+  return assertNeverReadiness(readiness)
 }
 
 export function getWindowIndexBootstrapStatusMeta(

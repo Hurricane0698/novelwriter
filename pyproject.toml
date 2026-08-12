@@ -11,6 +11,7 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
     "alembic>=1.13.0",
     "fastapi>=0.109.0",
+    "markdown-it-py>=4.0.0",
     "msgpack>=1.0.8",
     "openai>=1.50.0",
     "passlib[bcrypt]>=1.7.4",

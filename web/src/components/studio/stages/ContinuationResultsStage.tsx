@@ -1,22 +1,26 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import '@/lib/uiMessagePacks/novel'
 import { ChevronDown, ChevronRight, Info } from 'lucide-react'
 import { DriftWarningPopover } from '@/components/generation/DriftWarningPopover'
-import type { TextAnnotation } from '@/components/ui/plain-text-content'
+import type { TextAnnotation } from '@/components/ui/annotated-text'
 import { useCreateChapter } from '@/hooks/novel/useCreateChapter'
 import { useAuth } from '@/contexts/AuthContext'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { addToWhitelist, getWhitelist } from '@/lib/postcheckWhitelistStorage'
 import { setActiveWarnings } from '@/lib/postcheckActiveWarningsStorage'
 import { downloadTextFile } from '@/lib/downloadTextFile'
+import { isMarkdownChapterBodyInvalidError } from '@/lib/chapterMutationError'
 import { cn } from '@/lib/utils'
 import { api } from '@/services/api'
-import type { ContinueDebugSummary } from '@/types/api'
-import { ContinuationResultsHeader } from './continuation-results/ContinuationResultsHeader'
+import type { ContinueDebugSummary, NovelContentFormat } from '@/types/api'
+import {
+  ContinuationResultsHeader,
+  type ContinuationAdoptErrorCode,
+} from './continuation-results/ContinuationResultsHeader'
 import { ContinuationResultsPane } from './continuation-results/ContinuationResultsPane'
 import {
   ContinuationResultsEmptyState,
@@ -34,6 +38,8 @@ import { useContinuationResultsSource } from './continuation-results/useContinua
 
 export function ContinuationResultsStage({
   novelId,
+  contentFormat,
+  isActive,
   activeChapterNum,
   activeChapterReference,
   showInjectionSummaryRail,
@@ -43,6 +49,8 @@ export function ContinuationResultsStage({
   onToggleAssist,
 }: {
   novelId: number
+  contentFormat: NovelContentFormat
+  isActive: boolean
   activeChapterNum: number | null
   activeChapterReference?: string | null
   showInjectionSummaryRail: boolean
@@ -59,12 +67,21 @@ export function ContinuationResultsStage({
   const [showFeedbackForm, setShowFeedbackForm] = useState(false)
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
   const [whitelist, setWhitelist] = useState<string[]>(() => getWhitelist(novelId))
+  const [adoptError, setAdoptError] = useState<{
+    sourceIdentity: string
+    activeTab: number
+    candidateId: number | null
+    content: string
+    requestGeneration: number
+    code: ContinuationAdoptErrorCode
+  } | null>(null)
+  const adoptRequestGenerationRef = useRef(0)
   const createChapter = useCreateChapter(novelId)
 
   const {
+    sourceIdentity,
     locationState,
     legacyResponse,
-    persisted,
     variants,
     fallbackNotice,
     fallbackVersions,
@@ -90,6 +107,28 @@ export function ContinuationResultsStage({
     locale,
     t,
   })
+
+  const semanticSourceIdentity = `${novelId}:${activeChapterNum ?? 'none'}:${sourceIdentity}`
+  const sourceSessionRef = useRef({
+    isActive,
+    sourceIdentity: semanticSourceIdentity,
+    generation: 0,
+  })
+  useLayoutEffect(() => {
+    const currentSession = sourceSessionRef.current
+    if (
+      currentSession.isActive === isActive
+      && currentSession.sourceIdentity === semanticSourceIdentity
+    ) {
+      return
+    }
+    sourceSessionRef.current = {
+      isActive,
+      sourceIdentity: semanticSourceIdentity,
+      generation: currentSession.generation + 1,
+    }
+    adoptRequestGenerationRef.current += 1
+  }, [isActive, semanticSourceIdentity])
 
   const handleDismissTerm = useCallback((term: string) => {
     addToWhitelist(novelId, term)
@@ -128,14 +167,35 @@ export function ContinuationResultsStage({
   }, [activeTab, driftWarnings, handleDismissTerm, whitelist])
 
   useEffect(() => {
+    adoptRequestGenerationRef.current += 1
+    setAdoptError(null)
     setActiveTab(0)
-  }, [isFallbackMode, isLegacyMode, isReloadMode, isStreamMode, persisted, variants.length])
+  }, [isFallbackMode, isLegacyMode, isReloadMode, isStreamMode, semanticSourceIdentity, variants.length])
+
+  useEffect(() => {
+    if (!isActive) setAdoptError(null)
+  }, [isActive])
 
   const currentVariant = isStreamMode && !isFallbackMode ? variants[activeTab] : undefined
   const currentLegacyVersion = isFallbackMode
     ? fallbackVersions[activeTab]
     : (isLegacyMode ? nonStreamVersions[activeTab] : undefined)
   const currentContent = currentVariant?.content ?? currentLegacyVersion?.content ?? ''
+  const currentCandidateId = currentVariant?.continuationId ?? currentLegacyVersion?.id ?? null
+  const currentCandidateIdentity = `${semanticSourceIdentity}:${activeTab}:${currentCandidateId ?? 'pending'}`
+  const currentCandidateIdentityRef = useRef(currentCandidateIdentity)
+  useLayoutEffect(() => {
+    currentCandidateIdentityRef.current = currentCandidateIdentity
+  }, [currentCandidateIdentity])
+  const adoptErrorCode = (
+    isActive
+    && adoptError?.sourceIdentity === semanticSourceIdentity
+    && adoptError.activeTab === activeTab
+    && adoptError.candidateId === currentCandidateId
+    && adoptError.content === currentContent
+  )
+    ? adoptError.code
+    : null
   const allDone = isLegacyMode || isFallbackMode || isDone
   const tabCount = isStreamMode && !isFallbackMode ? variants.length : (isFallbackMode ? fallbackVersions.length : nonStreamVersions.length)
 
@@ -158,12 +218,39 @@ export function ContinuationResultsStage({
     onDebugChange(debug)
   }, [debug, onDebugChange])
 
+  const leaveResults = useCallback((target: string) => {
+    const currentSession = sourceSessionRef.current
+    sourceSessionRef.current = {
+      ...currentSession,
+      isActive: false,
+      generation: currentSession.generation + 1,
+    }
+    adoptRequestGenerationRef.current += 1
+    setAdoptError(null)
+    navigate(target, { state: null })
+  }, [navigate])
+
   const handleAdopt = useCallback(() => {
-    if (!currentContent) return
+    if (!isActive || !currentContent) return
+    const requestGeneration = adoptRequestGenerationRef.current + 1
+    adoptRequestGenerationRef.current = requestGeneration
+    const requestCandidateIdentity = currentCandidateIdentity
+    const requestSourceSession = sourceSessionRef.current
+    setAdoptError(null)
     createChapter.mutate(
       { content: currentContent },
       {
         onSuccess: (chapter) => {
+          // Creation is already committed server-side. Preserve the confirmation
+          // flow across tab changes, but never navigate from an abandoned result source.
+          const currentSourceSession = sourceSessionRef.current
+          if (
+            !currentSourceSession.isActive
+            || currentSourceSession.sourceIdentity !== requestSourceSession.sourceIdentity
+            || currentSourceSession.generation !== requestSourceSession.generation
+          ) {
+            return
+          }
           const currentDebug = resolveResultsDebug({
             isStreamMode,
             streamDebug,
@@ -183,12 +270,35 @@ export function ContinuationResultsStage({
           }
           navigate(`/novel/${novelId}?chapter=${chapter.chapter_number}`, { state: null })
         },
+        onError: (error) => {
+          const currentSourceSession = sourceSessionRef.current
+          if (
+            adoptRequestGenerationRef.current !== requestGeneration
+            || currentCandidateIdentityRef.current !== requestCandidateIdentity
+            || !currentSourceSession.isActive
+            || currentSourceSession.sourceIdentity !== requestSourceSession.sourceIdentity
+            || currentSourceSession.generation !== requestSourceSession.generation
+          ) {
+            return
+          }
+          setAdoptError({
+            sourceIdentity: semanticSourceIdentity,
+            activeTab,
+            candidateId: currentCandidateId,
+            content: currentContent,
+            requestGeneration,
+            code: isMarkdownChapterBodyInvalidError(error) ? error.code : 'chapter_adopt_failed',
+          })
+        },
       },
     )
   }, [
     activeTab,
     createChapter,
+    currentCandidateId,
+    currentCandidateIdentity,
     currentContent,
+    isActive,
     isStreamMode,
     legacyResponse?.debug,
     locationState?.studioResultsDebug,
@@ -196,6 +306,7 @@ export function ContinuationResultsStage({
     novelId,
     persistedDebug,
     reloadedWarnings,
+    semanticSourceIdentity,
     streamDebug,
     whitelist,
   ])
@@ -208,7 +319,11 @@ export function ContinuationResultsStage({
     const content = versions
       .map((variant, index) => `${t('continuation.results.exportVersionHeader', { n: index + 1 })}\n\n${variant.content}\n`)
       .join('\n\n')
-    downloadTextFile(`continuation_versions_${new Date().toISOString().slice(0, 10)}.txt`, content)
+    downloadTextFile(
+      `continuation_versions_${new Date().toISOString().slice(0, 10)}.txt`,
+      content,
+      'text/plain;charset=utf-8',
+    )
   }, [fallbackVersions, isFallbackMode, isStreamMode, nonStreamVersions, t, variants])
 
   const handleFeedbackSubmit = useCallback(async (answers: Parameters<typeof api.submitFeedback>[0]) => {
@@ -255,7 +370,7 @@ export function ContinuationResultsStage({
         <ContinuationResultsReloadErrorState
           error={persistedError}
           onRetry={retryReload}
-          onBack={() => navigate(`/novel/${novelId}`, { state: null })}
+          onBack={() => leaveResults(`/novel/${novelId}`)}
           t={t}
         />
       )
@@ -263,7 +378,7 @@ export function ContinuationResultsStage({
 
     return (
       <ContinuationResultsEmptyState
-        onBack={() => navigate(`/novel/${novelId}`, { state: null })}
+        onBack={() => leaveResults(`/novel/${novelId}`)}
         t={t}
       />
     )
@@ -281,8 +396,8 @@ export function ContinuationResultsStage({
         onCloseFeedback={() => setShowFeedbackForm(false)}
         onSubmitFeedback={handleFeedbackSubmit}
         onRetry={retryStream}
-        onBackToWrite={() => navigate(`/novel/${novelId}?stage=write`, { state: null })}
-        onReturnToWorkspace={() => navigate(`/novel/${novelId}`, { state: null })}
+        onBackToWrite={() => leaveResults(`/novel/${novelId}?stage=write`)}
+        onReturnToWorkspace={() => leaveResults(`/novel/${novelId}`)}
         onGoToSettings={() => navigate('/settings')}
         t={t}
       />
@@ -300,8 +415,9 @@ export function ContinuationResultsStage({
         currentContent={currentContent}
         allDone={allDone}
         createPending={createChapter.isPending}
+        adoptErrorCode={adoptErrorCode}
         onAdopt={handleAdopt}
-        onBackToWrite={() => navigate(`/novel/${novelId}?stage=write`, { state: null })}
+        onBackToWrite={() => leaveResults(`/novel/${novelId}?stage=write`)}
         onExportAll={handleExportAll}
         assistOpen={assistOpen}
         onToggleAssist={onToggleAssist}
@@ -315,11 +431,16 @@ export function ContinuationResultsStage({
         isFallbackMode={isFallbackMode}
         isLegacyMode={isLegacyMode}
         variants={variants}
-        onSelect={setActiveTab}
+        onSelect={(tab) => {
+          adoptRequestGenerationRef.current += 1
+          setAdoptError(null)
+          setActiveTab(tab)
+        }}
         t={t}
       />
 
       <ContinuationResultsPane
+        contentFormat={contentFormat}
         isStreamMode={isStreamMode}
         isFallbackMode={isFallbackMode}
         currentVariant={currentVariant}

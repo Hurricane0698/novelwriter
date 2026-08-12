@@ -30,6 +30,8 @@ INGEST_JOB_STAGE_PLANNING = "planning"
 INGEST_JOB_STAGE_COMPLETED = "completed"
 INGEST_JOB_STAGE_FAILED = "failed"
 
+INGEST_RETRYABLE_ERROR_CODES = frozenset({"ingest_internal_error"})
+
 
 @dataclass(frozen=True, slots=True)
 class NovelIngestJobSnapshot:
@@ -46,6 +48,7 @@ class NovelIngestJobSnapshot:
     auto_index_plan: str | None
     bootstrap_plan: str | None
     readiness_mode: str | None
+    error_code: str | None
     error: str | None
     lease_owner: str | None
     lease_expires_at: object | None
@@ -60,6 +63,13 @@ class _NovelIngestClaim:
     job_id: int
     novel_id: int
     worker_id: str
+
+
+def is_novel_ingest_retry_allowed(job: NovelIngestJobSnapshot) -> bool:
+    return (
+        job.status == INGEST_JOB_STATUS_FAILED
+        and job.error_code in INGEST_RETRYABLE_ERROR_CODES
+    )
 
 
 def serialize_novel_ingest_job(job: NovelIngestJob) -> NovelIngestJobSnapshot:
@@ -77,6 +87,7 @@ def serialize_novel_ingest_job(job: NovelIngestJob) -> NovelIngestJobSnapshot:
         auto_index_plan=job.auto_index_plan,
         bootstrap_plan=job.bootstrap_plan,
         readiness_mode=job.readiness_mode,
+        error_code=job.error_code,
         error=job.error,
         lease_owner=job.lease_owner,
         lease_expires_at=normalize_utc_naive(job.lease_expires_at),
@@ -149,6 +160,7 @@ def _requeue_as_accepted(job: NovelIngestJob) -> None:
     job.status = INGEST_JOB_STATUS_QUEUED
     job.stage = INGEST_JOB_STAGE_ACCEPTED
     job.error = None
+    job.error_code = None
     job.lease_owner = None
     job.lease_expires_at = None
     job.started_at = None
@@ -188,12 +200,31 @@ def enqueue_novel_ingest_job(
     return job
 
 
-def reset_novel_ingest_job_for_retry(db: Session, *, novel_id: int) -> NovelIngestJob | None:
-    job = db.query(NovelIngestJob).filter(NovelIngestJob.novel_id == novel_id).first()
-    if job is None:
-        return None
-    _requeue_as_accepted(job)
-    return job
+def reset_novel_ingest_job_for_retry(db: Session, *, novel_id: int) -> bool:
+    """Atomically admit one retry and move its failed job back to queued."""
+    reset_count = (
+        db.query(NovelIngestJob)
+        .filter(
+            NovelIngestJob.novel_id == novel_id,
+            NovelIngestJob.status == INGEST_JOB_STATUS_FAILED,
+            NovelIngestJob.error_code.in_(INGEST_RETRYABLE_ERROR_CODES),
+        )
+        .update(
+            {
+                NovelIngestJob.status: INGEST_JOB_STATUS_QUEUED,
+                NovelIngestJob.stage: INGEST_JOB_STAGE_ACCEPTED,
+                NovelIngestJob.error: None,
+                NovelIngestJob.error_code: None,
+                NovelIngestJob.lease_owner: None,
+                NovelIngestJob.lease_expires_at: None,
+                NovelIngestJob.started_at: None,
+                NovelIngestJob.finished_at: None,
+                NovelIngestJob.updated_at: utcnow_naive(),
+            },
+            synchronize_session=False,
+        )
+    )
+    return reset_count == 1
 
 
 def claim_novel_ingest_job(
@@ -236,6 +267,7 @@ def claim_novel_ingest_job(
                 extra_updates={
                     NovelIngestJob.status: INGEST_JOB_STATUS_RUNNING,
                     NovelIngestJob.error: None,
+                    NovelIngestJob.error_code: None,
                     NovelIngestJob.finished_at: None,
                 },
             ),

@@ -9,11 +9,14 @@ import { AdvancedRow } from '@/components/workspace/AdvancedRow'
 import { NwButton } from '@/components/ui/nw-button'
 import { Textarea } from '@/components/ui/textarea'
 import { PlainTextContent } from '@/components/ui/plain-text-content'
+import { MarkdownContent } from '@/components/ui/markdown-content'
 import { cn } from '@/lib/utils'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { novelKeys } from '@/hooks/novel/keys'
 import { api } from '@/services/api'
 import { LENGTH_OPTIONS } from '@/hooks/novel/useContinuationSetupState'
+import { isMarkdownContentFormat } from '@/lib/novelContentFormat'
+import type { NovelContentFormat } from '@/types/api'
 
 /**
  * Embeddable continuation-setup stage for the Studio center area.
@@ -24,6 +27,7 @@ import { LENGTH_OPTIONS } from '@/hooks/novel/useContinuationSetupState'
  */
 export function ContinuationSetupStage({
   novelId,
+  contentFormat,
   chapterNum,
   chapterReference,
   instruction,
@@ -43,6 +47,7 @@ export function ContinuationSetupStage({
   onToggleAssist,
 }: {
   novelId: number
+  contentFormat: NovelContentFormat
   chapterNum: number
   chapterReference: string | null
   instruction: string
@@ -62,6 +67,7 @@ export function ContinuationSetupStage({
   onToggleAssist?: () => void
 }) {
   const { t } = useUiLocale()
+  const isMarkdown = isMarkdownContentFormat(contentFormat)
   const { data: chapter, isLoading: chapterLoading } = useQuery({
     queryKey: novelKeys.chapter(novelId, chapterNum),
     queryFn: () => api.getChapter(novelId, chapterNum),
@@ -88,12 +94,21 @@ export function ContinuationSetupStage({
         </div>
 
         <GlassCard className="flex-1 overflow-auto rounded-xl p-6 sm:p-8 nw-scrollbar-thin">
-          <PlainTextContent
-            isLoading={chapterLoading}
-            content={chapter?.content}
-            loadingLabel={t('continuation.setup.loadingChapter')}
-            emptyLabel={t('continuation.setup.emptyChapter')}
-          />
+          {isMarkdown ? (
+            <MarkdownContent
+              isLoading={chapterLoading}
+              content={chapter?.content}
+              loadingLabel={t('continuation.setup.loadingChapter')}
+              emptyLabel={t('continuation.setup.emptyChapter')}
+            />
+          ) : (
+            <PlainTextContent
+              isLoading={chapterLoading}
+              content={chapter?.content}
+              loadingLabel={t('continuation.setup.loadingChapter')}
+              emptyLabel={t('continuation.setup.emptyChapter')}
+            />
+          )}
         </GlassCard>
       </div>
 

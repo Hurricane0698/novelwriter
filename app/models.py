@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship, validates
 from sqlalchemy.sql import func
 from app.database import Base
+from app.content_formats import PLAIN_TEXT_CONTENT_FORMAT
 from app.language import DEFAULT_LANGUAGE
 from app.world_relationships import canonicalize_relationship_label
 
@@ -25,7 +26,13 @@ class Novel(Base):
     __tablename__ = "novels"
     # Prevent SQLite from reusing primary keys after deletes (fixes id collisions with
     # persisted client state keyed by novel id). This emits `AUTOINCREMENT` on SQLite.
-    __table_args__ = {"sqlite_autoincrement": True}
+    __table_args__ = (
+        CheckConstraint(
+            "content_format IN ('plain_text', 'markdown')",
+            name="ck_novels_content_format",
+        ),
+        {"sqlite_autoincrement": True},
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     title = Column(String(255), nullable=False)
@@ -36,6 +43,7 @@ class Novel(Base):
     # contract because tokenizer inputs depend on language.
     language = Column(String(50), nullable=False, default=DEFAULT_LANGUAGE)
     file_path = Column(String(512), nullable=False)
+    content_format = Column(String(20), nullable=False, default=PLAIN_TEXT_CONTENT_FORMAT)
     total_chapters = Column(Integer, default=0)
     window_index = Column(LargeBinary, nullable=True)
     window_index_status = Column(String(20), nullable=False, default="missing")
@@ -65,6 +73,7 @@ class Chapter(Base):
     title = Column(String(255), default="")
     source_chapter_label = Column(String(255), nullable=True)
     source_chapter_number = Column(Integer, nullable=True)
+    source_volume_title = Column(String(255), nullable=True)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -370,6 +379,12 @@ class NovelIngestJob(Base):
     __table_args__ = (
         UniqueConstraint("novel_id", name="uq_novel_ingest_jobs_novel_id"),
         Index("ix_novel_ingest_jobs_status_lease", "status", "lease_expires_at"),
+        CheckConstraint(
+            "error_code IS NULL OR error_code IN "
+            "('source_missing', 'source_encoding_unsupported', "
+            "'markdown_structure_invalid', 'ingest_internal_error')",
+            name="ck_novel_ingest_jobs_error_code",
+        ),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -385,6 +400,7 @@ class NovelIngestJob(Base):
     auto_index_plan = Column(String(20), nullable=True)
     bootstrap_plan = Column(String(30), nullable=True)
     readiness_mode = Column(String(30), nullable=True)
+    error_code = Column(String(64), nullable=True)
     error = Column(Text, nullable=True)
     lease_owner = Column(String(64), nullable=True)
     lease_expires_at = Column(DateTime, nullable=True)

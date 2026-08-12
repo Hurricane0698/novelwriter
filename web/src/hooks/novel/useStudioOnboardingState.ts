@@ -27,6 +27,8 @@ interface UseStudioOnboardingStateArgs {
   bootstrapTriggerPending: boolean
   suppressWorldOnboarding?: boolean
   triggerInitialBootstrap: (handlers?: { onError?: (error: unknown) => void }) => void
+  retryIngest: () => void
+  returnToLibrary: () => void
   dismissWorldOnboardingRoute: () => void
 }
 
@@ -43,6 +45,8 @@ export function useStudioOnboardingState({
   bootstrapTriggerPending,
   suppressWorldOnboarding = false,
   triggerInitialBootstrap,
+  retryIngest,
+  returnToLibrary,
   dismissWorldOnboardingRoute,
 }: UseStudioOnboardingStateArgs) {
   const [worldGenOpen, setWorldGenOpen] = useState(false)
@@ -80,6 +84,8 @@ export function useStudioOnboardingState({
     bootstrapError: bootstrapError ?? bootstrapJob?.error ?? LABELS.ERROR_BOOTSTRAP_TRIGGER_FAILED,
     onRetryBootstrap: handleTriggerBootstrap,
     onDeferBootstrap: handleDismissWorldOnboarding,
+    onRetryIngest: retryIngest,
+    onReturnToLibrary: returnToLibrary,
   }), [
     bootstrapError,
     bootstrapJob,
@@ -87,6 +93,8 @@ export function useStudioOnboardingState({
     handleDismissWorldOnboarding,
     handleTriggerBootstrap,
     novel?.window_index,
+    retryIngest,
+    returnToLibrary,
     t,
     worldEmpty,
     worldLoading,

@@ -9,6 +9,9 @@ import { UiLocaleProvider } from '@/contexts/UiLocaleContext'
 import { novelKeys } from '@/hooks/novel/keys'
 import { NovelStudioPage } from '@/pages/NovelStudioPage'
 import { createTestQueryClient } from '@/__tests__/support/queryClient'
+import { MARKDOWN_CHAPTER_BODY_INVALID } from '@/lib/chapterMutationError'
+import { ApiError } from '@/services/apiClient'
+import type { Chapter } from '@/types/api'
 
 const ACTIVE_PENDING_STARTED_AT = Date.parse('2026-03-30T00:00:30Z')
 const ACTIVE_PENDING_NOW_MS = Date.parse('2026-03-30T00:10:00Z')
@@ -25,16 +28,99 @@ const mockUseContinuationSetupState = vi.fn()
 const mockReadGenerationResultsDebug = vi.fn()
 const mockLoadAtlasAssistWorkbench = vi.fn()
 const mockScheduleAtlasAssistWorkbenchPrefetch = vi.fn()
+const mockDownloadTextFile = vi.fn()
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
 
 function buildNovelResponse(overrides?: Record<string, unknown>) {
   return {
     id: 7,
     title: '测试小说',
+    content_format: 'plain_text',
     is_seeded_demo: false,
     total_chapters: 3,
     created_at: '2026-03-01T00:00:00Z',
     ...overrides,
   }
+}
+
+function buildRetryableIngestNovel(overrides?: Record<string, unknown>) {
+  return buildNovelResponse({
+    total_chapters: 0,
+    window_index: {
+      status: 'failed',
+      revision: 0,
+      built_revision: null,
+      error: null,
+      readiness: 'failed_retryable',
+      capabilities: {
+        chapters_available: false,
+        whole_book_index_available: false,
+        bootstrap_available: false,
+        recent_fallback_only: false,
+      },
+      ingest: {
+        status: 'failed',
+        stage: 'failed',
+        size_tier: 'large',
+        source_bytes: 1024,
+        source_chars: null,
+        chapter_count: null,
+        requested_language: 'zh',
+        resolved_language: null,
+        auto_index_plan: null,
+        bootstrap_plan: null,
+        readiness_mode: null,
+        error_code: 'ingest_internal_error',
+        error: 'raw ingest diagnostic',
+      },
+      job: null,
+    },
+    ...overrides,
+  })
+}
+
+function buildQueuedIngestNovel() {
+  return buildNovelResponse({
+    total_chapters: 0,
+    window_index: {
+      status: 'missing',
+      revision: 0,
+      built_revision: null,
+      error: null,
+      readiness: 'processing',
+      capabilities: {
+        chapters_available: false,
+        whole_book_index_available: false,
+        bootstrap_available: false,
+        recent_fallback_only: false,
+      },
+      ingest: {
+        status: 'queued',
+        stage: 'accepted',
+        size_tier: 'large',
+        source_bytes: 1024,
+        source_chars: null,
+        chapter_count: null,
+        requested_language: 'zh',
+        resolved_language: null,
+        auto_index_plan: null,
+        bootstrap_plan: null,
+        readiness_mode: null,
+        error_code: null,
+        error: null,
+      },
+      job: null,
+    },
+  })
 }
 
 vi.mock('@/components/layout/PageShell', () => ({
@@ -64,7 +150,28 @@ vi.mock('@/components/detail/ChapterContent', () => ({
 }))
 
 vi.mock('@/components/detail/ChapterEditor', () => ({
-  ChapterEditor: () => <div data-testid="chapter-editor" />,
+  ChapterEditor: ({
+    onChange,
+    onSave,
+    saveErrorCode,
+  }: {
+    onChange: (value: string) => void
+    onSave: () => void
+    saveErrorCode: string | null
+  }) => (
+    <div data-testid="chapter-editor">
+      <span data-testid="chapter-editor-error-code">{saveErrorCode}</span>
+      <button type="button" data-testid="mock-editor-invalid-change" onClick={() => onChange('# 非法标题')}>
+        invalid change
+      </button>
+      <button type="button" data-testid="mock-editor-valid-change" onClick={() => onChange('修正后的正文')}>
+        valid change
+      </button>
+      <button type="button" data-testid="mock-editor-save" onClick={onSave}>
+        save
+      </button>
+    </div>
+  ),
 }))
 
 vi.mock('@/components/detail/EmptyWorldOnboarding', () => ({
@@ -103,6 +210,10 @@ vi.mock('@/components/world-model/shared/WorldGenerationDialog', () => ({
 
 vi.mock('@/components/ui/glass-surface', () => ({
   GlassSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}))
+
+vi.mock('@/lib/downloadTextFile', () => ({
+  downloadTextFile: (...args: unknown[]) => mockDownloadTextFile(...args),
 }))
 
 vi.mock('@/components/generation/DriftWarningPopover', () => ({
@@ -239,6 +350,7 @@ vi.mock('@/services/api', () => ({
     listChaptersMeta: vi.fn(),
     getChapter: vi.fn(),
     listChapters: vi.fn(),
+    retryNovelIngest: vi.fn(),
   },
   ApiError: class ApiError extends Error {
     code?: string
@@ -250,6 +362,8 @@ import { api } from '@/services/api'
 const mockGetNovel = api.getNovel as ReturnType<typeof vi.fn>
 const mockListChaptersMeta = api.listChaptersMeta as ReturnType<typeof vi.fn>
 const mockGetChapter = api.getChapter as ReturnType<typeof vi.fn>
+const mockListChapters = api.listChapters as ReturnType<typeof vi.fn>
+const mockRetryNovelIngest = api.retryNovelIngest as ReturnType<typeof vi.fn>
 
 function LocationProbe() {
   const location = useLocation()
@@ -267,6 +381,20 @@ function HistoryBackProbe() {
     <button type="button" data-testid="history-back" onClick={() => navigate(-1)}>
       back
     </button>
+  )
+}
+
+function NovelSwitchProbe() {
+  const navigate = useNavigate()
+  return (
+    <>
+      <button type="button" data-testid="switch-novel-b" onClick={() => navigate('/novel/8?chapter=3')}>
+        switch novel B
+      </button>
+      <button type="button" data-testid="switch-novel-a" onClick={() => navigate('/novel/7?chapter=3')}>
+        switch novel A
+      </button>
+    </>
   )
 }
 
@@ -353,6 +481,9 @@ describe('NovelStudioPage', () => {
     })
 
     mockGetNovel.mockResolvedValue(buildNovelResponse())
+    mockListChapters.mockResolvedValue([])
+    mockRetryNovelIngest.mockResolvedValue(buildNovelResponse())
+    mockDownloadTextFile.mockImplementation(() => undefined)
     mockListChaptersMeta.mockResolvedValue([
       {
         id: 11,
@@ -430,6 +561,7 @@ describe('NovelStudioPage', () => {
           auto_index_plan: null,
           bootstrap_plan: null,
           readiness_mode: null,
+          error_code: null,
           error: null,
         },
         job: null,
@@ -443,6 +575,153 @@ describe('NovelStudioPage', () => {
 
     expect(await screen.findByTestId('studio-preparation-gate')).toBeInTheDocument()
     expect(screen.queryByTestId('world-onboarding')).not.toBeInTheDocument()
+  })
+
+  it('refetches the clicked novel after a retry conflict so cross-tab state converges', async () => {
+    const retryableNovel = buildRetryableIngestNovel()
+    const queuedNovel = buildQueuedIngestNovel()
+    mockGetNovel
+      .mockResolvedValueOnce(retryableNovel)
+      .mockResolvedValueOnce(queuedNovel)
+    mockListChaptersMeta.mockResolvedValue([])
+    mockUseWorldEntities.mockReturnValue({ data: [], isLoading: false })
+    mockUseWorldSystems.mockReturnValue({ data: [], isLoading: false })
+    mockRetryNovelIngest.mockRejectedValueOnce(new ApiError(409, 'raw conflict diagnostic', {
+      code: 'ingest_retry_not_allowed',
+    }))
+
+    const { queryClient } = renderWithStudioShell('/novel/7')
+    await userEvent.click(await screen.findByTestId('studio-preparation-primary-action'))
+
+    await waitFor(() => {
+      expect(mockGetNovel).toHaveBeenCalledTimes(2)
+    })
+    await waitFor(() => {
+      expect(
+        (queryClient.getQueryData(novelKeys.detail(7)) as { window_index?: { readiness?: string } })
+          .window_index?.readiness,
+      ).toBe('processing')
+    })
+    expect(screen.queryByText('重新导入失败，请稍后重试。')).not.toBeInTheDocument()
+    expect(screen.queryByText('raw conflict diagnostic')).not.toBeInTheDocument()
+  })
+
+  it('trusts refreshed processing state when the retry response is lost', async () => {
+    const retryableNovel = buildRetryableIngestNovel()
+    const queuedNovel = buildQueuedIngestNovel()
+    mockGetNovel
+      .mockResolvedValueOnce(retryableNovel)
+      .mockResolvedValueOnce(queuedNovel)
+    mockListChaptersMeta.mockResolvedValue([])
+    mockUseWorldEntities.mockReturnValue({ data: [], isLoading: false })
+    mockUseWorldSystems.mockReturnValue({ data: [], isLoading: false })
+    mockRetryNovelIngest.mockRejectedValueOnce(new TypeError('raw lost response diagnostic'))
+
+    renderWithStudioShell('/novel/7')
+    await userEvent.click(await screen.findByTestId('studio-preparation-primary-action'))
+
+    await waitFor(() => expect(mockGetNovel).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText('重新导入失败，请稍后重试。')).not.toBeInTheDocument()
+    expect(screen.queryByText('raw lost response diagnostic')).not.toBeInTheDocument()
+  })
+
+  it('cancels a pre-retry detail fetch so stale failure cannot overwrite a successful retry', async () => {
+    const retryableNovel = buildRetryableIngestNovel()
+    const queuedNovel = buildQueuedIngestNovel()
+    const staleDetail = createDeferred<unknown>()
+    mockGetNovel
+      .mockResolvedValueOnce(retryableNovel)
+      .mockImplementationOnce(() => staleDetail.promise)
+    mockRetryNovelIngest.mockResolvedValueOnce(queuedNovel)
+    mockListChaptersMeta.mockResolvedValue([])
+    mockUseWorldEntities.mockReturnValue({ data: [], isLoading: false })
+    mockUseWorldSystems.mockReturnValue({ data: [], isLoading: false })
+
+    const { queryClient } = renderWithStudioShell('/novel/7')
+    const retryAction = await screen.findByTestId('studio-preparation-primary-action')
+    const staleRefetch = queryClient.refetchQueries({
+      queryKey: novelKeys.detail(7),
+      exact: true,
+    })
+    await waitFor(() => expect(mockGetNovel).toHaveBeenCalledTimes(2))
+
+    await userEvent.click(retryAction)
+    await waitFor(() => {
+      expect(
+        (queryClient.getQueryData(novelKeys.detail(7)) as { window_index?: { readiness?: string } })
+          .window_index?.readiness,
+      ).toBe('processing')
+    })
+
+    await act(async () => {
+      staleDetail.resolve(retryableNovel)
+      await staleDetail.promise
+      await staleRefetch
+    })
+    expect(
+      (queryClient.getQueryData(novelKeys.detail(7)) as { window_index?: { readiness?: string } })
+        .window_index?.readiness,
+    ).toBe('processing')
+  })
+
+  it('starts a fresh authoritative detail GET after a lost retry response despite an older in-flight GET', async () => {
+    const retryableNovel = buildRetryableIngestNovel()
+    const queuedNovel = buildQueuedIngestNovel()
+    const staleDetail = createDeferred<unknown>()
+    mockGetNovel
+      .mockResolvedValueOnce(retryableNovel)
+      .mockImplementationOnce(() => staleDetail.promise)
+      .mockResolvedValueOnce(queuedNovel)
+    mockRetryNovelIngest.mockRejectedValueOnce(new TypeError('raw lost response diagnostic'))
+    mockListChaptersMeta.mockResolvedValue([])
+    mockUseWorldEntities.mockReturnValue({ data: [], isLoading: false })
+    mockUseWorldSystems.mockReturnValue({ data: [], isLoading: false })
+
+    const { queryClient } = renderWithStudioShell('/novel/7')
+    const retryAction = await screen.findByTestId('studio-preparation-primary-action')
+    const staleRefetch = queryClient.refetchQueries({
+      queryKey: novelKeys.detail(7),
+      exact: true,
+    })
+    await waitFor(() => expect(mockGetNovel).toHaveBeenCalledTimes(2))
+
+    await userEvent.click(retryAction)
+    await waitFor(() => expect(mockGetNovel).toHaveBeenCalledTimes(3))
+    await waitFor(() => {
+      expect(
+        (queryClient.getQueryData(novelKeys.detail(7)) as { window_index?: { readiness?: string } })
+          .window_index?.readiness,
+      ).toBe('processing')
+    })
+
+    await act(async () => {
+      staleDetail.resolve(retryableNovel)
+      await staleDetail.promise
+      await staleRefetch
+    })
+    expect(
+      (queryClient.getQueryData(novelKeys.detail(7)) as { window_index?: { readiness?: string } })
+        .window_index?.readiness,
+    ).toBe('processing')
+    expect(screen.queryByText('重新导入失败，请稍后重试。')).not.toBeInTheDocument()
+  })
+
+  it('refetches detail and shows safe copy when retrying ingest fails generically', async () => {
+    const retryableNovel = buildRetryableIngestNovel()
+    mockGetNovel
+      .mockResolvedValueOnce(retryableNovel)
+      .mockResolvedValueOnce(retryableNovel)
+    mockListChaptersMeta.mockResolvedValue([])
+    mockUseWorldEntities.mockReturnValue({ data: [], isLoading: false })
+    mockUseWorldSystems.mockReturnValue({ data: [], isLoading: false })
+    mockRetryNovelIngest.mockRejectedValueOnce(new Error('raw retry diagnostic'))
+
+    renderWithStudioShell('/novel/7')
+    await userEvent.click(await screen.findByTestId('studio-preparation-primary-action'))
+
+    expect(await screen.findByText('重新导入失败，请稍后重试。')).toBeInTheDocument()
+    expect(mockGetNovel).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText('raw retry diagnostic')).not.toBeInTheDocument()
   })
 
   it('keeps the studio blocked while initial bootstrap extraction is still running', async () => {
@@ -475,6 +754,7 @@ describe('NovelStudioPage', () => {
           auto_index_plan: 'immediate',
           bootstrap_plan: 'immediate',
           readiness_mode: 'ready',
+          error_code: null,
           error: null,
         },
         job: null,
@@ -538,6 +818,7 @@ describe('NovelStudioPage', () => {
           auto_index_plan: 'deferred',
           bootstrap_plan: 'defer_until_index',
           readiness_mode: 'degraded_target',
+          error_code: null,
           error: null,
         },
         job: {
@@ -598,6 +879,7 @@ describe('NovelStudioPage', () => {
             auto_index_plan: null,
             bootstrap_plan: 'immediate',
             readiness_mode: null,
+            error_code: null,
             error: null,
           },
           job: null,
@@ -633,6 +915,7 @@ describe('NovelStudioPage', () => {
             auto_index_plan: 'immediate',
             bootstrap_plan: 'immediate',
             readiness_mode: 'full_target',
+            error_code: null,
             error: null,
           },
           job: null,
@@ -1009,6 +1292,330 @@ describe('NovelStudioPage', () => {
     expect(screen.getByTestId('location-path')).toHaveTextContent('/novel/7')
     expect(screen.getByTestId('location-search')).toHaveTextContent('chapter=3')
     expect(screen.getByTestId('chapter-editor')).toBeInTheDocument()
+  })
+
+  it('surfaces autosave and manual Markdown validation, then clears it after a valid save', async () => {
+    mockGetNovel.mockResolvedValue(buildNovelResponse({ content_format: 'markdown' }))
+    const mutateAsync = vi.fn(({ content }: { content?: string }) => (
+      content?.startsWith('#')
+        ? Promise.reject(new ApiError(422, 'raw backend diagnostic', {
+            code: MARKDOWN_CHAPTER_BODY_INVALID,
+            detail: { code: MARKDOWN_CHAPTER_BODY_INVALID },
+          }))
+        : Promise.resolve(undefined)
+    ))
+    mockUseUpdateChapter.mockReturnValue({ mutate: vi.fn(), mutateAsync })
+    let activeSave: (value: string) => Promise<void> = async () => undefined
+    const schedule = vi.fn((value: string) => {
+      void activeSave(value).catch(() => undefined)
+    })
+    const saveNow = vi.fn((value: string) => activeSave(value))
+    const cancel = vi.fn()
+    mockUseDebouncedAutoSave.mockImplementation(({
+      save,
+    }: {
+      save: (value: string) => Promise<void>
+    }) => {
+      activeSave = save
+      return {
+        status: 'unsaved',
+        schedule,
+        flush: vi.fn().mockResolvedValue(undefined),
+        saveNow,
+        cancel,
+      }
+    })
+
+    const user = userEvent.setup()
+    renderWithStudioShell('/novel/7?chapter=3')
+
+    await waitFor(() => {
+      expect(screen.getByText('第三章内容')).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: '编辑' }))
+
+    await user.click(screen.getByTestId('mock-editor-invalid-change'))
+    await waitFor(() => {
+      expect(screen.getByTestId('chapter-editor-error-code')).toHaveTextContent(
+        MARKDOWN_CHAPTER_BODY_INVALID,
+      )
+    })
+
+    await user.click(screen.getByTestId('mock-editor-save'))
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledTimes(2)
+    })
+    expect(screen.getByTestId('chapter-editor')).toBeInTheDocument()
+    expect(screen.getByTestId('chapter-editor-error-code')).toHaveTextContent(
+      MARKDOWN_CHAPTER_BODY_INVALID,
+    )
+
+    await user.click(screen.getByTestId('mock-editor-valid-change'))
+    await waitFor(() => {
+      expect(screen.getByTestId('chapter-editor-error-code')).toBeEmptyDOMElement()
+    })
+  })
+
+  it('keeps the newest save error when an older save completes afterward', async () => {
+    const olderSave = createDeferred<void>()
+    const newerSave = createDeferred<void>()
+    const mutateAsync = vi.fn()
+      .mockImplementationOnce(() => olderSave.promise)
+      .mockImplementationOnce(() => newerSave.promise)
+    mockUseUpdateChapter.mockReturnValue({ mutate: vi.fn(), mutateAsync })
+    let activeSave: (value: string) => Promise<void> = async () => undefined
+    mockUseDebouncedAutoSave.mockImplementation(({
+      save,
+    }: {
+      save: (value: string) => Promise<void>
+    }) => {
+      activeSave = save
+      return {
+        status: 'unsaved',
+        schedule: (value: string) => {
+          void activeSave(value).catch(() => undefined)
+        },
+        flush: vi.fn().mockResolvedValue(undefined),
+        saveNow: (value: string) => activeSave(value),
+        cancel: vi.fn(),
+      }
+    })
+
+    const user = userEvent.setup()
+    renderWithStudioShell('/novel/7?chapter=3')
+    await waitFor(() => expect(screen.getByText('第三章内容')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: '编辑' }))
+    await user.click(screen.getByTestId('mock-editor-invalid-change'))
+    await user.click(screen.getByTestId('mock-editor-valid-change'))
+
+    await act(async () => {
+      newerSave.reject(new ApiError(422, 'newer raw diagnostic', {
+        code: MARKDOWN_CHAPTER_BODY_INVALID,
+      }))
+      await newerSave.promise.catch(() => undefined)
+    })
+    expect(screen.getByTestId('chapter-editor-error-code')).toHaveTextContent(
+      MARKDOWN_CHAPTER_BODY_INVALID,
+    )
+
+    await act(async () => {
+      olderSave.resolve(undefined)
+      await olderSave.promise
+    })
+    expect(screen.getByTestId('chapter-editor-error-code')).toHaveTextContent(
+      MARKDOWN_CHAPTER_BODY_INVALID,
+    )
+  })
+
+  it('does not close the editor when a manual save becomes stale before succeeding', async () => {
+    const manualSave = createDeferred<void>()
+    const mutateAsync = vi.fn(() => manualSave.promise)
+    mockUseUpdateChapter.mockReturnValue({ mutate: vi.fn(), mutateAsync })
+    let activeSave: (value: string) => Promise<void> = async () => undefined
+    mockUseDebouncedAutoSave.mockImplementation(({
+      save,
+    }: {
+      save: (value: string) => Promise<void>
+    }) => {
+      activeSave = save
+      return {
+        status: 'unsaved',
+        schedule: vi.fn(),
+        flush: vi.fn().mockResolvedValue(undefined),
+        saveNow: (value: string) => activeSave(value),
+        cancel: vi.fn(),
+      }
+    })
+
+    const user = userEvent.setup()
+    renderWithStudioShell('/novel/7?chapter=3')
+    await waitFor(() => expect(screen.getByText('第三章内容')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: '编辑' }))
+    await user.click(screen.getByTestId('mock-editor-save'))
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByTestId('mock-editor-valid-change'))
+
+    await act(async () => {
+      manualSave.resolve(undefined)
+      await manualSave.promise
+    })
+    expect(screen.getByTestId('chapter-editor')).toBeInTheDocument()
+  })
+
+  it('invalidates a pending save across an A to B to A chapter round trip', async () => {
+    const staleSave = createDeferred<void>()
+    mockUseUpdateChapter.mockReturnValue({
+      mutate: vi.fn(),
+      mutateAsync: vi.fn(() => staleSave.promise),
+    })
+    let activeSave: (value: string) => Promise<void> = async () => undefined
+    mockUseDebouncedAutoSave.mockImplementation(({
+      save,
+    }: {
+      save: (value: string) => Promise<void>
+    }) => {
+      activeSave = save
+      return {
+        status: 'unsaved',
+        schedule: (value: string) => {
+          void activeSave(value).catch(() => undefined)
+        },
+        flush: vi.fn().mockResolvedValue(undefined),
+        saveNow: (value: string) => activeSave(value),
+        cancel: vi.fn(),
+      }
+    })
+
+    const user = userEvent.setup()
+    renderWithStudioShell('/novel/7?chapter=1')
+    await waitFor(() => expect(screen.getByText('第一章内容')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: '编辑' }))
+    await user.click(screen.getByTestId('mock-editor-invalid-change'))
+    await user.click(within(screen.getByTestId('studio-rail-chapters')).getByRole('button', { name: /第 3 章/ }))
+    await waitFor(() => expect(screen.getByText('第三章内容')).toBeInTheDocument())
+    await user.click(within(screen.getByTestId('studio-rail-chapters')).getByRole('button', { name: /第 1 章/ }))
+    await waitFor(() => expect(screen.getByText('第一章内容')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: '编辑' }))
+
+    await act(async () => {
+      staleSave.reject(new ApiError(422, 'stale raw diagnostic', {
+        code: MARKDOWN_CHAPTER_BODY_INVALID,
+      }))
+      await staleSave.promise.catch(() => undefined)
+    })
+    expect(screen.getByTestId('chapter-editor-error-code')).toBeEmptyDOMElement()
+    expect(screen.queryByText('stale raw diagnostic')).not.toBeInTheDocument()
+  })
+
+  it('shows safe visible feedback when exporting the current chapter fails', async () => {
+    mockDownloadTextFile.mockImplementationOnce(() => {
+      throw new Error('raw chapter export diagnostic')
+    })
+
+    const user = userEvent.setup()
+    renderWithStudioShell('/novel/7?chapter=3')
+    await waitFor(() => expect(screen.getByText('第三章内容')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: '更多操作' }))
+    await user.click(screen.getByRole('button', { name: '导出当前章节' }))
+
+    expect(await screen.findByTestId('native-export-error')).toHaveTextContent(
+      '导出失败，请稍后重试。',
+    )
+    expect(screen.queryByText('raw chapter export diagnostic')).not.toBeInTheDocument()
+  })
+
+  it('shows safe visible feedback when exporting the whole novel fails', async () => {
+    mockListChapters.mockRejectedValueOnce(new Error('raw whole-book export diagnostic'))
+
+    const user = userEvent.setup()
+    renderWithStudioShell('/novel/7?chapter=3')
+    await waitFor(() => expect(screen.getByText('第三章内容')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: '更多操作' }))
+    await user.click(screen.getByRole('button', { name: '导出全部章节' }))
+
+    expect(await screen.findByTestId('native-export-error')).toHaveTextContent(
+      '导出失败，请稍后重试。',
+    )
+    expect(mockListChapters).toHaveBeenCalledWith(7)
+    expect(screen.queryByText('raw whole-book export diagnostic')).not.toBeInTheDocument()
+  })
+
+  it('shows a safe error result when creating an empty chapter fails', async () => {
+    const mutate = vi.fn((...args: unknown[]) => {
+      const options = args[1] as { onError?: (error: unknown) => void } | undefined
+      options?.onError?.(new Error('raw backend diagnostic'))
+    })
+    mockUseCreateChapter.mockReturnValue({ isPending: false, mutate })
+
+    const user = userEvent.setup()
+    renderWithStudioShell('/novel/7?chapter=3')
+
+    await waitFor(() => {
+      expect(screen.getByText('第三章内容')).toBeInTheDocument()
+    })
+    await user.click(screen.getByTitle('新建章节'))
+
+    expect(screen.getByTestId('chapter-create-error')).toHaveTextContent('新建章节失败，请重试。')
+    expect(screen.queryByText('raw backend diagnostic')).not.toBeInTheDocument()
+  })
+
+  it('does not replay stale chapter-create callbacks after an A to B to A novel round trip', async () => {
+    type CreateCallbacks = {
+      onSuccess?: (chapter: Chapter) => void
+      onError?: (error: unknown) => void
+    }
+    const pendingCallbacks: CreateCallbacks[] = []
+    mockUseCreateChapter.mockReturnValue({
+      isPending: false,
+      mutate: vi.fn((_request: unknown, callbacks?: CreateCallbacks) => {
+        pendingCallbacks.push(callbacks ?? {})
+      }),
+    })
+    mockGetNovel.mockImplementation(async (targetNovelId: number) => (
+      buildNovelResponse({ id: targetNovelId, title: `测试小说 ${targetNovelId}` })
+    ))
+    mockGetChapter.mockImplementation(async (targetNovelId: number, chapterNum: number) => ({
+      id: chapterNum,
+      novel_id: targetNovelId,
+      chapter_number: chapterNum,
+      title: '归来',
+      source_chapter_label: '第三章 归来',
+      source_chapter_number: 3,
+      source_volume_title: null,
+      content: `小说 ${targetNovelId} 第三章`,
+      created_at: '2026-03-03T00:00:00Z',
+      updated_at: null,
+    }))
+
+    const user = userEvent.setup()
+    renderWithStudioShell(
+      '/novel/7?chapter=3',
+      <Routes>
+        <Route element={<NovelShell />}>
+          <Route
+            path="/novel/:novelId"
+            element={(
+              <>
+                <NovelStudioPage />
+                <NovelSwitchProbe />
+                <LocationProbe />
+              </>
+            )}
+          />
+        </Route>
+      </Routes>,
+    )
+
+    await waitFor(() => expect(screen.getByText('小说 7 第三章')).toBeInTheDocument())
+    await user.click(screen.getByTitle('新建章节'))
+    await user.click(screen.getByTestId('switch-novel-b'))
+    await waitFor(() => expect(screen.getByTestId('location-path')).toHaveTextContent('/novel/8'))
+    await user.click(screen.getByTestId('switch-novel-a'))
+    await waitFor(() => expect(screen.getByTestId('location-path')).toHaveTextContent('/novel/7'))
+
+    act(() => pendingCallbacks[0]?.onError?.(new Error('stale create diagnostic')))
+    expect(screen.queryByTestId('chapter-create-error')).not.toBeInTheDocument()
+
+    await user.click(screen.getByTitle('新建章节'))
+    await user.click(screen.getByTestId('switch-novel-b'))
+    await waitFor(() => expect(screen.getByTestId('location-path')).toHaveTextContent('/novel/8'))
+    await user.click(screen.getByTestId('switch-novel-a'))
+    await waitFor(() => expect(screen.getByTestId('location-path')).toHaveTextContent('/novel/7'))
+    act(() => pendingCallbacks[1]?.onSuccess?.({
+      id: 301,
+      novel_id: 7,
+      chapter_number: 4,
+      title: '',
+      source_chapter_label: null,
+      source_chapter_number: null,
+      source_volume_title: null,
+      content: '',
+      created_at: '2026-03-03T00:00:00Z',
+      updated_at: null,
+    }))
+
+    expect(screen.getByTestId('location-search')).toHaveTextContent('chapter=3')
+    expect(screen.queryByText('stale create diagnostic')).not.toBeInTheDocument()
   })
 
   it('keeps studio world-generation as an explicit handoff before opening Atlas review', async () => {

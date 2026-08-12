@@ -147,6 +147,15 @@ def test_bootstraps_fresh_database_and_stamps_head(sqlite_engine):
     assert result == "bootstrapped"
     assert "novels" in inspector.get_table_names()
     assert "world_entity_attributes" in inspector.get_table_names()
+    assert "content_format" in {
+        column["name"] for column in inspector.get_columns("novels")
+    }
+    assert "source_volume_title" in {
+        column["name"] for column in inspector.get_columns("chapters")
+    }
+    assert "error_code" in {
+        column["name"] for column in inspector.get_columns("novel_ingest_jobs")
+    }
     with engine.connect() as connection:
         assert connection.exec_driver_sql("PRAGMA journal_mode").scalar_one() == "wal"
     assert calls == [("stamp", "head")]
@@ -338,6 +347,20 @@ def test_matches_unversioned_baseline_for_chapter_source_metadata():
     assert _matching_unversioned_upgrade_baseline(missing_columns) == "030"
 
 
+def test_matches_unversioned_baseline_for_markdown_source_contract():
+    missing_columns = {
+        "novels": {"content_format"},
+        "chapters": {"source_volume_title"},
+        "novel_ingest_jobs": {"error_code"},
+    }
+
+    assert _matching_unversioned_upgrade_baseline(missing_columns) == "040"
+
+
+def test_matches_latest_safe_baseline_when_schema_is_current():
+    assert _matching_unversioned_upgrade_baseline({}) == "040"
+
+
 def test_revision_032_upgrade_creates_generation_admission_tables_and_preserves_data(
     sqlite_engine,
     monkeypatch: pytest.MonkeyPatch,
@@ -385,7 +408,7 @@ def test_revision_032_upgrade_creates_generation_admission_tables_and_preserves_
 
     inspector = sa.inspect(engine)
     assert result == "upgraded"
-    assert _recorded_revision(engine) == "040"
+    assert _recorded_revision(engine) == "041"
     assert {"continuation_runs", "world_generation_runs"}.issubset(
         inspector.get_table_names()
     )
@@ -423,7 +446,7 @@ def test_repairs_v032_database_already_stamped_past_continuation_table_creation(
         column["name"] for column in inspector.get_columns("world_generation_runs")
     }
     assert result == "upgraded"
-    assert _recorded_revision(engine) == "040"
+    assert _recorded_revision(engine) == "041"
     assert {
         "client_request_id",
         "request_hash",
@@ -468,4 +491,4 @@ def test_upgrades_versioned_schema(sqlite_engine):
     )
 
     assert result == "upgraded"
-    assert calls == [("stamp", "035"), ("upgrade", "head")]
+    assert calls == [("stamp", "040"), ("upgrade", "head")]

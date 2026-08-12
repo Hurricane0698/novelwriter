@@ -84,6 +84,19 @@ describe('LibraryPage', () => {
     })
   })
 
+  it('accepts Markdown files and derives the title from the .md extension', async () => {
+    renderPage()
+
+    const input = screen.getByTestId('library-file-input') as HTMLInputElement
+    expect(input.accept).toBe('.txt,.md')
+    const file = new File(['## 第一章\n正文'], 'markdown-book.md', { type: 'text/markdown' })
+    await userEvent.upload(input, file)
+
+    await waitFor(() => {
+      expect(uploadNovel).toHaveBeenCalledWith(file, 'markdown-book', '', { sourceSurface: 'unknown' })
+    })
+  })
+
   it('blocks further library actions while an upload is in flight', async () => {
     uploadNovel.mockImplementation(() => new Promise(() => {}))
 
@@ -123,6 +136,13 @@ describe('LibraryPage', () => {
           revision: 1,
           built_revision: 1,
           error: null,
+          readiness: 'ready',
+          capabilities: {
+            chapters_available: true,
+            whole_book_index_available: true,
+            bootstrap_available: true,
+            recent_fallback_only: false,
+          },
           job: null,
         },
       },

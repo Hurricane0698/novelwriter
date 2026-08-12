@@ -147,6 +147,7 @@ describe('useStudioOnboardingState', () => {
             auto_index_plan: 'deferred',
             bootstrap_plan: 'defer_until_index',
             readiness_mode: 'degraded_target',
+            error_code: null,
             error: null,
           },
           job: {

@@ -8,6 +8,7 @@ function buildNovel(partial?: Partial<Novel>): Novel {
     title: '测试小说',
     author: '作者',
     language: 'zh',
+    content_format: 'plain_text',
     total_chapters: 3,
     created_at: '2026-03-01T00:00:00Z',
     updated_at: '2026-03-01T00:00:00Z',
@@ -72,6 +73,7 @@ describe('studioOnboardingPreparation', () => {
             bootstrap_plan: null,
             readiness_mode: null,
             error: null,
+            error_code: null,
           },
           job: null,
         },
@@ -84,6 +86,8 @@ describe('studioOnboardingPreparation', () => {
       bootstrapError: null,
       onRetryBootstrap: vi.fn(),
       onDeferBootstrap: vi.fn(),
+      onRetryIngest: vi.fn(),
+      onReturnToLibrary: vi.fn(),
     })
 
     expect(gate).toMatchObject({
@@ -109,6 +113,8 @@ describe('studioOnboardingPreparation', () => {
       bootstrapError: 'mapped failure',
       onRetryBootstrap,
       onDeferBootstrap,
+      onRetryIngest: vi.fn(),
+      onReturnToLibrary: vi.fn(),
     })
 
     expect(gate).not.toBeNull()
@@ -146,7 +152,7 @@ describe('studioOnboardingPreparation', () => {
           ingest: {
             status: 'completed',
             stage: 'completed',
-            size_tier: 'small',
+            size_tier: 'normal',
             source_bytes: 128,
             source_chars: 64,
             chapter_count: 2,
@@ -156,6 +162,7 @@ describe('studioOnboardingPreparation', () => {
             bootstrap_plan: 'immediate',
             readiness_mode: 'full_target',
             error: null,
+            error_code: null,
           },
           job: null,
         },
@@ -173,6 +180,8 @@ describe('studioOnboardingPreparation', () => {
       bootstrapError: 'boom',
       onRetryBootstrap: vi.fn(),
       onDeferBootstrap: vi.fn(),
+      onRetryIngest: vi.fn(),
+      onReturnToLibrary: vi.fn(),
     })
 
     expect(gate).toMatchObject({
@@ -213,6 +222,7 @@ describe('studioOnboardingPreparation', () => {
             bootstrap_plan: 'defer_until_index',
             readiness_mode: 'degraded_target',
             error: null,
+            error_code: null,
           },
           job: {
             status: 'running',
@@ -234,6 +244,8 @@ describe('studioOnboardingPreparation', () => {
       bootstrapError: null,
       onRetryBootstrap: vi.fn(),
       onDeferBootstrap: vi.fn(),
+      onRetryIngest: vi.fn(),
+      onReturnToLibrary: vi.fn(),
     })
 
     expect(gate).toMatchObject({
@@ -273,6 +285,7 @@ describe('studioOnboardingPreparation', () => {
             bootstrap_plan: 'defer_until_index',
             readiness_mode: 'degraded_target',
             error: null,
+            error_code: null,
           },
           job: null,
         },
@@ -292,6 +305,8 @@ describe('studioOnboardingPreparation', () => {
       bootstrapError: null,
       onRetryBootstrap: vi.fn(),
       onDeferBootstrap: vi.fn(),
+      onRetryIngest: vi.fn(),
+      onReturnToLibrary: vi.fn(),
     })
 
     expect(gate).toMatchObject({
@@ -331,6 +346,7 @@ describe('studioOnboardingPreparation', () => {
             bootstrap_plan: 'defer_until_index',
             readiness_mode: 'degraded_target',
             error: null,
+            error_code: null,
           },
           job: null,
         },
@@ -351,8 +367,184 @@ describe('studioOnboardingPreparation', () => {
       bootstrapError: null,
       onRetryBootstrap: vi.fn(),
       onDeferBootstrap: vi.fn(),
+      onRetryIngest: vi.fn(),
+      onReturnToLibrary: vi.fn(),
     })
 
     expect(gate).toBeNull()
+  })
+
+  it('returns source-fix guidance without a retry action for invalid Markdown', () => {
+    const onRetryIngest = vi.fn()
+    const onReturnToLibrary = vi.fn()
+    const gate = resolveStudioPreparationGate({
+      t,
+      novelWindowIndex: buildNovel({
+        content_format: 'markdown',
+        window_index: {
+          status: 'missing',
+          revision: 0,
+          built_revision: null,
+          error: null,
+          readiness: 'failed_terminal',
+          capabilities: {
+            chapters_available: false,
+            whole_book_index_available: false,
+            bootstrap_available: false,
+            recent_fallback_only: false,
+          },
+          ingest: {
+            status: 'failed',
+            stage: 'failed',
+            size_tier: 'normal',
+            source_bytes: 64,
+            source_chars: null,
+            chapter_count: null,
+            requested_language: 'auto',
+            resolved_language: null,
+            auto_index_plan: null,
+            bootstrap_plan: null,
+            readiness_mode: null,
+            error: 'Markdown structure is invalid',
+            error_code: 'markdown_structure_invalid',
+          },
+          job: null,
+        },
+      }).window_index,
+      worldLoading: false,
+      worldOnboardingDismissed: false,
+      worldEmpty: true,
+      bootstrapTriggerPending: false,
+      bootstrapJob: null,
+      bootstrapError: null,
+      onRetryBootstrap: vi.fn(),
+      onDeferBootstrap: vi.fn(),
+      onRetryIngest,
+      onReturnToLibrary,
+    })
+
+    expect(gate).toMatchObject({
+      title: 'studio.preparation.ingestNeedsFixTitle',
+      error: 'studio.preparation.markdownRepair',
+      primaryActionLabel: 'studio.preparation.returnLibrary',
+    })
+    expect(gate).not.toHaveProperty('secondaryActionLabel')
+    gate?.onPrimaryAction?.()
+    expect(onReturnToLibrary).toHaveBeenCalledTimes(1)
+    expect(onRetryIngest).not.toHaveBeenCalled()
+  })
+
+  it('only exposes ingest retry for internal failures', () => {
+    const onRetryIngest = vi.fn()
+    const gate = resolveStudioPreparationGate({
+      t,
+      novelWindowIndex: buildNovel({
+        window_index: {
+          status: 'missing',
+          revision: 0,
+          built_revision: null,
+          error: null,
+          readiness: 'failed_retryable',
+          capabilities: {
+            chapters_available: false,
+            whole_book_index_available: false,
+            bootstrap_available: false,
+            recent_fallback_only: false,
+          },
+          ingest: {
+            status: 'failed',
+            stage: 'failed',
+            size_tier: 'normal',
+            source_bytes: 64,
+            source_chars: null,
+            chapter_count: null,
+            requested_language: 'auto',
+            resolved_language: null,
+            auto_index_plan: null,
+            bootstrap_plan: null,
+            readiness_mode: null,
+            error: 'Novel ingest failed',
+            error_code: 'ingest_internal_error',
+          },
+          job: null,
+        },
+      }).window_index,
+      worldLoading: false,
+      worldOnboardingDismissed: false,
+      worldEmpty: true,
+      bootstrapTriggerPending: false,
+      bootstrapJob: null,
+      bootstrapError: null,
+      onRetryBootstrap: vi.fn(),
+      onDeferBootstrap: vi.fn(),
+      onRetryIngest,
+      onReturnToLibrary: vi.fn(),
+    })
+
+    expect(gate).toMatchObject({
+      primaryActionLabel: 'studio.preparation.retryImport',
+      secondaryActionLabel: 'studio.preparation.returnLibrary',
+    })
+    gate?.onPrimaryAction?.()
+    expect(onRetryIngest).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a failed ingest without an error code terminal and non-retryable', () => {
+    const onRetryIngest = vi.fn()
+    const onReturnToLibrary = vi.fn()
+    const gate = resolveStudioPreparationGate({
+      t,
+      novelWindowIndex: buildNovel({
+        window_index: {
+          status: 'missing',
+          revision: 0,
+          built_revision: null,
+          error: null,
+          readiness: 'failed_terminal',
+          capabilities: {
+            chapters_available: false,
+            whole_book_index_available: false,
+            bootstrap_available: false,
+            recent_fallback_only: false,
+          },
+          ingest: {
+            status: 'failed',
+            stage: 'failed',
+            size_tier: null,
+            source_bytes: 64,
+            source_chars: null,
+            chapter_count: null,
+            requested_language: null,
+            resolved_language: null,
+            auto_index_plan: null,
+            bootstrap_plan: null,
+            readiness_mode: null,
+            error_code: null,
+            error: 'sanitized diagnostic',
+          },
+          job: null,
+        },
+      }).window_index,
+      worldLoading: false,
+      worldOnboardingDismissed: false,
+      worldEmpty: true,
+      bootstrapTriggerPending: false,
+      bootstrapJob: null,
+      bootstrapError: null,
+      onRetryBootstrap: vi.fn(),
+      onDeferBootstrap: vi.fn(),
+      onRetryIngest,
+      onReturnToLibrary,
+    })
+
+    expect(gate).toMatchObject({
+      title: 'studio.preparation.ingestNeedsFixTitle',
+      error: null,
+      primaryActionLabel: 'studio.preparation.returnLibrary',
+    })
+    expect(gate).not.toHaveProperty('secondaryActionLabel')
+    gate?.onPrimaryAction?.()
+    expect(onReturnToLibrary).toHaveBeenCalledTimes(1)
+    expect(onRetryIngest).not.toHaveBeenCalled()
   })
 })

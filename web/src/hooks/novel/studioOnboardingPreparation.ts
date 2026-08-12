@@ -28,6 +28,8 @@ interface ResolveStudioPreparationGateArgs {
   bootstrapError: string | null
   onRetryBootstrap: () => void
   onDeferBootstrap: () => void
+  onRetryIngest: () => void
+  onReturnToLibrary: () => void
 }
 
 export function isStudioBootstrapStatusRunning(status: BootstrapStatus | null | undefined): boolean {
@@ -68,6 +70,8 @@ export function resolveStudioPreparationGate({
   bootstrapError,
   onRetryBootstrap,
   onDeferBootstrap,
+  onRetryIngest,
+  onReturnToLibrary,
 }: ResolveStudioPreparationGateArgs): StudioPreparationGateState | null {
   const ingestJob = novelWindowIndex?.ingest ?? null
   const chaptersAvailable = novelWindowIndex?.capabilities?.chapters_available ?? false
@@ -142,6 +146,41 @@ export function resolveStudioPreparationGate({
       description: t('studio.preparation.uploadDescription'),
       detail: ingestStageLabels[ingestJob.stage] ?? t('worldModel.common.processing'),
       error: null,
+    }
+  }
+
+  if (ingestJob?.status === 'failed' && !chaptersAvailable) {
+    if (novelWindowIndex?.readiness === 'failed_retryable') {
+      return {
+        title: t('studio.preparation.ingestFailedTitle'),
+        description: t('studio.preparation.ingestInternalDescription'),
+        detail: null,
+        error: t('studio.preparation.ingestInternalRepair'),
+        primaryActionLabel: t('studio.preparation.retryImport'),
+        onPrimaryAction: onRetryIngest,
+        secondaryActionLabel: t('studio.preparation.returnLibrary'),
+        onSecondaryAction: onReturnToLibrary,
+      }
+    }
+
+    if (novelWindowIndex?.readiness === 'failed_terminal') {
+      let repairKey: UiMessageKey | null = null
+      if (ingestJob.error_code === 'source_missing') {
+        repairKey = 'studio.preparation.sourceMissingRepair'
+      } else if (ingestJob.error_code === 'source_encoding_unsupported') {
+        repairKey = 'studio.preparation.encodingRepair'
+      } else if (ingestJob.error_code === 'markdown_structure_invalid') {
+        repairKey = 'studio.preparation.markdownRepair'
+      }
+
+      return {
+        title: t('studio.preparation.ingestNeedsFixTitle'),
+        description: t('studio.preparation.ingestNeedsFixDescription'),
+        detail: null,
+        error: repairKey ? t(repairKey) : null,
+        primaryActionLabel: t('studio.preparation.returnLibrary'),
+        onPrimaryAction: onReturnToLibrary,
+      }
     }
   }
 

@@ -1377,6 +1377,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "markdown-it-py" },
     { name = "msgpack" },
     { name = "openai" },
     { name = "passlib", extra = ["bcrypt"] },
@@ -1414,6 +1415,7 @@ hosted-proxy = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "fastapi", specifier = ">=0.109.0" },
+    { name = "markdown-it-py", specifier = ">=4.0.0" },
     { name = "msgpack", specifier = ">=1.0.8" },
     { name = "openai", specifier = ">=1.50.0" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },

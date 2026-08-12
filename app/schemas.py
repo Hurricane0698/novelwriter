@@ -1,10 +1,11 @@
-from pydantic import BaseModel, Field, ConfigDict, SecretStr, field_validator, model_validator, TypeAdapter
+from pydantic import AfterValidator, BaseModel, Field, ConfigDict, SecretStr, field_validator, model_validator, TypeAdapter
 from pydantic_core import PydanticCustomError
-from typing import ClassVar, Optional, List, Literal, Any
+from typing import Annotated, ClassVar, Optional, List, Literal, Any
 from datetime import datetime
 from enum import Enum
 
 from app.config import MAX_CONTEXT_CHAPTERS
+from app.content_formats import NovelContentFormat
 from app.language import DEFAULT_LANGUAGE, normalize_copilot_interaction_locale, normalize_language_code
 from app.world_visibility import WorldVisibility, normalize_visibility
 
@@ -72,6 +73,7 @@ class NovelBase(BaseModel):
         return normalize_language_code(v if isinstance(v, str) else None, default=DEFAULT_LANGUAGE)
 class NovelResponse(NovelBase):
     id: int
+    content_format: NovelContentFormat
     total_chapters: int
     is_seeded_demo: bool = False
     window_index: "WindowIndexStateResponse"
@@ -112,6 +114,13 @@ class NovelIngestJobStage(str, Enum):
     FAILED = "failed"
 
 
+class NovelIngestErrorCode(str, Enum):
+    SOURCE_MISSING = "source_missing"
+    SOURCE_ENCODING_UNSUPPORTED = "source_encoding_unsupported"
+    MARKDOWN_STRUCTURE_INVALID = "markdown_structure_invalid"
+    INGEST_INTERNAL_ERROR = "ingest_internal_error"
+
+
 class NovelIngestSizeTier(str, Enum):
     NORMAL = "normal"
     LARGE = "large"
@@ -125,6 +134,7 @@ class WindowIndexReadinessStatus(str, Enum):
     READY = "ready"
     DEGRADED_READY = "degraded_ready"
     FAILED_RETRYABLE = "failed_retryable"
+    FAILED_TERMINAL = "failed_terminal"
 
 
 class WindowIndexCapabilitiesResponse(BaseModel):
@@ -146,6 +156,7 @@ class NovelIngestJobResponse(BaseModel):
     auto_index_plan: str | None = None
     bootstrap_plan: str | None = None
     readiness_mode: str | None = None
+    error_code: NovelIngestErrorCode | None = None
     error: str | None = None
 
 
@@ -209,6 +220,7 @@ class ChapterResponse(BaseModel):
     title: str
     source_chapter_label: str | None = None
     source_chapter_number: int | None = None
+    source_volume_title: str | None = None
     content: str
     created_at: datetime
     updated_at: datetime | None = None
@@ -223,19 +235,35 @@ class ChapterMetaResponse(BaseModel):
     title: str
     source_chapter_label: str | None = None
     source_chapter_number: int | None = None
+    source_volume_title: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
 
+def _validate_single_line_chapter_title(value: str) -> str:
+    if "\r" in value or "\n" in value:
+        raise PydanticCustomError(
+            "chapter_title_multiline",
+            "Chapter title must be a single line",
+        )
+    return value
+
+
+SingleLineChapterTitle = Annotated[
+    str,
+    AfterValidator(_validate_single_line_chapter_title),
+]
+
+
 class ChapterUpdateRequest(BaseModel):
-    title: str | None = None
+    title: SingleLineChapterTitle | None = None
     content: str | None = None
 
 
 class ChapterCreateRequest(BaseModel):
     chapter_number: int | None = None  # default: smallest missing positive chapter number
-    title: str = ""
+    title: SingleLineChapterTitle = ""
     content: str = ""
 class ContinuationResponse(BaseModel):
     id: int

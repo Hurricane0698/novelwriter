@@ -1,7 +1,12 @@
 import type { Location, NavigateFunction } from 'react-router-dom'
 import type { UiLocale } from '@/lib/uiMessages'
 import type { ContinueDebugSummary, ContinueResponse, Continuation, PostcheckWarning } from '@/types/api'
-import type { ContinuationResultsLocationState, ContinuationResultsT, VariantState } from './helpers'
+import {
+  buildContinuationMappingFromContinuations,
+  type ContinuationResultsLocationState,
+  type ContinuationResultsT,
+  type VariantState,
+} from './helpers'
 import { useContinuationResultsUrlPersistence } from './useContinuationResultsUrlPersistence'
 import { useContinuationStreamSource } from './useContinuationStreamSource'
 import { usePersistedContinuationReplay } from './usePersistedContinuationReplay'
@@ -16,6 +21,7 @@ interface UseContinuationResultsSourceArgs {
 }
 
 interface UseContinuationResultsSourceResult {
+  sourceIdentity: string
   locationState: ContinuationResultsLocationState | null
   legacyResponse: ContinueResponse | undefined
   persisted: string | null
@@ -58,6 +64,7 @@ export function useContinuationResultsSource({
   })
 
   const {
+    streamSourceId,
     variants,
     fallbackNotice,
     fallbackVersions,
@@ -92,8 +99,16 @@ export function useContinuationResultsSource({
 
   const nonStreamVersions = persistedVersions ?? legacyVersions
   const isLegacyMode = !isStreamMode && nonStreamVersions.length > 0
+  const sourceIdentity = streamSourceId !== null
+    ? `stream:${streamSourceId}`
+    : persisted
+      ? `persisted:${persisted}`
+      : legacyVersions.length > 0
+        ? `legacy:${buildContinuationMappingFromContinuations(legacyVersions)}`
+        : 'empty'
 
   return {
+    sourceIdentity,
     locationState,
     legacyResponse,
     persisted,

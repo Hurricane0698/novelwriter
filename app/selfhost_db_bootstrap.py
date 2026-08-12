@@ -39,6 +39,7 @@ _PRE_CHAPTER_SOURCE_METADATA_REVISION = "030"
 _PRE_AUTH_IDENTITIES_REVISION = "032"
 _PRE_NOVEL_INGEST_JOB_REVISION = "034"
 _PRE_WORLD_GENERATION_ADMISSION_REVISION = "035"
+_PRE_MARKDOWN_SOURCE_CONTRACT_REVISION = "040"
 _CORE_TABLES = {"novels", "chapters"}
 _MISSING_TABLE = "__table__"
 _LEGACY_TABLES = {
@@ -53,7 +54,11 @@ _LEGACY_TABLES = {
     "plot_beats",
 }
 _REQUIRED_SCHEMA_COLUMNS: dict[str, set[str]] = {
-    "chapters": {"source_chapter_label", "source_chapter_number"},
+    "chapters": {
+        "source_chapter_label",
+        "source_chapter_number",
+        "source_volume_title",
+    },
     "auth_identities": {
         "user_id",
         "provider",
@@ -70,6 +75,7 @@ _REQUIRED_SCHEMA_COLUMNS: dict[str, set[str]] = {
         "window_index_revision",
         "window_index_built_revision",
         "window_index_error",
+        "content_format",
     },
     "world_entities": {"origin", "worldpack_pack_id", "worldpack_key"},
     "world_entity_attributes": {"surface", "origin", "worldpack_pack_id"},
@@ -103,6 +109,7 @@ _REQUIRED_SCHEMA_COLUMNS: dict[str, set[str]] = {
         "auto_index_plan",
         "bootstrap_plan",
         "readiness_mode",
+        "error_code",
         "error",
         "lease_owner",
         "lease_expires_at",
@@ -124,54 +131,74 @@ def _missing_table_gap(table_name: str) -> set[str]:
     return {_MISSING_TABLE, *_REQUIRED_SCHEMA_COLUMNS[table_name]}
 
 
+_MARKDOWN_SOURCE_SCHEMA_GAPS: dict[str, set[str]] = {
+    "novels": {"content_format"},
+    "chapters": {"source_volume_title"},
+    "novel_ingest_jobs": {"error_code"},
+}
+
+
+def _with_markdown_source_gaps(
+    allowed_missing: dict[str, set[str]],
+) -> dict[str, set[str]]:
+    merged = {table_name: set(columns) for table_name, columns in allowed_missing.items()}
+    for table_name, columns in _MARKDOWN_SOURCE_SCHEMA_GAPS.items():
+        merged.setdefault(table_name, set()).update(columns)
+    return merged
+
+
 _UNVERSIONED_AUTO_UPGRADE_BASELINES: tuple[tuple[str, dict[str, set[str]]], ...] = (
     (
+        _PRE_MARKDOWN_SOURCE_CONTRACT_REVISION,
+        _with_markdown_source_gaps({}),
+    ),
+    (
         _PRE_WORLD_GENERATION_ADMISSION_REVISION,
-        {
+        _with_markdown_source_gaps({
             "continuation_runs": _REQUIRED_SCHEMA_COLUMNS["continuation_runs"],
             "world_generation_runs": _missing_table_gap("world_generation_runs"),
-        },
+        }),
     ),
     (
         _PRE_NOVEL_INGEST_JOB_REVISION,
-        {
+        _with_markdown_source_gaps({
             "continuation_runs": _REQUIRED_SCHEMA_COLUMNS["continuation_runs"],
             "novel_ingest_jobs": _missing_table_gap("novel_ingest_jobs"),
             "world_generation_runs": _missing_table_gap("world_generation_runs"),
-        },
+        }),
     ),
     (
         _PRE_AUTH_IDENTITIES_REVISION,
-        {
+        _with_markdown_source_gaps({
             "continuation_runs": _missing_table_gap("continuation_runs"),
             "novel_ingest_jobs": _missing_table_gap("novel_ingest_jobs"),
             "world_generation_runs": _missing_table_gap("world_generation_runs"),
-        },
+        }),
     ),
     (
         _PRE_CHAPTER_SOURCE_METADATA_REVISION,
-        {
+        _with_markdown_source_gaps({
             "auth_identities": _missing_table_gap("auth_identities"),
             "chapters": _REQUIRED_SCHEMA_COLUMNS["chapters"],
             "continuation_runs": _missing_table_gap("continuation_runs"),
             "novel_ingest_jobs": _missing_table_gap("novel_ingest_jobs"),
             "world_generation_runs": _missing_table_gap("world_generation_runs"),
-        },
+        }),
     ),
     (
         _PRE_DERIVED_ASSET_JOB_REVISION,
-        {
+        _with_markdown_source_gaps({
             "auth_identities": _missing_table_gap("auth_identities"),
             "chapters": _REQUIRED_SCHEMA_COLUMNS["chapters"],
             "continuation_runs": _missing_table_gap("continuation_runs"),
             "derived_asset_jobs": _missing_table_gap("derived_asset_jobs"),
             "novel_ingest_jobs": _missing_table_gap("novel_ingest_jobs"),
             "world_generation_runs": _missing_table_gap("world_generation_runs"),
-        },
+        }),
     ),
     (
         _PRE_NOVEL_LANGUAGE_REVISION,
-        {
+        _with_markdown_source_gaps({
             "auth_identities": _missing_table_gap("auth_identities"),
             "novels": {
                 "language",
@@ -185,7 +212,7 @@ _UNVERSIONED_AUTO_UPGRADE_BASELINES: tuple[tuple[str, dict[str, set[str]]], ...]
             "derived_asset_jobs": _missing_table_gap("derived_asset_jobs"),
             "novel_ingest_jobs": _missing_table_gap("novel_ingest_jobs"),
             "world_generation_runs": _missing_table_gap("world_generation_runs"),
-        },
+        }),
     ),
 )
 
@@ -234,6 +261,7 @@ def _reset_incomplete_bootstrap(bind) -> None:
 
 
 def _matching_unversioned_upgrade_baseline(missing_columns: dict[str, set[str]]) -> str | None:
+    matching_revisions: list[str] = []
     for baseline_revision, allowed_missing in _UNVERSIONED_AUTO_UPGRADE_BASELINES:
         unexpected_missing = {
             table_name: columns - allowed_missing.get(table_name, set())
@@ -242,9 +270,11 @@ def _matching_unversioned_upgrade_baseline(missing_columns: dict[str, set[str]])
         }
         if unexpected_missing:
             continue
-        return baseline_revision
+        matching_revisions.append(baseline_revision)
 
-    return None
+    if not matching_revisions:
+        return None
+    return max(matching_revisions, key=int)
 
 
 def _revision_number(revision: str | None) -> int | None:

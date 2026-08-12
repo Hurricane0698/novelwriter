@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.content_formats import NovelContentFormat
 from app.language import DEFAULT_LANGUAGE
 from app.models import Novel
 
@@ -18,6 +19,7 @@ def accept_novel_upload(
     owner_id: int | None,
     source_bytes: int,
     requested_language: str | None,
+    content_format: NovelContentFormat,
 ) -> Novel:
     normalized_requested_language = resolve_requested_language(requested_language)
     novel = Novel(
@@ -25,6 +27,7 @@ def accept_novel_upload(
         author=author,
         language=normalized_requested_language or DEFAULT_LANGUAGE,
         file_path=file_path,
+        content_format=content_format,
         total_chapters=0,
         owner_id=owner_id,
     )

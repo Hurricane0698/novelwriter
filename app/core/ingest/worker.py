@@ -26,6 +26,10 @@ from app.core.indexing.lifecycle import enqueue_window_index_rebuild_job
 from app.core.indexing.planner import AUTO_INDEX_PLAN_DEFERRED
 from app.core.world.bootstrap_queue import ensure_ingest_bootstrap_job
 from app.models import DerivedAssetJob, Novel, NovelIngestJob
+from app.core.source_errors import (
+    MarkdownStructureInvalidError,
+    SourceEncodingUnsupportedError,
+)
 
 from .contracts import IngestPolicyDecision, IngestPolicyInput, ParsedNovelIngest
 from .job_store import (
@@ -49,8 +53,14 @@ from .policy import resolve_ingest_policy
 logger = logging.getLogger(__name__)
 
 INGEST_SOURCE_MISSING_MESSAGE = "上传源文件不存在，请重新上传"
-INGEST_PARSE_FAILED_MESSAGE = "稿件解析失败，请检查章节格式后重试"
+INGEST_SOURCE_ENCODING_UNSUPPORTED_MESSAGE = "文件编码不受支持；Markdown 请使用 UTF-8 或 UTF-8 BOM"
+INGEST_MARKDOWN_STRUCTURE_INVALID_MESSAGE = "Markdown 结构无效；请按 # 卷名、## 章节名整理后重新上传"
 INGEST_JOB_FAILED_MESSAGE = "稿件导入失败，请稍后重试"
+
+INGEST_ERROR_SOURCE_MISSING = "source_missing"
+INGEST_ERROR_SOURCE_ENCODING_UNSUPPORTED = "source_encoding_unsupported"
+INGEST_ERROR_MARKDOWN_STRUCTURE_INVALID = "markdown_structure_invalid"
+INGEST_ERROR_INTERNAL = "ingest_internal_error"
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,14 +148,19 @@ def _load_novel_ingest_inputs(
     *,
     claim,
     session_factory: Callable[[], Session],
-) -> tuple[str, str | None, int]:
+) -> tuple[str, str, str | None, int]:
     db = session_factory()
     try:
         job = db.query(NovelIngestJob).filter(NovelIngestJob.id == claim.job_id).first()
         novel = db.query(Novel).filter(Novel.id == claim.novel_id).first()
         if job is None or novel is None:
             raise FileNotFoundError("ingest job or novel missing")
-        return str(novel.file_path), job.requested_language, int(job.source_bytes or 0)
+        return (
+            str(novel.file_path),
+            str(novel.content_format),
+            job.requested_language,
+            int(job.source_bytes or 0),
+        )
     finally:
         db.close()
 
@@ -153,9 +168,20 @@ def _load_novel_ingest_inputs(
 def _sanitize_ingest_error(exc: Exception) -> str:
     if isinstance(exc, FileNotFoundError):
         return INGEST_SOURCE_MISSING_MESSAGE
-    if isinstance(exc, ValueError | UnicodeError):
-        return INGEST_PARSE_FAILED_MESSAGE
+    if isinstance(exc, SourceEncodingUnsupportedError):
+        return INGEST_SOURCE_ENCODING_UNSUPPORTED_MESSAGE
+    if isinstance(exc, MarkdownStructureInvalidError):
+        return INGEST_MARKDOWN_STRUCTURE_INVALID_MESSAGE
     return INGEST_JOB_FAILED_MESSAGE
+
+
+def _ingest_error_code(error: str) -> str:
+    return {
+        INGEST_SOURCE_MISSING_MESSAGE: INGEST_ERROR_SOURCE_MISSING,
+        INGEST_SOURCE_ENCODING_UNSUPPORTED_MESSAGE: INGEST_ERROR_SOURCE_ENCODING_UNSUPPORTED,
+        INGEST_MARKDOWN_STRUCTURE_INVALID_MESSAGE: INGEST_ERROR_MARKDOWN_STRUCTURE_INVALID,
+        INGEST_JOB_FAILED_MESSAGE: INGEST_ERROR_INTERNAL,
+    }[error]
 
 
 class _NovelIngestRuntimeAdapter:
@@ -176,7 +202,7 @@ class _NovelIngestRuntimeAdapter:
             session_factory=self._session_factory,
             settings=self._settings,
         )
-        file_path, requested_language, source_bytes = _load_novel_ingest_inputs(
+        file_path, content_format, requested_language, source_bytes = _load_novel_ingest_inputs(
             claim=claim,
             session_factory=self._session_factory,
         )
@@ -187,7 +213,11 @@ class _NovelIngestRuntimeAdapter:
             session_factory=self._session_factory,
             settings=self._settings,
         )
-        parsed = parse_source_file(file_path, requested_language=requested_language)
+        parsed = parse_source_file(
+            file_path,
+            content_format=content_format,
+            requested_language=requested_language,
+        )
         _touch_stage(
             job_id=claim.job_id,
             worker_id=claim.worker_id,
@@ -247,12 +277,19 @@ class _NovelIngestRuntimeAdapter:
         return False
 
     def finalize_failure(self, *, claim, error: str) -> bool:
+        error_code = _ingest_error_code(error)
+
+        def _persist_error_code(_db: Session, job: NovelIngestJob) -> bool:
+            job.error_code = error_code
+            return True
+
         _finalize_ingest_job(
             claim=claim,
             session_factory=self._session_factory,
             status=INGEST_JOB_STATUS_FAILED,
             stage=INGEST_JOB_STAGE_FAILED,
             error=error,
+            persist=_persist_error_code,
         )
         return False
 

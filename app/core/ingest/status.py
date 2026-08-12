@@ -15,6 +15,7 @@ from .job_store import (
     NovelIngestJobSnapshot,
     inspect_novel_ingest_job,
     inspect_novel_ingest_jobs,
+    is_novel_ingest_retry_allowed,
 )
 
 READINESS_ACCEPTING = "accepting"
@@ -22,6 +23,7 @@ READINESS_PROCESSING = "processing"
 READINESS_READY = "ready"
 READINESS_DEGRADED_READY = "degraded_ready"
 READINESS_FAILED_RETRYABLE = "failed_retryable"
+READINESS_FAILED_TERMINAL = "failed_terminal"
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +80,11 @@ def resolve_novel_readiness(
             return NovelReadinessSnapshot(readiness=readiness, capabilities=capabilities, ingest_job=ingest_job)
         if ingest_job.status == INGEST_JOB_STATUS_FAILED and not chapters_available:
             return NovelReadinessSnapshot(
-                readiness=READINESS_FAILED_RETRYABLE,
+                readiness=(
+                    READINESS_FAILED_RETRYABLE
+                    if is_novel_ingest_retry_allowed(ingest_job)
+                    else READINESS_FAILED_TERMINAL
+                ),
                 capabilities=capabilities,
                 ingest_job=ingest_job,
             )

@@ -28,6 +28,7 @@ interface UseContinuationStreamSourceArgs {
 }
 
 interface UseContinuationStreamSourceResult {
+  streamSourceId: string | null
   variants: VariantState[]
   fallbackNotice: string | null
   fallbackVersions: Continuation[]
@@ -165,6 +166,7 @@ export function useContinuationStreamSource({
   }, [fallbackResponse, persistResultsToUrl])
 
   return {
+    streamSourceId: streamCtx?.continuationRequestId ?? null,
     variants,
     fallbackNotice,
     fallbackVersions: fallbackResponse?.continuations ?? [],

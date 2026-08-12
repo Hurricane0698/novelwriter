@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
 import { authHeaders, blockExternalNoise, createApiSession, ensureProductAccess } from '../../fixtures/api-helpers'
 import {
   installTestIdVisibilityProbe,
@@ -150,6 +151,68 @@ test('import → enter writing desk → continue → adopt', async ({ page }) =>
   // Adopting returns to Studio with the newly created chapter selected.
   await expect(page).toHaveURL(new RegExp(`/novel/${novelId}\\?chapter=2$`), { timeout: 15_000 })
   await expect(chapterList.getByRole('button', { name: /第\s*2\s*章/ })).toBeVisible({ timeout: 15_000 })
+})
+
+test('Markdown import → source preview → save → native export', async ({ page }) => {
+  test.slow()
+  test.setTimeout(180_000)
+
+  await page.goto('/library')
+  await ensureUploadConsent(page)
+
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.getByTestId('library-create-novel').click(),
+  ])
+  const fileName = `Markdown_闭环_${Date.now()}_${RUN}.md`
+  const fileContent = Buffer.from(
+    '# 第一卷\n'
+    + '## 第一章 开端\n'
+    + '\n'
+    + '这里有 **粗体**。\n'
+    + '\n'
+    + '### 章内小节\n'
+    + '- 列表项\n'
+    + '# 第二卷\n'
+    + '## 第二章 继续\n'
+    + '> 引用\n',
+    'utf-8',
+  )
+  await chooser.setFiles({ name: fileName, mimeType: 'text/markdown', buffer: fileContent })
+
+  await expect(page).toHaveURL(/\/novel\/\d+$/, { timeout: 60_000 })
+  const novelId = Number(page.url().split('/').pop())
+  expect(Number.isFinite(novelId)).toBeTruthy()
+  createdNovelIds.push(novelId)
+  await waitForInitialNovelReady(page, novelId, { dismissOnboarding: true })
+
+  await expect(page.getByTestId('markdown-content').getByText('粗体')).toBeVisible()
+  await expect(page.getByRole('heading', { level: 3, name: '章内小节' })).toBeVisible()
+
+  await page.getByRole('button', { name: '编辑' }).click()
+  const sourceEditor = page.getByRole('textbox')
+  await sourceEditor.fill('**修改后正文**\n\n### 实时预览\n\n- 新列表项\n')
+  await page.getByRole('button', { name: '预览' }).click()
+  const editorPreview = page.getByTestId('markdown-editor-preview')
+  await expect(editorPreview.getByText('修改后正文')).toBeVisible()
+  await expect(editorPreview.getByRole('heading', { level: 3, name: '实时预览' })).toBeVisible()
+
+  await page.getByRole('button', { name: '保存' }).click()
+  await expect(page.getByTestId('markdown-editor-preview')).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByTestId('markdown-content').getByText('修改后正文')).toBeVisible({ timeout: 30_000 })
+
+  await page.getByRole('button', { name: '更多操作' }).click()
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: '导出全部章节' }).click(),
+  ])
+  expect(download.suggestedFilename()).toMatch(/\.md$/)
+  const downloadPath = await download.path()
+  expect(downloadPath).not.toBeNull()
+  const exported = await readFile(downloadPath!, 'utf-8')
+  expect(exported).toContain('# 第一卷\n## 第 1 章 · 开端\n**修改后正文**')
+  expect(exported).toContain('# 第二卷\n## 第 2 章 · 继续\n> 引用\n')
 })
 
 test('import supports 30MB txt (boundary)', async ({ page }) => {

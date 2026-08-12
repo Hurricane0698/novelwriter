@@ -32,7 +32,7 @@ async function mockChapterReadyStudio(page: import('@playwright/test').Page) {
           ingest: {
             status: 'completed',
             stage: 'completed',
-            size_tier: 'small',
+            size_tier: 'normal',
             source_bytes: 128,
             source_chars: 64,
             chapter_count: 2,
@@ -41,6 +41,7 @@ async function mockChapterReadyStudio(page: import('@playwright/test').Page) {
             auto_index_plan: 'immediate',
             bootstrap_plan: 'immediate',
             readiness_mode: 'full_target',
+            error_code: null,
             error: null,
           },
           job: null,
