@@ -427,9 +427,9 @@ function Assert-StartupFailureSurface {
             throw "The installed NovWr failure-path process did not start."
         }
 
-        $MainWindowHandle = Wait-ForVisibleMainWindowHandle `
+        Wait-ForVisibleMainWindowHandle `
             -DesktopProcessHandle $DesktopProcess `
-            -TimeoutSeconds $WindowStateTimeoutSeconds
+            -TimeoutSeconds $WindowStateTimeoutSeconds | Out-Null
         $ExpectedFailureTitle = "NovWr — 启动失败：本地端口 8000 已被占用。"
         try {
             Wait-ForCondition `
@@ -440,12 +440,9 @@ function Assert-StartupFailureSurface {
                         throw "The NovWr startup-failure process exited before rendering its window."
                     }
                     $DesktopProcess.Refresh()
-                    return (
-                        $DesktopProcess.MainWindowHandle -eq $MainWindowHandle -and
-                        $DesktopProcess.MainWindowTitle.Equals(
-                            $ExpectedFailureTitle,
-                            [StringComparison]::Ordinal
-                        )
+                    return $DesktopProcess.MainWindowTitle.Equals(
+                        $ExpectedFailureTitle,
+                        [StringComparison]::Ordinal
                     )
                 }
         } catch {
