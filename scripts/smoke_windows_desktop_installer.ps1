@@ -26,7 +26,6 @@ $SpaUrl = "http://127.0.0.1:8000/"
 $Port = 8000
 $ProcessTopologyTimeoutSeconds = 15
 $WindowStateTimeoutSeconds = 15
-$FailureSurfaceDebugTimeoutSeconds = 45
 $LlmProviderTimeoutSeconds = 15
 $LlmConfigApiKey = "novwr-desktop-installed-secret"
 $LlmConfigModel = "novwr-desktop-installed-model"
@@ -53,6 +52,8 @@ public static class NovWrNativeWindow
     public static extern bool IsWindowVisible(IntPtr hWnd);
 }
 "@
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
 
 function Wait-ForCondition {
     param(
@@ -409,30 +410,38 @@ function Invoke-InstalledProductPlaywright {
     Write-PlaywrightSuccessOutput -Phase $Phase -StdoutPath $StdoutPath
 }
 
-function Get-FreeLoopbackPort {
-    $Listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
-    try {
-        $Listener.Start()
-        return ([Net.IPEndPoint]$Listener.LocalEndpoint).Port
-    } finally {
-        $Listener.Stop()
+function Get-AutomationElementNames {
+    param([Parameter(Mandatory)] [IntPtr] $WindowHandle)
+
+    $Root = [System.Windows.Automation.AutomationElement]::FromHandle($WindowHandle)
+    if ($null -eq $Root) {
+        return @()
     }
+
+    $Elements = $Root.FindAll(
+        [System.Windows.Automation.TreeScope]::Subtree,
+        [System.Windows.Automation.Condition]::TrueCondition
+    )
+    $Names = @()
+    for ($Index = 0; $Index -lt $Elements.Count; $Index++) {
+        try {
+            $Name = [string]$Elements.Item($Index).Current.Name
+            if (-not [string]::IsNullOrWhiteSpace($Name)) {
+                $Names += $Name
+            }
+        } catch [System.Windows.Automation.ElementNotAvailableException] {
+            continue
+        }
+    }
+    return @($Names | Sort-Object -Unique)
 }
 
 function Assert-StartupFailureSurface {
     param(
-        [Parameter(Mandatory)] [string] $DesktopExecutable,
-        [Parameter(Mandatory)] [string] $WebRoot,
-        [Parameter(Mandatory)] [string] $StatePath,
-        [Parameter(Mandatory)] [string] $LlmBaseUrl,
-        [Parameter(Mandatory)] [string] $LlmApiKey,
-        [Parameter(Mandatory)] [string] $LlmModel,
-        [Parameter(Mandatory)] [int] $TimeoutSeconds
+        [Parameter(Mandatory)] [string] $DesktopExecutable
     )
 
     $PortBlocker = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
-    $DebugPort = Get-FreeLoopbackPort
-    $DebugUserDataRoot = Join-Path $env:RUNNER_TEMP "novwr-failure-webview2-$([Guid]::NewGuid().ToString('N'))"
     $DesktopProcess = $null
     try {
         $PortBlocker.Start()
@@ -440,42 +449,48 @@ function Assert-StartupFailureSurface {
         $StartInfo = [Diagnostics.ProcessStartInfo]::new()
         $StartInfo.FileName = $DesktopExecutable
         $StartInfo.UseShellExecute = $false
-        $StartInfo.Environment["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--remote-debugging-address=127.0.0.1 --remote-debugging-port=$DebugPort"
-        $StartInfo.Environment["WEBVIEW2_USER_DATA_FOLDER"] = $DebugUserDataRoot
         $DesktopProcess = [Diagnostics.Process]::new()
         $DesktopProcess.StartInfo = $StartInfo
         if (-not $DesktopProcess.Start()) {
             throw "The installed NovWr failure-path process did not start."
         }
 
-        Wait-ForVisibleMainWindowHandle `
+        $MainWindowHandle = Wait-ForVisibleMainWindowHandle `
             -DesktopProcessHandle $DesktopProcess `
-            -TimeoutSeconds $WindowStateTimeoutSeconds | Out-Null
-        $CdpUrl = "http://127.0.0.1:$DebugPort"
-        Wait-ForCondition `
-            -TimeoutSeconds $FailureSurfaceDebugTimeoutSeconds `
-            -FailureMessage "The NovWr failure-path WebView2 debug endpoint did not become ready." `
-            -Condition {
-                try {
-                    $Version = Invoke-RestMethod -Uri "$CdpUrl/json/version" -TimeoutSec 2
-                    return -not [string]::IsNullOrWhiteSpace([string]$Version.webSocketDebuggerUrl)
-                } catch {
-                    return $false
+            -TimeoutSeconds $WindowStateTimeoutSeconds
+        $RequiredNameFragments = @(
+            "启动失败",
+            "本地端口 8000 已被占用。",
+            "打开日志",
+            "退出"
+        )
+        try {
+            Wait-ForCondition `
+                -TimeoutSeconds $WindowStateTimeoutSeconds `
+                -FailureMessage "The NovWr startup-failure accessibility surface did not become ready." `
+                -Condition {
+                    try {
+                        $Names = @(Get-AutomationElementNames -WindowHandle $MainWindowHandle)
+                        foreach ($RequiredNameFragment in $RequiredNameFragments) {
+                            $MatchingNames = @(
+                                $Names | Where-Object {
+                                    $_.Contains($RequiredNameFragment, [StringComparison]::Ordinal)
+                                }
+                            )
+                            if ($MatchingNames.Count -eq 0) {
+                                return $false
+                            }
+                        }
+                        return $true
+                    } catch {
+                        return $false
+                    }
                 }
-            }
-
-        Invoke-InstalledProductPlaywright `
-            -Phase "startup-failure" `
-            -SpecPath "e2e/desktop-installed/startup-failure.spec.ts" `
-            -WebRoot $WebRoot `
-            -StatePath $StatePath `
-            -LlmBaseUrl $LlmBaseUrl `
-            -LlmApiKey $LlmApiKey `
-            -LlmModel $LlmModel `
-            -TimeoutSeconds $TimeoutSeconds `
-            -AdditionalEnvironment @{
-                NOVWR_DESKTOP_E2E_CDP_URL = $CdpUrl
-            }
+        } catch {
+            Write-Output "Startup-failure accessibility names:"
+            Get-AutomationElementNames -WindowHandle $MainWindowHandle | Write-Output
+            throw
+        }
     } finally {
         if ($null -ne $DesktopProcess) {
             try {
@@ -490,7 +505,6 @@ function Assert-StartupFailureSurface {
             }
         }
         $PortBlocker.Stop()
-        Remove-Item -LiteralPath $DebugUserDataRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     Wait-ForCondition `
@@ -1142,14 +1156,7 @@ try {
     }
     $DesktopExecutable = $TopLevelExecutables[0].FullName
 
-    Assert-StartupFailureSurface `
-        -DesktopExecutable $DesktopExecutable `
-        -WebRoot $WebRoot `
-        -StatePath $PlaywrightStatePath `
-        -LlmBaseUrl $LlmConfigBaseUrl `
-        -LlmApiKey $LlmConfigApiKey `
-        -LlmModel $LlmConfigModel `
-        -TimeoutSeconds $PlaywrightTimeoutSeconds
+    Assert-StartupFailureSurface -DesktopExecutable $DesktopExecutable
 
     $InitialTopology = Start-AndVerifyDesktop -DesktopExecutable $DesktopExecutable -InstallRoot $InstallRoot
     $InitialProcessIds = (($InitialTopology.All.ProcessId | Sort-Object) -join ",")
