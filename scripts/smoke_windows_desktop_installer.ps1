@@ -26,6 +26,7 @@ $SpaUrl = "http://127.0.0.1:8000/"
 $Port = 8000
 $ProcessTopologyTimeoutSeconds = 15
 $WindowStateTimeoutSeconds = 15
+$FailureSurfaceDebugTimeoutSeconds = 45
 $LlmProviderTimeoutSeconds = 15
 $LlmConfigApiKey = "novwr-desktop-installed-secret"
 $LlmConfigModel = "novwr-desktop-installed-model"
@@ -431,6 +432,7 @@ function Assert-StartupFailureSurface {
 
     $PortBlocker = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
     $DebugPort = Get-FreeLoopbackPort
+    $DebugUserDataRoot = Join-Path $env:RUNNER_TEMP "novwr-failure-webview2-$([Guid]::NewGuid().ToString('N'))"
     $DesktopProcess = $null
     try {
         $PortBlocker.Start()
@@ -438,7 +440,8 @@ function Assert-StartupFailureSurface {
         $StartInfo = [Diagnostics.ProcessStartInfo]::new()
         $StartInfo.FileName = $DesktopExecutable
         $StartInfo.UseShellExecute = $false
-        $StartInfo.Environment["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--remote-debugging-port=$DebugPort"
+        $StartInfo.Environment["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--remote-debugging-address=127.0.0.1 --remote-debugging-port=$DebugPort"
+        $StartInfo.Environment["WEBVIEW2_USER_DATA_FOLDER"] = $DebugUserDataRoot
         $DesktopProcess = [Diagnostics.Process]::new()
         $DesktopProcess.StartInfo = $StartInfo
         if (-not $DesktopProcess.Start()) {
@@ -450,7 +453,7 @@ function Assert-StartupFailureSurface {
             -TimeoutSeconds $WindowStateTimeoutSeconds | Out-Null
         $CdpUrl = "http://127.0.0.1:$DebugPort"
         Wait-ForCondition `
-            -TimeoutSeconds $WindowStateTimeoutSeconds `
+            -TimeoutSeconds $FailureSurfaceDebugTimeoutSeconds `
             -FailureMessage "The NovWr failure-path WebView2 debug endpoint did not become ready." `
             -Condition {
                 try {
@@ -487,6 +490,7 @@ function Assert-StartupFailureSurface {
             }
         }
         $PortBlocker.Stop()
+        Remove-Item -LiteralPath $DebugUserDataRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     Wait-ForCondition `
