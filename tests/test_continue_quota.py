@@ -125,6 +125,7 @@ def client(db, hosted_user, monkeypatch):
     # Avoid pulling in the full context assembly stack; quota behavior is the target.
     ctx = continuation_context._ContinuationContext(
         recent_text="recent",
+        chapter_recaps="",
         world_context="",
         narrative_constraints="",
         debug_summary=ContinueDebugSummary(context_chapters=1),

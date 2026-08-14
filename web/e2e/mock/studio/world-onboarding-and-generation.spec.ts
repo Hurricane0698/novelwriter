@@ -14,6 +14,7 @@ async function mockChapterReadyStudio(page: import('@playwright/test').Page) {
         title: '三体',
         author: '刘慈欣',
         file_path: '/novels/1',
+        content_format: 'plain_text',
         total_chapters: 2,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-02T00:00:00Z',

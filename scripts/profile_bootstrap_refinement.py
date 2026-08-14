@@ -14,6 +14,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from app.config import get_settings  # noqa: E402
+from app.content_formats import PLAIN_TEXT_CONTENT_FORMAT  # noqa: E402
 from app.core.bootstrap_text_fallback import (  # noqa: E402
     TEXT_FALLBACK_WINDOW_SIZE,
     TEXT_FALLBACK_WINDOW_STEP,
@@ -145,7 +146,11 @@ def _load_parsed_chapters(
     *,
     requested_language: str | None,
 ) -> dict[str, object]:
-    parsed = parse_source_file(str(file_path), requested_language=requested_language)
+    parsed = parse_source_file(
+        str(file_path),
+        content_format=PLAIN_TEXT_CONTENT_FORMAT,
+        requested_language=requested_language,
+    )
     chapters = [
         ChapterText(chapter_id=index, text=chapter.content)
         for index, chapter in enumerate(parsed.chapters, start=1)

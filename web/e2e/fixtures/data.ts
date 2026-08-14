@@ -1,8 +1,8 @@
 import { Novel, Chapter } from './types'
 
 export const NOVELS: Novel[] = [
-  { id: 1, title: '三体', author: '刘慈欣', file_path: '/novels/1', total_chapters: 5, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-02T00:00:00Z' },
-  { id: 2, title: '流浪地球', author: '刘慈欣', file_path: '/novels/2', total_chapters: 3, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-03T00:00:00Z' },
+  { id: 1, title: '三体', author: '刘慈欣', file_path: '/novels/1', content_format: 'plain_text', total_chapters: 5, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-02T00:00:00Z' },
+  { id: 2, title: '流浪地球', author: '刘慈欣', file_path: '/novels/2', content_format: 'plain_text', total_chapters: 3, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-03T00:00:00Z' },
 ]
 
 export const CHAPTERS: Chapter[] = [

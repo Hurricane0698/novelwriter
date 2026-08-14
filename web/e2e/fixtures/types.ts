@@ -3,6 +3,7 @@ export interface Novel {
   title: string
   author: string
   file_path: string
+  content_format: 'plain_text' | 'markdown'
   total_chapters: number
   created_at: string
   updated_at: string

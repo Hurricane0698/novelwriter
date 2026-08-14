@@ -427,7 +427,7 @@ def test_revision_032_upgrade_creates_generation_admission_tables_and_preserves_
 
     inspector = sa.inspect(engine)
     assert result == "upgraded"
-    assert _recorded_revision(engine) == "041"
+    assert _recorded_revision(engine) == "042"
     assert {"continuation_runs", "world_generation_runs"}.issubset(
         inspector.get_table_names()
     )
@@ -465,7 +465,7 @@ def test_repairs_v032_database_already_stamped_past_continuation_table_creation(
         column["name"] for column in inspector.get_columns("world_generation_runs")
     }
     assert result == "upgraded"
-    assert _recorded_revision(engine) == "041"
+    assert _recorded_revision(engine) == "042"
     assert {
         "client_request_id",
         "request_hash",
@@ -510,4 +510,4 @@ def test_upgrades_versioned_schema(sqlite_engine):
     )
 
     assert result == "upgraded"
-    assert calls == [("stamp", "040"), ("upgrade", "head")]
+    assert calls == [("stamp", "041"), ("upgrade", "head")]
