@@ -24,6 +24,10 @@ const TRAY_DATA_ID: &str = "open-data";
 const TRAY_LOGS_ID: &str = "open-logs";
 const TRAY_QUIT_ID: &str = "quit";
 
+fn startup_failure_title(summary: &str) -> String {
+    format!("NovWr — 启动失败：{summary}")
+}
+
 struct DesktopState {
     paths: AppPaths,
     // `WebviewWindow::url()` is still `about:blank` during `setup`. Capture the
@@ -327,6 +331,9 @@ fn show_failure_window(app: &AppHandle, summary: &'static str) {
         .clone();
     match main_window(app) {
         Ok(window) => {
+            if let Err(error) = window.set_title(&startup_failure_title(summary)) {
+                error!(error = %error, "set desktop failure window title");
+            }
             // Once the app has navigated to its HTTP SPA, a later runtime exit
             // must return to the bundled failure shell. During initial startup,
             // `None` deliberately means "leave the configured page load alone."
@@ -502,6 +509,14 @@ mod tests {
     fn normal_close_hides_but_explicit_exit_closes() {
         assert_eq!(close_disposition(false), CloseDisposition::Hide);
         assert_eq!(close_disposition(true), CloseDisposition::Exit);
+    }
+
+    #[test]
+    fn startup_failure_title_exposes_the_actionable_summary() {
+        assert_eq!(
+            startup_failure_title("本地端口 8000 已被占用。"),
+            "NovWr — 启动失败：本地端口 8000 已被占用。"
+        );
     }
 
     #[test]

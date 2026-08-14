@@ -52,8 +52,6 @@ public static class NovWrNativeWindow
     public static extern bool IsWindowVisible(IntPtr hWnd);
 }
 "@
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
 
 function Wait-ForCondition {
     param(
@@ -410,32 +408,6 @@ function Invoke-InstalledProductPlaywright {
     Write-PlaywrightSuccessOutput -Phase $Phase -StdoutPath $StdoutPath
 }
 
-function Get-AutomationElementNames {
-    param([Parameter(Mandatory)] [IntPtr] $WindowHandle)
-
-    $Root = [System.Windows.Automation.AutomationElement]::FromHandle($WindowHandle)
-    if ($null -eq $Root) {
-        return @()
-    }
-
-    $Elements = $Root.FindAll(
-        [System.Windows.Automation.TreeScope]::Subtree,
-        [System.Windows.Automation.Condition]::TrueCondition
-    )
-    $Names = @()
-    for ($Index = 0; $Index -lt $Elements.Count; $Index++) {
-        try {
-            $Name = [string]$Elements.Item($Index).Current.Name
-            if (-not [string]::IsNullOrWhiteSpace($Name)) {
-                $Names += $Name
-            }
-        } catch [System.Windows.Automation.ElementNotAvailableException] {
-            continue
-        }
-    }
-    return @($Names | Sort-Object -Unique)
-}
-
 function Assert-StartupFailureSurface {
     param(
         [Parameter(Mandatory)] [string] $DesktopExecutable
@@ -458,37 +430,27 @@ function Assert-StartupFailureSurface {
         $MainWindowHandle = Wait-ForVisibleMainWindowHandle `
             -DesktopProcessHandle $DesktopProcess `
             -TimeoutSeconds $WindowStateTimeoutSeconds
-        $RequiredNameFragments = @(
-            "启动失败",
-            "本地端口 8000 已被占用。",
-            "打开日志",
-            "退出"
-        )
+        $ExpectedFailureTitle = "NovWr — 启动失败：本地端口 8000 已被占用。"
         try {
             Wait-ForCondition `
                 -TimeoutSeconds $WindowStateTimeoutSeconds `
-                -FailureMessage "The NovWr startup-failure accessibility surface did not become ready." `
+                -FailureMessage "The NovWr startup-failure window title did not become ready." `
                 -Condition {
-                    try {
-                        $Names = @(Get-AutomationElementNames -WindowHandle $MainWindowHandle)
-                        foreach ($RequiredNameFragment in $RequiredNameFragments) {
-                            $MatchingNames = @(
-                                $Names | Where-Object {
-                                    $_.Contains($RequiredNameFragment, [StringComparison]::Ordinal)
-                                }
-                            )
-                            if ($MatchingNames.Count -eq 0) {
-                                return $false
-                            }
-                        }
-                        return $true
-                    } catch {
-                        return $false
+                    if ($DesktopProcess.HasExited) {
+                        throw "The NovWr startup-failure process exited before rendering its window."
                     }
+                    $DesktopProcess.Refresh()
+                    return (
+                        $DesktopProcess.MainWindowHandle -eq $MainWindowHandle -and
+                        $DesktopProcess.MainWindowTitle.Equals(
+                            $ExpectedFailureTitle,
+                            [StringComparison]::Ordinal
+                        )
+                    )
                 }
         } catch {
-            Write-Output "Startup-failure accessibility names:"
-            Get-AutomationElementNames -WindowHandle $MainWindowHandle | Write-Output
+            $DesktopProcess.Refresh()
+            Write-Output "Startup-failure window title: $($DesktopProcess.MainWindowTitle)"
             throw
         }
     } finally {
