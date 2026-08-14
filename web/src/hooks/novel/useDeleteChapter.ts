@@ -50,6 +50,7 @@ export function useDeleteChapter(novelId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: novelKeys.chaptersMeta(novelId) })
       qc.invalidateQueries({ queryKey: novelKeys.detail(novelId) })
+      qc.invalidateQueries({ queryKey: novelKeys.contextSummaries(novelId) })
     },
   })
 }

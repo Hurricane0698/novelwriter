@@ -45,15 +45,19 @@ export function getLlmApiErrorMessage(err: ApiError, locale?: UiLocale): string 
     case 'ai_budget_meter_unavailable':
       return translateUiMessage(effectiveLocale, 'llm.error.budgetUnavailable')
     case 'world_generate_llm_unavailable':
-    case 'outline_generation_llm_unavailable':
+    case 'context_summary_generation_llm_unavailable':
       return translateUiMessage(effectiveLocale, 'llm.error.modelUnavailable')
     case 'continuation_duplicate_request':
     case 'continuation_request_still_running':
       return translateUiMessage(effectiveLocale, 'continuation.results.alreadyRunning')
-    case 'outline_not_found':
-      return translateUiMessage(effectiveLocale, 'continuation.setup.outline.error.notFound')
-    case 'outline_context_too_large':
-      return translateUiMessage(effectiveLocale, 'continuation.setup.outline.error.selectedTooLarge')
+    case 'context_summary_not_found':
+      return translateUiMessage(effectiveLocale, 'continuation.setup.contextSummary.error.notFound')
+    case 'context_summary_context_too_large':
+      return translateUiMessage(effectiveLocale, 'continuation.setup.contextSummary.error.selectedTooLarge')
+    case 'context_summary_unconfirmed':
+      return translateUiMessage(effectiveLocale, 'continuation.setup.contextSummary.error.unconfirmed')
+    case 'context_summary_stale':
+      return translateUiMessage(effectiveLocale, 'continuation.setup.contextSummary.error.stale')
     case 'world_generate_duplicate_request':
       return translateUiMessage(effectiveLocale, 'worldModel.generate.conflict')
     case 'bootstrap_index_already_fresh':

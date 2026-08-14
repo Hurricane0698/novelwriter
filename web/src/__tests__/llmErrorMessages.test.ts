@@ -94,14 +94,14 @@ describe('llmErrorMessages', () => {
     expect(getLlmApiErrorMessage(bootstrapErr)).toContain('已经是最新状态')
   })
 
-  it('maps selected outline validation errors without backend diagnostics', () => {
+  it('maps selected context-summary validation errors without backend diagnostics', () => {
     const missingErr = new ApiError(422, 'HTTP 422', {
-      code: 'outline_not_found',
-      detail: { code: 'outline_not_found', message: 'missing outline id 123' },
+      code: 'context_summary_not_found',
+      detail: { code: 'context_summary_not_found', message: 'missing summary id 123' },
     })
     const oversizedErr = new ApiError(422, 'HTTP 422', {
-      code: 'outline_context_too_large',
-      detail: { code: 'outline_context_too_large', message: 'internal size details' },
+      code: 'context_summary_context_too_large',
+      detail: { code: 'context_summary_context_too_large', message: 'internal size details' },
     })
 
     expect(getLlmApiErrorMessage(missingErr)).toContain('已不存在')

@@ -8,11 +8,14 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { getLlmApiErrorMessage } from '@/lib/llmErrorMessages'
 import { api, ApiError } from '@/services/api'
+import type { NovelContextSummary } from '@/types/api'
 import {
-  useCreateNovelOutline,
-  useDeleteNovelOutline,
-  useNovelOutlines,
-} from './useNovelOutlines'
+  useCreateNovelContextSummary,
+  useDeleteNovelContextSummary,
+  useNovelContextSummaries,
+  useRegenerateNovelContextSummary,
+  useUpdateNovelContextSummary,
+} from './useNovelContextSummaries'
 
 type LengthOption = {
   label: string
@@ -29,7 +32,7 @@ export const LENGTH_OPTIONS: LengthOption[] = [
 const MIN_CONTEXT_CHAPTERS = 1
 const MAX_CONTEXT_CHAPTERS = 5
 const DEFAULT_CONTEXT_CHAPTERS = 5
-const MAX_OUTLINE_RANGE_CHAPTERS = 100
+const MAX_CONTEXT_SUMMARY_RANGE_CHAPTERS = 100
 
 export function resolveTargetChars(selected: string): number {
   const opt = LENGTH_OPTIONS.find(option => option.value === selected)
@@ -43,13 +46,17 @@ function clampInt(raw: string, min: number, max: number): number | undefined {
   return Math.max(min, Math.min(max, value))
 }
 
-function parseOutlineRange(raw: string): { startChapter: number; endChapter: number } | null {
+function parseSummaryRange(raw: string): { startChapter: number; endChapter: number } | null {
   const match = raw.trim().match(/^(\d+)\s*[-~至–—]\s*(\d+)$/)
   if (!match) return null
   return {
     startChapter: Number(match[1]),
     endChapter: Number(match[2]),
   }
+}
+
+function canUseSummary(summary: NovelContextSummary): boolean {
+  return summary.review_status === 'confirmed' && !summary.is_stale
 }
 
 export function useContinuationSetupState(novelId: number, chapterNum: number | null) {
@@ -64,19 +71,40 @@ export function useContinuationSetupState(novelId: number, chapterNum: number | 
   const [numVersions, setNumVersions] = useState('1')
   const [temperature, setTemperature] = useState('0.8')
   const [prefsLoaded, setPrefsLoaded] = useState(false)
-  const [selectedOutlineIdsState, setSelectedOutlineIds] = useState<number[]>([])
-  const [outlineRange, setOutlineRange] = useState('')
-  const [outlineActionError, setOutlineActionError] = useState<string | null>(null)
+  const [selectedContextSummaryIdsState, setSelectedContextSummaryIds] = useState<number[]>([])
+  const [contextSummaryRange, setContextSummaryRange] = useState('')
+  const [contextSummaryActionError, setContextSummaryActionError] = useState<string | null>(null)
+  const [reviewContextSummaryId, setReviewContextSummaryId] = useState<number | null>(null)
 
-  const outlinesQuery = useNovelOutlines(novelId)
-  const createOutline = useCreateNovelOutline(novelId)
-  const deleteOutline = useDeleteNovelOutline(novelId)
-  const outlines = useMemo(() => outlinesQuery.data ?? [], [outlinesQuery.data])
-  const selectedOutlineIds = useMemo(() => {
-    if (!outlinesQuery.isSuccess) return selectedOutlineIdsState
-    const availableIds = new Set(outlines.map(outline => outline.id))
-    return selectedOutlineIdsState.filter(id => availableIds.has(id))
-  }, [outlines, outlinesQuery.isSuccess, selectedOutlineIdsState])
+  const contextSummariesQuery = useNovelContextSummaries(novelId)
+  const createContextSummary = useCreateNovelContextSummary(novelId)
+  const updateContextSummary = useUpdateNovelContextSummary(novelId)
+  const regenerateContextSummary = useRegenerateNovelContextSummary(novelId)
+  const deleteContextSummary = useDeleteNovelContextSummary(novelId)
+  const contextSummaries = useMemo(
+    () => contextSummariesQuery.data ?? [],
+    [contextSummariesQuery.data],
+  )
+  const selectedContextSummaryIds = useMemo(() => {
+    if (!contextSummariesQuery.isSuccess) return selectedContextSummaryIdsState
+    const usableIds = new Set(contextSummaries.filter(canUseSummary).map(summary => summary.id))
+    return selectedContextSummaryIdsState.filter(id => usableIds.has(id))
+  }, [contextSummaries, contextSummariesQuery.isSuccess, selectedContextSummaryIdsState])
+  const reviewContextSummary = useMemo(
+    () => contextSummaries.find(summary => summary.id === reviewContextSummaryId) ?? null,
+    [contextSummaries, reviewContextSummaryId],
+  )
+
+  useEffect(() => {
+    if (!contextSummariesQuery.isSuccess) return
+    const usableIds = new Set(contextSummaries.filter(canUseSummary).map(summary => summary.id))
+    queueMicrotask(() => {
+      setSelectedContextSummaryIds(current => {
+        const filtered = current.filter(id => usableIds.has(id))
+        return filtered.length === current.length ? current : filtered
+      })
+    })
+  }, [contextSummaries, contextSummariesQuery.isSuccess])
 
   useEffect(() => {
     if (prefsLoaded || !user?.preferences) return
@@ -117,27 +145,29 @@ export function useContinuationSetupState(novelId: number, chapterNum: number | 
     api.updatePreferences(preferences).catch(() => {})
   }, [contextChapters, numVersions, selectedLength, temperature])
 
-  const outlineErrorMessage = useCallback((error: unknown): string => {
+  const contextSummaryErrorMessage = useCallback((error: unknown): string => {
     if (error instanceof ApiError) {
       const llmMessage = getLlmApiErrorMessage(error, locale)
       if (llmMessage) return llmMessage
       switch (error.code) {
-        case 'outline_range_too_large':
-          return t('continuation.setup.outline.error.rangeTooLarge')
-        case 'outline_range_invalid':
-        case 'outline_source_empty':
-          return t('continuation.setup.outline.error.rangeInvalid')
-        case 'outline_source_too_large':
-          return t('continuation.setup.outline.error.sourceTooLarge')
+        case 'context_summary_range_too_large':
+          return t('continuation.setup.contextSummary.error.rangeTooLarge')
+        case 'context_summary_range_invalid':
+        case 'context_summary_source_empty':
+          return t('continuation.setup.contextSummary.error.rangeInvalid')
+        case 'context_summary_source_too_large':
+          return t('continuation.setup.contextSummary.error.sourceTooLarge')
+        case 'context_summary_stale':
+          return t('continuation.setup.contextSummary.error.stale')
         default:
           break
       }
     }
-    return t('continuation.setup.outline.error.generateFailed')
+    return t('continuation.setup.contextSummary.error.actionFailed')
   }, [locale, t])
 
-  const handleCreateOutline = useCallback(async () => {
-    const range = parseOutlineRange(outlineRange)
+  const handleCreateContextSummary = useCallback(async () => {
+    const range = parseSummaryRange(contextSummaryRange)
     if (
       range === null
       || chapterNum === null
@@ -145,35 +175,72 @@ export function useContinuationSetupState(novelId: number, chapterNum: number | 
       || range.endChapter < range.startChapter
       || range.endChapter > chapterNum
     ) {
-      setOutlineActionError(t('continuation.setup.outline.error.rangeInvalid'))
+      setContextSummaryActionError(t('continuation.setup.contextSummary.error.rangeInvalid'))
       return
     }
-    if (range.endChapter - range.startChapter + 1 > MAX_OUTLINE_RANGE_CHAPTERS) {
-      setOutlineActionError(t('continuation.setup.outline.error.rangeTooLarge'))
+    if (range.endChapter - range.startChapter + 1 > MAX_CONTEXT_SUMMARY_RANGE_CHAPTERS) {
+      setContextSummaryActionError(t('continuation.setup.contextSummary.error.rangeTooLarge'))
       return
     }
 
-    setOutlineActionError(null)
+    setContextSummaryActionError(null)
     try {
-      const created = await createOutline.mutateAsync(range)
-      setSelectedOutlineIds(current => (
-        current.includes(created.id) ? current : [...current, created.id]
-      ))
-      setOutlineRange('')
+      const created = await createContextSummary.mutateAsync(range)
+      setContextSummaryRange('')
+      setReviewContextSummaryId(created.id)
     } catch (error) {
-      setOutlineActionError(outlineErrorMessage(error))
+      setContextSummaryActionError(contextSummaryErrorMessage(error))
     }
-  }, [chapterNum, createOutline, outlineErrorMessage, outlineRange, t])
+  }, [chapterNum, contextSummaryErrorMessage, contextSummaryRange, createContextSummary, t])
 
-  const handleDeleteOutline = useCallback(async (outlineId: number) => {
-    setOutlineActionError(null)
+  const handleSaveContextSummary = useCallback(async (
+    summaryId: number,
+    content: string,
+    reviewStatus: NovelContextSummary['review_status'],
+  ) => {
+    setContextSummaryActionError(null)
     try {
-      await deleteOutline.mutateAsync(outlineId)
-      setSelectedOutlineIds(current => current.filter(id => id !== outlineId))
-    } catch {
-      setOutlineActionError(t('continuation.setup.outline.error.deleteFailed'))
+      const updated = await updateContextSummary.mutateAsync({
+        id: summaryId,
+        content,
+        reviewStatus,
+      })
+      if (canUseSummary(updated)) {
+        setSelectedContextSummaryIds(current => (
+          current.includes(updated.id) ? current : [...current, updated.id]
+        ))
+      } else {
+        setSelectedContextSummaryIds(current => current.filter(id => id !== updated.id))
+      }
+      return updated
+    } catch (error) {
+      setContextSummaryActionError(contextSummaryErrorMessage(error))
+      throw error
     }
-  }, [deleteOutline, t])
+  }, [contextSummaryErrorMessage, updateContextSummary])
+
+  const handleRegenerateContextSummary = useCallback(async (summaryId: number) => {
+    setContextSummaryActionError(null)
+    try {
+      const updated = await regenerateContextSummary.mutateAsync(summaryId)
+      setSelectedContextSummaryIds(current => current.filter(id => id !== updated.id))
+      return updated
+    } catch (error) {
+      setContextSummaryActionError(contextSummaryErrorMessage(error))
+      throw error
+    }
+  }, [contextSummaryErrorMessage, regenerateContextSummary])
+
+  const handleDeleteContextSummary = useCallback(async (summaryId: number) => {
+    setContextSummaryActionError(null)
+    try {
+      await deleteContextSummary.mutateAsync(summaryId)
+      setSelectedContextSummaryIds(current => current.filter(id => id !== summaryId))
+      setReviewContextSummaryId(current => (current === summaryId ? null : current))
+    } catch {
+      setContextSummaryActionError(t('continuation.setup.contextSummary.error.deleteFailed'))
+    }
+  }, [deleteContextSummary, t])
 
   const handleGenerate = useCallback(() => {
     if (chapterNum === null) return
@@ -185,17 +252,14 @@ export function useContinuationSetupState(novelId: number, chapterNum: number | 
         clampInt(contextChapters, MIN_CONTEXT_CHAPTERS, MAX_CONTEXT_CHAPTERS)
         ?? DEFAULT_CONTEXT_CHAPTERS
       ),
-      outline_ids: selectedOutlineIds,
+      context_summary_ids: selectedContextSummaryIds,
       num_versions: clampInt(numVersions, 1, 2) || undefined,
       temperature: !Number.isNaN(parsedTemperature)
         ? Math.max(0, Math.min(2, parsedTemperature))
         : undefined,
     }
     savePrefs()
-    const nextSearchParams = setStudioResultsStageSearchParams(
-      new URLSearchParams(),
-      chapterNum,
-    )
+    const nextSearchParams = setStudioResultsStageSearchParams(new URLSearchParams(), chapterNum)
     navigate(`/novel/${novelId}?${nextSearchParams.toString()}`, {
       state: { streamParams, novelId },
     })
@@ -207,8 +271,8 @@ export function useContinuationSetupState(novelId: number, chapterNum: number | 
     novelId,
     numVersions,
     savePrefs,
+    selectedContextSummaryIds,
     selectedLength,
-    selectedOutlineIds,
     temperature,
   ])
 
@@ -225,19 +289,29 @@ export function useContinuationSetupState(novelId: number, chapterNum: number | 
     setNumVersions,
     temperature,
     setTemperature,
-    outlines,
-    outlinesLoading: outlinesQuery.isLoading,
-    outlineError: outlineActionError ?? (
-      outlinesQuery.isError ? t('continuation.setup.outline.error.loadFailed') : null
+    contextSummaries,
+    contextSummariesLoading: contextSummariesQuery.isLoading,
+    contextSummaryError: contextSummaryActionError ?? (
+      contextSummariesQuery.isError
+        ? t('continuation.setup.contextSummary.error.loadFailed')
+        : null
     ),
-    selectedOutlineIds,
-    setSelectedOutlineIds,
-    outlineRange,
-    setOutlineRange,
-    outlineGenerating: createOutline.isPending,
-    outlineDeletingId: deleteOutline.isPending ? deleteOutline.variables ?? null : null,
-    handleCreateOutline,
-    handleDeleteOutline,
+    selectedContextSummaryIds,
+    setSelectedContextSummaryIds,
+    contextSummaryRange,
+    setContextSummaryRange,
+    contextSummaryGenerating: createContextSummary.isPending,
+    contextSummaryDeletingId: deleteContextSummary.isPending
+      ? deleteContextSummary.variables ?? null
+      : null,
+    contextSummarySaving: updateContextSummary.isPending,
+    contextSummaryRegenerating: regenerateContextSummary.isPending,
+    reviewContextSummary,
+    setReviewContextSummaryId,
+    handleCreateContextSummary,
+    handleSaveContextSummary,
+    handleRegenerateContextSummary,
+    handleDeleteContextSummary,
     handleGenerate,
   }
 }

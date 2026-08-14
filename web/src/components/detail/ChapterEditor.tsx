@@ -179,6 +179,7 @@ export function ChapterEditor({
         </div>
       ) : (
         <textarea
+          data-testid="chapter-editor-textarea"
           ref={textareaRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}

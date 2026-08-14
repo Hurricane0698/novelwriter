@@ -294,21 +294,23 @@ describe('api service', () => {
     expect(headers['X-LLM-Model']).toBe('m')
   })
 
-  it('createOutline forwards selfhost BYOK headers and the selected range', async () => {
+  it('context-summary generation forwards BYOK while review updates do not', async () => {
     setSelfhostLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
       id: 9,
       novel_id: 7,
       start_chapter: 1,
       end_chapter: 20,
-      title: '第1—20章剧情大纲',
+      title: '第1—20章远期剧情回顾',
       content: '摘要',
       model: 'm',
+      review_status: 'draft',
+      is_stale: false,
       created_at: '2026-08-12T00:00:00Z',
       updated_at: '2026-08-12T00:00:00Z',
     }), { status: 201 }))
 
-    await api.createOutline(7, 1, 20)
+    await api.createContextSummary(7, 1, 20)
 
     const init = vi.mocked(fetch).mock.calls[0][1]
     const headers = init.headers as Record<string, string>
@@ -316,6 +318,14 @@ describe('api service', () => {
     expect(headers['X-LLM-Api-Key']).toBe('sk-test')
     expect(headers['X-LLM-Model']).toBe('m')
     expect(init.body).toBe(JSON.stringify({ start_chapter: 1, end_chapter: 20 }))
+
+    await api.updateContextSummary(7, 9, { content: '审核后', review_status: 'confirmed' })
+    const reviewHeaders = vi.mocked(fetch).mock.calls[1][1].headers as Record<string, string>
+    expect(reviewHeaders['X-LLM-Api-Key']).toBeUndefined()
+
+    await api.regenerateContextSummary(7, 9)
+    const regenerateHeaders = vi.mocked(fetch).mock.calls[2][1].headers as Record<string, string>
+    expect(regenerateHeaders['X-LLM-Api-Key']).toBe('sk-test')
   })
 
   it.each([

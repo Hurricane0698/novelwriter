@@ -56,7 +56,11 @@ class Novel(Base):
 
     chapters = relationship("Chapter", back_populates="novel", cascade="all, delete-orphan")
     continuations = relationship("Continuation", back_populates="novel", cascade="all, delete-orphan")
-    outlines = relationship("NovelOutline", back_populates="novel", cascade="all, delete-orphan")
+    context_summaries = relationship(
+        "NovelContextSummary",
+        back_populates="novel",
+        cascade="all, delete-orphan",
+    )
     bootstrap_job = relationship("BootstrapJob", back_populates="novel", uselist=False, cascade="all, delete-orphan")
     derived_asset_jobs = relationship("DerivedAssetJob", back_populates="novel", cascade="all, delete-orphan")
     ingest_job = relationship("NovelIngestJob", back_populates="novel", uselist=False, cascade="all, delete-orphan")
@@ -97,14 +101,26 @@ class Continuation(Base):
     novel = relationship("Novel", back_populates="continuations")
 
 
-class NovelOutline(Base):
-    """An AI-generated summary for an explicitly selected chapter range."""
+class NovelContextSummary(Base):
+    """A user-reviewed AI recap for an explicitly selected chapter range."""
 
-    __tablename__ = "novel_outlines"
+    __tablename__ = "novel_context_summaries"
     __table_args__ = (
-        CheckConstraint("start_chapter >= 1", name="ck_novel_outlines_start_positive"),
-        CheckConstraint("end_chapter >= start_chapter", name="ck_novel_outlines_range_order"),
-        Index("ix_novel_outlines_novel_range", "novel_id", "start_chapter", "end_chapter"),
+        CheckConstraint("start_chapter >= 1", name="ck_novel_context_summaries_start_positive"),
+        CheckConstraint(
+            "end_chapter >= start_chapter",
+            name="ck_novel_context_summaries_range_order",
+        ),
+        CheckConstraint(
+            "review_status IN ('draft', 'confirmed')",
+            name="ck_novel_context_summaries_review_status",
+        ),
+        Index(
+            "ix_novel_context_summaries_novel_range",
+            "novel_id",
+            "start_chapter",
+            "end_chapter",
+        ),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -114,10 +130,12 @@ class NovelOutline(Base):
     title = Column(String(255), nullable=False, default="")
     content = Column(Text, nullable=False)
     model = Column(String(255), nullable=True)
+    source_fingerprint = Column(String(64), nullable=False)
+    review_status = Column(String(20), nullable=False, default="draft")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
-    novel = relationship("Novel", back_populates="outlines")
+    novel = relationship("Novel", back_populates="context_summaries")
 
 
 class ContinuationRun(Base):

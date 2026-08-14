@@ -48,6 +48,7 @@ function normalizeContinueDebugSummary(value: unknown): ContinueDebugSummary | n
     injected_systems: normalizeStringList(value.injected_systems),
     injected_entities: normalizeStringList(value.injected_entities),
     injected_relationships: normalizeStringList(value.injected_relationships),
+    injected_context_summaries: normalizeStringList(value.injected_context_summaries),
     relevant_entity_ids: normalizeNumberList(value.relevant_entity_ids),
     ambiguous_keywords_disabled: normalizeStringList(value.ambiguous_keywords_disabled),
     drift_warnings: driftWarnings.length > 0 ? driftWarnings : legacyDriftWarnings,

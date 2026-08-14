@@ -432,6 +432,15 @@ export async function mockAllApiRoutes(page: Page) {
     route.fulfill({ json: CHAPTERS[0] })
   )
 
+  await page.route('**/api/novels/1/chapters/2', route =>
+    route.fulfill({ json: CHAPTERS[1] })
+  )
+
+  await page.route('**/api/novels/1/context-summaries', route => {
+    if (route.request().method() !== 'GET') return route.abort('blockedbyclient')
+    return route.fulfill({ json: [] })
+  })
+
   // World model defaults (empty world, no bootstrap job).
   await page.route('**/api/novels/1/world/entities**', route => {
     if (route.request().method() !== 'GET') return route.abort('blockedbyclient')

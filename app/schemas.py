@@ -276,7 +276,7 @@ class ContinuationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class NovelOutlineResponse(BaseModel):
+class NovelContextSummaryResponse(BaseModel):
     id: int
     novel_id: int
     start_chapter: int
@@ -284,13 +284,15 @@ class NovelOutlineResponse(BaseModel):
     title: str
     content: str
     model: str | None = None
+    review_status: Literal["draft", "confirmed"]
+    is_stale: bool
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class NovelOutlineCreateRequest(BaseModel):
+class NovelContextSummaryCreateRequest(BaseModel):
     start_chapter: int = Field(ge=1)
     end_chapter: int = Field(ge=1)
 
@@ -299,6 +301,19 @@ class NovelOutlineCreateRequest(BaseModel):
         if self.start_chapter > self.end_chapter:
             raise ValueError("start_chapter must not exceed end_chapter")
         return self
+
+
+class NovelContextSummaryUpdateRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=40_000)
+    review_status: Literal["draft", "confirmed"]
+
+    @field_validator("content")
+    @classmethod
+    def _normalize_content(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("content cannot be empty")
+        return normalized
 
 
 class ContinueRequest(BaseModel):
@@ -313,7 +328,7 @@ class ContinueRequest(BaseModel):
         ge=1,
         description=f"用于续写上下文的最近章节数（仅允许 1-{MAX_CONTEXT_CHAPTERS}，超过时按 {MAX_CONTEXT_CHAPTERS} 处理）",
     )
-    outline_ids: List[Annotated[int, Field(gt=0)]] = Field(default_factory=list, max_length=10)
+    context_summary_ids: List[Annotated[int, Field(gt=0)]] = Field(default_factory=list, max_length=10)
     temperature: float | None = Field(
         default=None,
         ge=0.0,
@@ -327,8 +342,8 @@ class ContinueRequest(BaseModel):
             raise ValueError(f"target_chars must be one of {sorted(self.ALLOWED_TARGET_CHARS)}")
         if self.context_chapters is not None and self.context_chapters > MAX_CONTEXT_CHAPTERS:
             self.context_chapters = MAX_CONTEXT_CHAPTERS
-        if len(set(self.outline_ids)) != len(self.outline_ids):
-            raise ValueError("outline_ids must not contain duplicates")
+        if len(set(self.context_summary_ids)) != len(self.context_summary_ids):
+            raise ValueError("context_summary_ids must not contain duplicates")
         return self
 class UploadResponse(BaseModel):
     novel_id: int
@@ -360,12 +375,13 @@ class ProseWarning(LocalizedWarningBase):
 
 
 class ContinueDebugSummary(BaseModel):
-    """Debug summary for context injection (WorldModel)."""
+    """Debug summary for all context injected into continuation generation."""
 
     context_chapters: int
     injected_systems: List[str] = Field(default_factory=list)
     injected_entities: List[str] = Field(default_factory=list)
     injected_relationships: List[str] = Field(default_factory=list)
+    injected_context_summaries: List[str] = Field(default_factory=list)
     relevant_entity_ids: List[int] = Field(default_factory=list)
     ambiguous_keywords_disabled: List[str] = Field(default_factory=list)
     drift_warnings: List[PostcheckWarning] = Field(default_factory=list)

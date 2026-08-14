@@ -41,6 +41,7 @@ export function useUpdateChapter(
             : m
         ))
       })
+      await qc.invalidateQueries({ queryKey: novelKeys.contextSummaries(novelId) })
     },
   })
 }

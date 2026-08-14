@@ -98,6 +98,9 @@ describe('useCreateChapter', () => {
     expect(queryClient.getQueryData(novelKeys.detail(novelId))).toMatchObject({ total_chapters: 4 })
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: novelKeys.chaptersMeta(novelId) })
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: novelKeys.detail(novelId) })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: novelKeys.contextSummaries(novelId),
+    })
   })
 
   it('rethrows create error and does not invalidate queries', async () => {

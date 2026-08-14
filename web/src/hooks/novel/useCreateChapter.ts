@@ -33,6 +33,7 @@ export function useCreateChapter(novelId: number) {
       })
       qc.invalidateQueries({ queryKey: novelKeys.chaptersMeta(novelId) })
       qc.invalidateQueries({ queryKey: novelKeys.detail(novelId) })
+      qc.invalidateQueries({ queryKey: novelKeys.contextSummaries(novelId) })
     },
   })
 }

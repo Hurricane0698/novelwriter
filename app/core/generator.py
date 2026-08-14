@@ -155,6 +155,7 @@ async def _build_continuation_prompt(
     max_tokens: int | None = None,
     target_chars: int | None = None,
     context_chapters: int | None = None,
+    chapter_recaps: str | None = None,
     world_context: str | None = None,
     narrative_constraints: str | None = None,
     world_debug_summary: dict | None = None,
@@ -237,6 +238,8 @@ async def _build_continuation_prompt(
             logger.info("Injecting WorldModel context for novel %s", novel_id)
 
     combined_context = ""
+    if chapter_recaps and chapter_recaps.strip():
+        combined_context += f"\n<chapter_recaps>\n{chapter_recaps.strip()}\n</chapter_recaps>\n"
     if world_context_section:
         combined_context += world_context_section
 
@@ -289,6 +292,7 @@ async def continue_novel(
     max_tokens: int | None = None,
     target_chars: int | None = None,
     context_chapters: int | None = None,
+    chapter_recaps: str | None = None,
     world_context: str | None = None,
     narrative_constraints: str | None = None,
     world_debug_summary: dict | None = None,
@@ -308,6 +312,7 @@ async def continue_novel(
         max_tokens: Optional max tokens for generation (defaults to settings.default_continuation_tokens)
         target_chars: Optional target length in characters for the continuation
         context_chapters: Override for settings.max_context_chapters
+        chapter_recaps: User-reviewed, fresh summaries of selected distant chapter ranges
         world_context: Injected WorldModel context (already visibility-filtered)
         narrative_constraints: Extracted narrative constraints from WorldSystem (injected as dedicated prompt section)
         world_debug_summary: Optional debug summary (used for logging/traceability)
@@ -322,6 +327,7 @@ async def continue_novel(
         max_tokens=max_tokens,
         target_chars=target_chars,
         context_chapters=context_chapters,
+        chapter_recaps=chapter_recaps,
         world_context=world_context,
         narrative_constraints=narrative_constraints,
         world_debug_summary=world_debug_summary,
@@ -368,6 +374,7 @@ async def continue_novel_stream(
     max_tokens: int | None = None,
     target_chars: int | None = None,
     context_chapters: int | None = None,
+    chapter_recaps: str | None = None,
     world_context: str | None = None,
     narrative_constraints: str | None = None,
     world_debug_summary: dict | None = None,
@@ -385,6 +392,7 @@ async def continue_novel_stream(
         max_tokens=max_tokens,
         target_chars=target_chars,
         context_chapters=context_chapters,
+        chapter_recaps=chapter_recaps,
         world_context=world_context,
         narrative_constraints=narrative_constraints,
         world_debug_summary=world_debug_summary,

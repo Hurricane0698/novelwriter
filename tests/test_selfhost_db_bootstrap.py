@@ -352,7 +352,7 @@ def test_matches_unversioned_baseline_for_markdown_source_contract():
         "novels": {"content_format"},
         "chapters": {"source_volume_title"},
         "novel_ingest_jobs": {"error_code"},
-        "novel_outlines": {
+        "novel_context_summaries": {
             _MISSING_TABLE,
             "novel_id",
             "start_chapter",
@@ -360,6 +360,8 @@ def test_matches_unversioned_baseline_for_markdown_source_contract():
             "title",
             "content",
             "model",
+            "source_fingerprint",
+            "review_status",
             "created_at",
             "updated_at",
         },
@@ -372,9 +374,9 @@ def test_matches_latest_safe_baseline_when_schema_is_current():
     assert _matching_unversioned_upgrade_baseline({}) == "041"
 
 
-def test_matches_unversioned_baseline_missing_only_novel_outlines():
+def test_matches_unversioned_baseline_missing_only_context_summaries():
     assert _matching_unversioned_upgrade_baseline(
-        {"novel_outlines": {_MISSING_TABLE}},
+        {"novel_context_summaries": {_MISSING_TABLE}},
     ) == "041"
 
 

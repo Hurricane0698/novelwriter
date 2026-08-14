@@ -91,6 +91,7 @@ describe('useUpdateChapter', () => {
     mockUpdateChapter.mockReturnValue(updatePromise)
 
     const queryClient = createTestQueryClient()
+    const invalidateQueriesSpy = vi.spyOn(queryClient, 'invalidateQueries')
     queryClient.setQueryData(novelKeys.chapter(novelId, chapterNum), initialChapter)
     queryClient.setQueryData(novelKeys.chaptersMeta(novelId), initialMeta)
 
@@ -118,6 +119,9 @@ describe('useUpdateChapter', () => {
 
     // Final cache reflects the server response.
     expect(queryClient.getQueryData(novelKeys.chapter(novelId, chapterNum))).toEqual(updatedChapter)
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: novelKeys.contextSummaries(novelId),
+    })
     expect(queryClient.getQueryData(novelKeys.chaptersMeta(novelId))).toMatchObject([{
       chapter_number: chapterNum,
       title: updatedChapter.title,

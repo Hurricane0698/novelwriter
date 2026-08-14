@@ -15,7 +15,7 @@ def _load_migration():
         Path(__file__).resolve().parents[1]
         / "alembic"
         / "versions"
-        / "042_add_novel_outlines.py"
+        / "042_add_context_summaries.py"
     )
     spec = importlib.util.spec_from_file_location("migration_042", path)
     assert spec is not None and spec.loader is not None
@@ -31,7 +31,7 @@ def _run(module, engine: sa.Engine, step: str) -> None:
         getattr(module, step)()
 
 
-def test_migration_042_creates_bounded_outline_ranges_and_downgrades(tmp_path: Path):
+def test_migration_042_creates_reviewed_context_summaries_and_downgrades(tmp_path: Path):
     engine = sa.create_engine(f"sqlite:///{tmp_path / 'migration.db'}")
     with engine.begin() as connection:
         connection.exec_driver_sql(
@@ -43,43 +43,66 @@ def test_migration_042_creates_bounded_outline_ranges_and_downgrades(tmp_path: P
     _run(migration, engine, "upgrade")
 
     inspector = sa.inspect(engine)
-    assert "novel_outlines" in inspector.get_table_names()
-    assert {column["name"] for column in inspector.get_columns("novel_outlines")} >= {
+    assert "novel_context_summaries" in inspector.get_table_names()
+    assert {column["name"] for column in inspector.get_columns("novel_context_summaries")} >= {
         "novel_id",
         "start_chapter",
         "end_chapter",
         "content",
         "model",
+        "source_fingerprint",
+        "review_status",
     }
-    assert {constraint["name"] for constraint in inspector.get_check_constraints("novel_outlines")} == {
-        "ck_novel_outlines_range_order",
-        "ck_novel_outlines_start_positive",
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("novel_context_summaries")
+    } == {
+        "ck_novel_context_summaries_range_order",
+        "ck_novel_context_summaries_review_status",
+        "ck_novel_context_summaries_start_positive",
     }
 
     with engine.begin() as connection:
         connection.execute(
             sa.text(
                 """
-                INSERT INTO novel_outlines (
-                    novel_id, start_chapter, end_chapter, title, content
-                ) VALUES (1, 1, 2, 'Outline', 'Summary')
+                INSERT INTO novel_context_summaries (
+                    novel_id, start_chapter, end_chapter, title, content,
+                    source_fingerprint, review_status
+                ) VALUES (1, 1, 2, 'Recap', 'Summary', :fingerprint, 'confirmed')
                 """
-            )
+            ),
+            {"fingerprint": "0" * 64},
         )
 
     with pytest.raises(IntegrityError), engine.begin() as connection:
         connection.execute(
             sa.text(
                 """
-                INSERT INTO novel_outlines (
-                    novel_id, start_chapter, end_chapter, title, content
-                ) VALUES (1, 3, 2, 'Invalid', 'Summary')
+                INSERT INTO novel_context_summaries (
+                    novel_id, start_chapter, end_chapter, title, content,
+                    source_fingerprint, review_status
+                ) VALUES (1, 3, 2, 'Invalid', 'Summary', :fingerprint, 'confirmed')
                 """
-            )
+            ),
+            {"fingerprint": "0" * 64},
+        )
+
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO novel_context_summaries (
+                    novel_id, start_chapter, end_chapter, title, content,
+                    source_fingerprint, review_status
+                ) VALUES (1, 1, 1, 'Invalid', 'Summary', :fingerprint, 'published')
+                """
+            ),
+            {"fingerprint": "0" * 64},
         )
 
     _run(migration, engine, "downgrade")
-    assert "novel_outlines" not in sa.inspect(engine).get_table_names()
+    assert "novel_context_summaries" not in sa.inspect(engine).get_table_names()
 
 
 def test_migration_042_upgrade_is_idempotent_for_current_table(tmp_path: Path):
@@ -94,6 +117,7 @@ def test_migration_042_upgrade_is_idempotent_for_current_table(tmp_path: Path):
     _run(migration, engine, "upgrade")
 
     indexes = {
-        index["name"] for index in sa.inspect(engine).get_indexes("novel_outlines")
+        index["name"]
+        for index in sa.inspect(engine).get_indexes("novel_context_summaries")
     }
-    assert indexes == {"ix_novel_outlines_novel_range"}
+    assert indexes == {"ix_novel_context_summaries_novel_range"}

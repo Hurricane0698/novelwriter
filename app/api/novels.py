@@ -5,7 +5,7 @@ from fastapi import APIRouter
 
 from .novel_chapters import router as novel_chapter_router
 from .novel_continuations import router as novel_continuation_router
-from .novel_outlines import router as novel_outline_router
+from .novel_context_summaries import router as novel_context_summary_router
 from .novel_status import router as novel_status_router
 from .novel_uploads import router as novel_upload_router
 
@@ -14,4 +14,4 @@ router.include_router(novel_upload_router)
 router.include_router(novel_status_router)
 router.include_router(novel_chapter_router)
 router.include_router(novel_continuation_router)
-router.include_router(novel_outline_router)
+router.include_router(novel_context_summary_router)

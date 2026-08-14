@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { X, Box, Users, GitBranch, ExternalLink } from 'lucide-react'
+import { X, Box, Users, GitBranch, ExternalLink, BookOpenText } from 'lucide-react'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { cn } from '@/lib/utils'
 import type { ContinueDebugSummary } from '@/types/api'
@@ -45,7 +45,8 @@ export function InjectionSummaryPanel({
   }
 
   const currentItems = itemsMap[effectiveCategory]
-  const totalCount = debug.injected_entities.length + debug.injected_systems.length + debug.injected_relationships.length
+  const worldCount = debug.injected_entities.length + debug.injected_systems.length + debug.injected_relationships.length
+  const totalCount = worldCount + debug.injected_context_summaries.length
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="injection-summary-panel">
@@ -69,6 +70,25 @@ export function InjectionSummaryPanel({
           </button>
         </div>
       </div>
+
+      {debug.injected_context_summaries.length > 0 ? (
+        <div className="shrink-0 border-b border-[var(--nw-glass-border)] px-4 py-3">
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-medium text-foreground">
+            <BookOpenText size={12} className="text-accent" />
+            <span>{t('studio.injectionSummary.contextSummaries')}</span>
+          </div>
+          <div className="space-y-1">
+            {debug.injected_context_summaries.map(item => (
+              <div
+                key={item}
+                className="rounded-lg border border-[hsl(var(--accent)/0.2)] bg-[hsl(var(--accent)/0.06)] px-3 py-2 text-[12px] text-foreground/90"
+              >
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* Category tabs */}
       <div className="shrink-0 flex gap-1.5 px-4 py-3 border-b border-[var(--nw-glass-border)]">
@@ -147,7 +167,7 @@ export function InjectionSummaryPanel({
       </div>
 
       {/* Footer */}
-      {totalCount > 0 && (
+      {worldCount > 0 && (
         <div className="shrink-0 border-t border-[var(--nw-glass-border)] px-4 py-3">
           <button
             type="button"

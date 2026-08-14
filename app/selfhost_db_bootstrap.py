@@ -20,7 +20,7 @@ from app.models import (  # noqa: F401 - register models with Base.metadata
     Exploration,
     ExplorationChapter,
     Novel,
-    NovelOutline,
+    NovelContextSummary,
     NovelIngestJob,
     TokenUsage,
     User,
@@ -41,7 +41,7 @@ _PRE_AUTH_IDENTITIES_REVISION = "032"
 _PRE_NOVEL_INGEST_JOB_REVISION = "034"
 _PRE_WORLD_GENERATION_ADMISSION_REVISION = "035"
 _PRE_MARKDOWN_SOURCE_CONTRACT_REVISION = "040"
-_PRE_NOVEL_OUTLINES_REVISION = "041"
+_PRE_CONTEXT_SUMMARIES_REVISION = "041"
 _CORE_TABLES = {"novels", "chapters"}
 _MISSING_TABLE = "__table__"
 _LEGACY_TABLES = {
@@ -118,13 +118,15 @@ _REQUIRED_SCHEMA_COLUMNS: dict[str, set[str]] = {
         "started_at",
         "finished_at",
     },
-    "novel_outlines": {
+    "novel_context_summaries": {
         "novel_id",
         "start_chapter",
         "end_chapter",
         "title",
         "content",
         "model",
+        "source_fingerprint",
+        "review_status",
         "created_at",
         "updated_at",
     },
@@ -156,14 +158,14 @@ def _with_markdown_source_gaps(
     merged = {table_name: set(columns) for table_name, columns in allowed_missing.items()}
     for table_name, columns in _MARKDOWN_SOURCE_SCHEMA_GAPS.items():
         merged.setdefault(table_name, set()).update(columns)
-    merged["novel_outlines"] = _missing_table_gap("novel_outlines")
+    merged["novel_context_summaries"] = _missing_table_gap("novel_context_summaries")
     return merged
 
 
 _UNVERSIONED_AUTO_UPGRADE_BASELINES: tuple[tuple[str, dict[str, set[str]]], ...] = (
     (
-        _PRE_NOVEL_OUTLINES_REVISION,
-        {"novel_outlines": _missing_table_gap("novel_outlines")},
+        _PRE_CONTEXT_SUMMARIES_REVISION,
+        {"novel_context_summaries": _missing_table_gap("novel_context_summaries")},
     ),
     (
         _PRE_MARKDOWN_SOURCE_CONTRACT_REVISION,

@@ -101,6 +101,9 @@ describe('useDeleteChapter', () => {
     expect(mockDeleteChapter).toHaveBeenCalledWith(novelId, chapterNum)
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: novelKeys.chaptersMeta(novelId) })
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: novelKeys.detail(novelId) })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: novelKeys.contextSummaries(novelId),
+    })
   })
 
   it('rolls back optimistic delete on error', async () => {

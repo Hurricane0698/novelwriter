@@ -190,7 +190,7 @@ test('Markdown import → source preview → save → native export', async ({ p
   await expect(page.getByRole('heading', { level: 3, name: '章内小节' })).toBeVisible()
 
   await page.getByRole('button', { name: '编辑' }).click()
-  const sourceEditor = page.getByRole('textbox')
+  const sourceEditor = page.getByTestId('chapter-editor-textarea')
   await sourceEditor.fill('**修改后正文**\n\n### 实时预览\n\n- 新列表项\n')
   await page.getByRole('button', { name: '预览' }).click()
   const editorPreview = page.getByTestId('markdown-editor-preview')

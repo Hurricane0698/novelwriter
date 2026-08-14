@@ -1139,6 +1139,7 @@ describe('NovelStudioPage', () => {
       context_chapters: 3,
       injected_entities: ['主角'],
       injected_relationships: [],
+      injected_context_summaries: [],
       injected_systems: [],
       relevant_entity_ids: [1],
       ambiguous_keywords_disabled: [],

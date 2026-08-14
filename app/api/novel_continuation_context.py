@@ -23,7 +23,8 @@ from app.core.continuation_text import (
     format_recent_chapters_for_prompt,
     format_world_context_for_prompt,
 )
-from app.models import NovelOutline, User
+from app.core.context_summaries import is_context_summary_stale
+from app.models import NovelContextSummary, User
 from app.schemas import ContinueDebugSummary, ContinueRequest
 
 from . import novel_support
@@ -31,62 +32,82 @@ from . import novel_support
 logger = logging.getLogger(__name__)
 
 
-def _outline_error(code: str, message: str) -> HTTPException:
+def _context_summary_error(code: str, message: str) -> HTTPException:
     return HTTPException(status_code=422, detail={"code": code, "message": message})
 
 
-def _format_selected_outlines(
+def _format_selected_context_summaries(
     db: Session,
     *,
     novel_id: int,
-    outline_ids: list[int],
+    context_summary_ids: list[int],
     locale: str | None,
-) -> str:
-    if not outline_ids:
-        return ""
+) -> tuple[str, list[str]]:
+    if not context_summary_ids:
+        return "", []
 
     rows = (
-        db.query(NovelOutline)
+        db.query(NovelContextSummary)
         .filter(
-            NovelOutline.novel_id == novel_id,
-            NovelOutline.id.in_(outline_ids),
+            NovelContextSummary.novel_id == novel_id,
+            NovelContextSummary.id.in_(context_summary_ids),
         )
         .all()
     )
     rows_by_id = {int(row.id): row for row in rows}
-    missing = [outline_id for outline_id in outline_ids if outline_id not in rows_by_id]
+    missing = [summary_id for summary_id in context_summary_ids if summary_id not in rows_by_id]
     if missing:
-        raise _outline_error(
-            "outline_not_found",
-            f"Selected outline {missing[0]} no longer exists.",
+        raise _context_summary_error(
+            "context_summary_not_found",
+            f"Selected context summary {missing[0]} no longer exists.",
         )
 
     use_chinese = str(locale or "").lower().startswith("zh")
     sections: list[str] = []
-    for outline_id in outline_ids:
-        row = rows_by_id[outline_id]
+    labels: list[str] = []
+    for summary_id in context_summary_ids:
+        row = rows_by_id[summary_id]
+        if row.review_status != "confirmed":
+            raise _context_summary_error(
+                "context_summary_unconfirmed",
+                f"Selected context summary {summary_id} has not been confirmed.",
+            )
+        if is_context_summary_stale(
+            db,
+            novel_id=novel_id,
+            start_chapter=row.start_chapter,
+            end_chapter=row.end_chapter,
+            source_fingerprint=row.source_fingerprint,
+            locale=locale,
+        ):
+            raise _context_summary_error(
+                "context_summary_stale",
+                f"Selected context summary {summary_id} is stale. Regenerate and confirm it first.",
+            )
         if use_chinese:
-            heading = f"第{row.start_chapter}—{row.end_chapter}章剧情大纲"
+            heading = f"第{row.start_chapter}—{row.end_chapter}章远期剧情回顾"
         else:
-            heading = f"Plot outline for chapters {row.start_chapter}–{row.end_chapter}"
+            heading = f"Recap of chapters {row.start_chapter}–{row.end_chapter}"
+        labels.append(heading)
         sections.append(f"[{heading}]\n{row.content.strip()}")
 
     context = (
-        "\n<selected_plot_outlines>\n"
+        "\n<selected_context_summaries>\n"
         + "\n\n".join(sections)
-        + "\n</selected_plot_outlines>\n"
+        + "\n</selected_context_summaries>\n"
     )
-    if len(context) > get_settings().outline_context_max_chars:
-        raise _outline_error(
-            "outline_context_too_large",
-            "The selected outlines are too long to inject together. Select fewer outlines.",
+    if len(context) > get_settings().context_summary_injection_max_chars:
+        raise _context_summary_error(
+            "context_summary_context_too_large",
+            "The selected context summaries are too long to inject together. Select fewer summaries.",
         )
-    return context
+    return context, labels
 
 
 def _build_continue_debug_summary(
     writer_ctx: dict[str, Any],
     context_chapters: int,
+    injected_context_summaries: list[str] | None = None,
 ) -> ContinueDebugSummary:
     systems = writer_ctx.get("systems") or []
     entities = writer_ctx.get("entities") or []
@@ -137,6 +158,7 @@ def _build_continue_debug_summary(
         injected_systems=system_names,
         injected_entities=entity_names,
         injected_relationships=rel_names,
+        injected_context_summaries=list(injected_context_summaries or []),
         relevant_entity_ids=relevant_entity_ids,
         ambiguous_keywords_disabled=list(debug.get("ambiguous_keywords_disabled") or []),
     )
@@ -145,6 +167,7 @@ def _build_continue_debug_summary(
 @dataclass
 class _ContinuationContext:
     recent_text: str
+    chapter_recaps: str
     world_context: str
     narrative_constraints: str
     debug_summary: ContinueDebugSummary
@@ -175,15 +198,15 @@ def _prepare_continuation_context(
     novel_language = getattr(novel, "language", None)
     recent_text = format_recent_chapters_for_prompt(recent_chapters, locale=novel_language)
     relevance_text = append_user_instruction_for_relevance(recent_text, req.prompt, locale=novel_language)
-    outline_context = _format_selected_outlines(
+    chapter_recaps, context_summary_labels = _format_selected_context_summaries(
         db,
         novel_id=novel_id,
-        outline_ids=req.outline_ids,
+        context_summary_ids=req.context_summary_ids,
         locale=novel_language,
     )
     remaining_world_context_budget = max(
         1,
-        DEFAULT_WORLD_CONTEXT_TOKEN_BUDGET - len(outline_context),
+        DEFAULT_WORLD_CONTEXT_TOKEN_BUDGET - len(chapter_recaps),
     )
 
     try:
@@ -197,15 +220,16 @@ def _prepare_continuation_context(
         raise HTTPException(status_code=500, detail="Context assembly failed")
 
     world_context = format_world_context_for_prompt(writer_ctx, locale=novel_language)
-    world_context = outline_context + world_context
     narrative_constraints = extract_narrative_constraints(writer_ctx)
     debug_summary = _build_continue_debug_summary(
         writer_ctx,
         context_chapters=effective_context_chapters,
+        injected_context_summaries=context_summary_labels,
     )
 
     return _ContinuationContext(
         recent_text=recent_text,
+        chapter_recaps=chapter_recaps,
         world_context=world_context,
         narrative_constraints=narrative_constraints,
         debug_summary=debug_summary,

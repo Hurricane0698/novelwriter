@@ -211,6 +211,7 @@ export function ContinuationResultsStage({
         entities: debug.injected_entities.length,
         relationships: debug.injected_relationships.length,
         systems: debug.injected_systems.length,
+        recaps: debug.injected_context_summaries.length,
       }
     : null
 
@@ -469,6 +470,7 @@ export function ContinuationResultsStage({
                 entities: summary.entities,
                 relationships: summary.relationships,
                 systems: summary.systems,
+                recaps: summary.recaps,
               })}
             </span>
           </div>

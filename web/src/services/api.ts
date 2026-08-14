@@ -5,7 +5,7 @@ import type {
   ChapterCreateRequest,
   ChapterUpdateRequest,
   ContinueRequest,
-  NovelOutline,
+  NovelContextSummary,
   ContinueResponse,
   Continuation,
   StreamEvent,
@@ -221,15 +221,31 @@ export const api = {
     }),
   deleteChapter: (novelId: number, num: number) =>
     request<void>(`/api/novels/${novelId}/chapters/${num}`, { method: 'DELETE' }),
-  listOutlines: (novelId: number) => request<NovelOutline[]>(`/api/novels/${novelId}/outlines`),
-  createOutline: (novelId: number, start_chapter: number, end_chapter: number) =>
-    request<NovelOutline>(`/api/novels/${novelId}/outlines`, {
+  listContextSummaries: (novelId: number) => (
+    request<NovelContextSummary[]>(`/api/novels/${novelId}/context-summaries`)
+  ),
+  createContextSummary: (novelId: number, start_chapter: number, end_chapter: number) =>
+    request<NovelContextSummary>(`/api/novels/${novelId}/context-summaries`, {
       method: 'POST',
       headers: llmHeaders(),
       body: JSON.stringify({ start_chapter, end_chapter }),
     }),
-  deleteOutline: (novelId: number, outlineId: number) =>
-    request<void>(`/api/novels/${novelId}/outlines/${outlineId}`, { method: 'DELETE' }),
+  updateContextSummary: (
+    novelId: number,
+    summaryId: number,
+    data: Pick<NovelContextSummary, 'content' | 'review_status'>,
+  ) => request<NovelContextSummary>(`/api/novels/${novelId}/context-summaries/${summaryId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+  regenerateContextSummary: (novelId: number, summaryId: number) => (
+    request<NovelContextSummary>(`/api/novels/${novelId}/context-summaries/${summaryId}/regenerate`, {
+      method: 'POST',
+      headers: llmHeaders(),
+    })
+  ),
+  deleteContextSummary: (novelId: number, summaryId: number) =>
+    request<void>(`/api/novels/${novelId}/context-summaries/${summaryId}`, { method: 'DELETE' }),
 
   continueNovel: (
     novelId: number,

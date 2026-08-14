@@ -155,11 +155,11 @@ export interface ContinueRequest {
   max_tokens?: number
   target_chars?: number
   context_chapters?: number
-  outline_ids?: number[]
+  context_summary_ids?: number[]
   temperature?: number
 }
 
-export interface NovelOutline {
+export interface NovelContextSummary {
   id: number
   novel_id: number
   start_chapter: number
@@ -167,6 +167,8 @@ export interface NovelOutline {
   title: string
   content: string
   model?: string | null
+  review_status: 'draft' | 'confirmed'
+  is_stale: boolean
   created_at: string
   updated_at: string
 }
@@ -195,6 +197,7 @@ export interface ContinueDebugSummary {
   injected_systems: string[]
   injected_entities: string[]
   injected_relationships: string[]
+  injected_context_summaries: string[]
   relevant_entity_ids: number[]
   ambiguous_keywords_disabled: string[]
   drift_warnings: PostcheckWarning[]

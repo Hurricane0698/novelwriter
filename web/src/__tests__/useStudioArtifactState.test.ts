@@ -15,6 +15,7 @@ function buildDebugSummary(partial?: Partial<ContinueDebugSummary>): ContinueDeb
     injected_systems: [],
     injected_entities: [],
     injected_relationships: [],
+    injected_context_summaries: [],
     relevant_entity_ids: [],
     ambiguous_keywords_disabled: [],
     drift_warnings: [],
