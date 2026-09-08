@@ -16,6 +16,48 @@ class TestDegradation:
         return session, run
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("rounds,content,fallback,expected_status", [
+        (3, None, "", "error"),
+        (3, '{"answer":"","suggestions":[]}', '{"answer":"","suggestions":[]}', "error"),
+        (0, '{"answer":"","suggestions":[]}', "", "error"),
+        (3, "", "A useful fallback answer", "completed"),
+    ])
+    async def test_empty_final_results_never_complete_without_a_valid_fallback(
+        self, db, novel, mock_session_and_run, monkeypatch, rounds, content, fallback, expected_status,
+    ):
+        from app.config import get_settings
+        from app.core.ai_client import ToolLLMResponse
+        from app.core.copilot.service import execute_copilot_run
+
+        _, run = mock_session_and_run
+        calls = []
+
+        async def tool_response(self, **kwargs):
+            calls.append(kwargs.get("tool_choice"))
+            return ToolLLMResponse(content=content, tool_calls=[], finish_reason="stop")
+
+        async def one_shot_response(self, **kwargs):
+            calls.append("fallback")
+            return fallback
+
+        monkeypatch.setattr(get_settings(), "copilot_max_tool_rounds", rounds)
+        monkeypatch.setattr("app.core.ai_client.AIClient.generate_with_tools", tool_response)
+        monkeypatch.setattr("app.core.ai_client.AIClient.generate", one_shot_response)
+        monkeypatch.setattr("app.core.llm_semaphore.acquire_llm_slot", _noop_coro)
+        monkeypatch.setattr("app.core.llm_semaphore.release_llm_slot", lambda: None)
+        monkeypatch.setattr("app.database.SessionLocal", lambda: db)
+        monkeypatch.setattr(db, "close", lambda: None)
+
+        await execute_copilot_run(run.run_id, novel.id, 1, TEST_LLM_CONFIG)
+        db.refresh(run)
+        assert calls == ["none" if rounds == 0 else None, "fallback"]
+        assert run.status == expected_status
+        if expected_status == "completed":
+            assert run.answer == fallback
+        else:
+            assert run.error is not None
+
+    @pytest.mark.asyncio
     async def test_tool_unsupported_degrades_to_one_shot(self, db, novel, entities, chapters, mock_session_and_run, monkeypatch):
         from app.core.ai_client import ToolCallUnsupportedError
 

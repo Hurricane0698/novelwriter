@@ -1,6 +1,7 @@
 """Desktop LLM configuration and provider capability probes."""
 
 from collections.abc import Awaitable, Callable
+import asyncio
 import json
 import time
 
@@ -34,6 +35,7 @@ from app.schemas import (
     DesktopLlmConfigPutRequest,
     DesktopLlmConfigResponse,
     LlmProbeCapabilitiesResponse,
+    LlmProbeCapabilityStatuses,
     LlmProbeResponse,
 )
 
@@ -47,6 +49,7 @@ _PROBE_CONNECTION_FAILED_CODE = "llm_probe_connection_failed"
 _PROBE_CAPABILITY_MISMATCH_CODE = "llm_probe_capability_mismatch"
 _PROBE_INCONCLUSIVE_CODE = "llm_probe_inconclusive"
 _JSON_PROBE_TOKEN_BUDGETS = (256, 1024)
+_PROBE_TOTAL_TIMEOUT_SECONDS = 25.0
 
 
 class _ProbeInconclusiveError(ValueError):
@@ -234,8 +237,11 @@ async def _probe_stream_support(
             raise
         stream = await client.chat.completions.create(**request_kwargs)
 
-    async for chunk in stream:
-        record_usage(chunk)
+    try:
+        async for chunk in stream:
+            record_usage(chunk)
+    finally:
+        await stream.close()
 
 
 async def _probe_json_mode_support(
@@ -281,11 +287,7 @@ async def test_llm_connection(
     ensure_ai_available(db, billing_source=billing_source)
 
     start = time.perf_counter()
-    capabilities = LlmProbeCapabilitiesResponse(
-        basic=False,
-        stream=False,
-        json_mode=False,
-    )
+    capabilities = LlmProbeCapabilityStatuses()
 
     def record_usage(response: object) -> None:
         usage = getattr(response, "usage", None)
@@ -300,51 +302,51 @@ async def test_llm_connection(
         )
 
     try:
-        client = AsyncOpenAI(
-            base_url=config.base_url,
-            api_key=config.api_key,
-            timeout=10.0,
-            max_retries=0,
-        )
-        response = await client.chat.completions.create(
-            model=config.model,
-            messages=[{"role": "user", "content": "hi"}],
-            max_tokens=1,
-        )
-        capabilities.basic = True
-        record_usage(response)
+        async with asyncio.timeout(_PROBE_TOTAL_TIMEOUT_SECONDS):
+            async with AsyncOpenAI(
+                base_url=config.base_url,
+                api_key=config.api_key,
+                timeout=10.0,
+                max_retries=0,
+            ) as client:
+                response = await client.chat.completions.create(
+                    model=config.model,
+                    messages=[{"role": "user", "content": "hi"}],
+                    max_tokens=1,
+                )
+                capabilities.basic = "supported"
+                record_usage(response)
+                for name, probe, parameters in (
+                    ("stream", _probe_stream_support, ("stream",)),
+                    ("json_mode", _probe_json_mode_support, ("response_format", "json_object", "json mode")),
+                ):
+                    try:
+                        await probe(client, config.model, record_usage)
+                        setattr(capabilities, name, "supported")
+                    except Exception as exc:
+                        if _capability_unsupported(exc, parameters):
+                            setattr(capabilities, name, "unsupported")
     except Exception:
-        return LlmProbeResponse(
-            code=_PROBE_CONNECTION_FAILED_CODE,
-            model=config.model,
-            latency_ms=round((time.perf_counter() - start) * 1000),
-            capabilities=capabilities,
-        )
+        # A deadline or connection failure leaves unverified capabilities unknown.
+        # Never replace an already established result with a later failure.
+        pass
 
-    inconclusive = False
-    try:
-        await _probe_stream_support(client, config.model, record_usage)
-        capabilities.stream = True
-    except Exception as exc:
-        inconclusive = not _capability_unsupported(exc, ("stream",))
-
-    try:
-        await _probe_json_mode_support(client, config.model, record_usage)
-        capabilities.json_mode = True
-    except Exception as exc:
-        inconclusive = inconclusive or not _capability_unsupported(
-            exc, ("response_format", "json_object", "json mode"),
-        )
-
-    code = (
-        _PROBE_COMPATIBLE_CODE
-        if capabilities.stream and capabilities.json_mode
-        else _PROBE_INCONCLUSIVE_CODE if inconclusive
-        else _PROBE_CAPABILITY_MISMATCH_CODE
-    )
+    statuses = capabilities.model_dump()
+    if capabilities.basic != "supported":
+        code = _PROBE_CONNECTION_FAILED_CODE
+    elif "unsupported" in statuses.values():
+        code = _PROBE_CAPABILITY_MISMATCH_CODE
+    elif "unknown" in statuses.values():
+        code = _PROBE_INCONCLUSIVE_CODE
+    else:
+        code = _PROBE_COMPATIBLE_CODE
     return LlmProbeResponse(
         code=code,
         model=config.model,
         latency_ms=round((time.perf_counter() - start) * 1000),
-        capabilities=capabilities,
+        # Retain the boolean projection for older desktop clients.
+        capabilities=LlmProbeCapabilitiesResponse(**{
+            name: value == "supported" for name, value in statuses.items()
+        }),
+        capability_statuses=capabilities,
     )

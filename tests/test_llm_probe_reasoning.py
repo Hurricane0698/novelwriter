@@ -1,6 +1,8 @@
 """Exercise the public probe endpoint through the real SDK and a local transport."""
 
+import asyncio
 import json
+import time
 from types import SimpleNamespace
 
 import httpx
@@ -19,11 +21,27 @@ def probe(monkeypatch):
     requests = []
     usage = []
     responses = []
+    clients = []
+    stream_result = None
+    stream_closed = []
 
-    def provider(request):
+    class SlowStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            while True:
+                await asyncio.sleep(0.01)
+                yield b": keep-alive\n\n"
+
+        async def aclose(self):
+            stream_closed.append(True)
+
+    async def provider(request):
         body = json.loads(request.content)
         requests.append(body)
         if body.get("stream"):
+            if stream_result == "slow":
+                return httpx.Response(200, stream=SlowStream(), headers={"content-type": "text/event-stream"})
+            if isinstance(stream_result, int):
+                return httpx.Response(stream_result, json={"error": {"message": "stream is unsupported" if stream_result == 400 else "Temporary outage"}})
             chunk = {"id": "stream", "object": "chat.completion.chunk", "created": 0,
                      "model": "reasoner", "choices": [{"index": 0, "delta": {"content": "ok"},
                                                        "finish_reason": None}]}
@@ -44,9 +62,12 @@ def probe(monkeypatch):
                       "total_tokens": 5 + tokens},
         })
 
-    monkeypatch.setattr(llm, "AsyncOpenAI", lambda **kwargs: AsyncOpenAI(
-        **kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(provider)),
-    ))
+    def make_client(**kwargs):
+        client = AsyncOpenAI(**kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(provider)))
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(llm, "AsyncOpenAI", make_client)
     monkeypatch.setattr(llm, "get_llm_config", lambda request: SimpleNamespace(
         base_url="https://provider.test/v1", api_key="test-key", model="reasoner",
         billing_source_hint="hosted",
@@ -58,11 +79,17 @@ def probe(monkeypatch):
     app.dependency_overrides[get_current_user_or_default] = lambda: SimpleNamespace(id=1)
     app.dependency_overrides[get_db] = lambda: None
 
-    def run(results):
+    def run(results, *, stream=None, check_closed=False):
+        nonlocal stream_result
+        stream_result = stream
         responses.extend(results)
         with TestClient(app) as client:
             result = client.post("/api/llm/test")
         assert result.status_code == 200
+        if check_closed:
+            assert all(client.is_closed() for client in clients)
+            if stream == "slow":
+                assert stream_closed
         return result.json(), requests, usage
 
     return run
@@ -103,3 +130,25 @@ def test_provider_outage_is_inconclusive_without_sdk_retries_or_error_leaks(prob
     assert payload["code"] == "llm_probe_inconclusive"
     assert len(requests) == 3
     assert "secret-token" not in json.dumps(payload)
+
+
+@pytest.mark.parametrize("stream,json_result,expected", [
+    (400, 503, {"stream": "unsupported", "json_mode": "unknown"}),
+    (503, 400, {"stream": "unknown", "json_mode": "unsupported"}),
+])
+def test_known_incompatibility_survives_another_unknown_capability(probe, stream, json_result, expected):
+    payload, requests, _ = probe([json_result], stream=stream, check_closed=True)
+    assert payload["code"] == "llm_probe_capability_mismatch"
+    assert payload["capability_statuses"] == {"basic": "supported", **expected}
+    assert payload["capabilities"] == {"basic": True, "stream": False, "json_mode": False}
+    assert len(requests) == 3
+
+
+def test_total_deadline_closes_a_stream_that_keeps_sending_data(probe, monkeypatch):
+    monkeypatch.setattr(llm, "_PROBE_TOTAL_TIMEOUT_SECONDS", 0.08, raising=False)
+    start = time.perf_counter()
+    payload, requests, _ = probe([], stream="slow", check_closed=True)
+    assert time.perf_counter() - start < 1
+    assert payload["code"] == "llm_probe_inconclusive"
+    assert payload["capability_statuses"] == {"basic": "supported", "stream": "unknown", "json_mode": "unknown"}
+    assert len(requests) == 2

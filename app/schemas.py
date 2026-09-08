@@ -51,6 +51,12 @@ class LlmProbeCapabilitiesResponse(BaseModel):
     json_mode: bool
 
 
+class LlmProbeCapabilityStatuses(BaseModel):
+    basic: Literal["supported", "unsupported", "unknown"] = "unknown"
+    stream: Literal["supported", "unsupported", "unknown"] = "unknown"
+    json_mode: Literal["supported", "unsupported", "unknown"] = "unknown"
+
+
 class LlmProbeResponse(BaseModel):
     code: Literal[
         "llm_probe_compatible",
@@ -61,6 +67,7 @@ class LlmProbeResponse(BaseModel):
     model: str
     latency_ms: int
     capabilities: LlmProbeCapabilitiesResponse
+    capability_statuses: LlmProbeCapabilityStatuses
 
 
 class NovelBase(BaseModel):

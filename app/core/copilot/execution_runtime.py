@@ -158,6 +158,16 @@ async def run_one_shot(
     return deps.parse_llm_response(response_text), evidence
 
 
+class EmptyCopilotResultError(ValueError):
+    """A final chat result must contain an answer, even when it has suggestions."""
+
+
+def _validate_final_result(parsed: Any) -> None:
+    answer = parsed.get("answer") if isinstance(parsed, dict) else None
+    if not isinstance(answer, str) or not answer.strip():
+        raise EmptyCopilotResultError("Copilot returned no usable final answer")
+
+
 async def _run_with_degradation(
     hooks: ExecutionHooks,
     *,
@@ -176,8 +186,7 @@ async def _run_with_degradation(
     prior_messages: list[dict[str, str]],
     workspace_seed: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], list[EvidenceItem], Workspace | None, str, str | None]:
-    execution_mode = "tool_loop"
-    degraded_reason: str | None = None
+    original_error: Exception | None = None
 
     try:
         parsed, final_evidence, workspace = await hooks.run_tool_loop(
@@ -197,7 +206,8 @@ async def _run_with_degradation(
             prior_messages=prior_messages,
             workspace_seed=workspace_seed,
         )
-        return parsed, final_evidence, workspace, execution_mode, degraded_reason
+        _validate_final_result(parsed)
+        return parsed, final_evidence, workspace, "tool_loop", None
     except ToolCallUnsupportedError:
         logger.warning("Tool calls unsupported, degrading to one-shot", exc_info=True)
         execution_mode = "one_shot_unsupported"
@@ -213,41 +223,31 @@ async def _run_with_degradation(
         )
         execution_mode = "one_shot_fallback"
         degraded_reason = type(tool_loop_exc).__name__
-        try:
-            parsed, final_evidence = await hooks.run_one_shot(
-                snapshot,
-                evidence,
-                scenario,
-                session_data,
-                turn_intent,
-                prompt,
-                llm_config,
-                user_id,
-                run_id=run_id,
-                worker_id=worker_id,
-                db_factory=db_factory,
-            )
-            return parsed, final_evidence, None, execution_mode, degraded_reason
-        except hooks.lease_lost_error_type:
-            logger.info("Copilot run %s lost lease during fallback execution", run_id)
-            raise
-        except Exception:
-            raise tool_loop_exc from None
+        original_error = tool_loop_exc
 
-    parsed, final_evidence = await hooks.run_one_shot(
-        snapshot,
-        evidence,
-        scenario,
-        session_data,
-        turn_intent,
-        prompt,
-        llm_config,
-        user_id,
-        run_id=run_id,
-        worker_id=worker_id,
-        db_factory=db_factory,
-    )
-    return parsed, final_evidence, None, execution_mode, degraded_reason
+    try:
+        parsed, final_evidence = await hooks.run_one_shot(
+            snapshot,
+            evidence,
+            scenario,
+            session_data,
+            turn_intent,
+            prompt,
+            llm_config,
+            user_id,
+            run_id=run_id,
+            worker_id=worker_id,
+            db_factory=db_factory,
+        )
+        _validate_final_result(parsed)
+        return parsed, final_evidence, None, execution_mode, degraded_reason
+    except hooks.lease_lost_error_type:
+        logger.info("Copilot run %s lost lease during fallback execution", run_id)
+        raise
+    except Exception:
+        if original_error is not None:
+            raise original_error from None
+        raise
 
 
 async def execute_copilot_run(
@@ -348,9 +348,6 @@ async def execute_copilot_run(
                 workspace_seed=follow_up_workspace_seed,
             )
         )
-
-        if parsed is None:
-            parsed = {"answer": "", "suggestions": []}
 
         db_compile = db_factory()
         try:
