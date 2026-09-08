@@ -18,6 +18,7 @@ const keep = new Set([
   '128x128.png',
   '128x128@2x.png',
   'icon.ico',
+  'icon.icns',
   'icon.png',
 ])
 

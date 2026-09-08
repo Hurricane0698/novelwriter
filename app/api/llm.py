@@ -18,6 +18,7 @@ from app.core.ai_client import (
     _stream_options_unsupported,
 )
 from app.core.auth import get_current_user_or_default
+from app.core.desktop_http_client import desktop_http_client_kwargs
 from app.core.llm_config import (
     LLM_CONFIG_API_KEY_INVALID_CODE,
     LLM_CONFIG_API_KEY_INVALID_MESSAGE,
@@ -308,6 +309,7 @@ async def test_llm_connection(
                 api_key=config.api_key,
                 timeout=10.0,
                 max_retries=0,
+                **desktop_http_client_kwargs(settings.runtime_mode),
             ) as client:
                 response = await client.chat.completions.create(
                     model=config.model,

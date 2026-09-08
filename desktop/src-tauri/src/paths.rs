@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -8,6 +9,7 @@ const LOGS_DIRECTORY_NAME: &str = "logs";
 const APP_DIRECTORY_NAME: &str = "app";
 const SECRET_FILE_NAME: &str = "runtime-secret.json";
 const LLM_CONFIG_FILE_NAME: &str = "llm-config.json";
+pub const DATA_ROOT_OVERRIDE_ENV: &str = "NOVWR_DESKTOP_DATA_ROOT";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AppPaths {
@@ -22,6 +24,10 @@ pub struct AppPaths {
 impl AppPaths {
     pub fn from_local_data_root(local_data_root: impl AsRef<Path>) -> Self {
         let root = local_data_root.as_ref().join(PRODUCT_DIRECTORY_NAME);
+        Self::from_owned_root(root)
+    }
+
+    fn from_owned_root(root: PathBuf) -> Self {
         Self {
             data: root.join(DATA_DIRECTORY_NAME),
             logs: root.join(LOGS_DIRECTORY_NAME),
@@ -30,6 +36,27 @@ impl AppPaths {
             llm_config: root.join(LLM_CONFIG_FILE_NAME),
             root,
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn from_macos_roots(application_support: impl AsRef<Path>, logs: impl AsRef<Path>) -> Self {
+        let mut paths = Self::from_local_data_root(application_support);
+        paths.logs = logs.as_ref().join(PRODUCT_DIRECTORY_NAME);
+        paths
+    }
+
+    pub fn with_root_override(&self, value: Option<&OsStr>) -> io::Result<Self> {
+        let Some(value) = value else {
+            return Ok(self.clone());
+        };
+        let root = PathBuf::from(value);
+        if !root.is_absolute() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{DATA_ROOT_OVERRIDE_ENV} must be an absolute directory"),
+            ));
+        }
+        Ok(Self::from_owned_root(root))
     }
 
     pub fn create_directories(&self) -> io::Result<()> {
@@ -129,5 +156,53 @@ mod tests {
         assert!(paths.data.is_file());
         assert!(!paths.logs.exists());
         assert!(!paths.app.exists());
+    }
+
+    #[test]
+    fn explicit_root_override_is_exact_and_keeps_every_file_inside_the_profile() {
+        let defaults = AppPaths::from_local_data_root("unused-default");
+        let directory = TestDirectory::new("override");
+        let root = directory.path().join("隔离 profile");
+        let paths = defaults.with_root_override(Some(root.as_os_str())).unwrap();
+        assert_eq!(paths.root, root);
+        assert_eq!(paths.data, root.join("data"));
+        assert_eq!(paths.logs, root.join("logs"));
+        assert_eq!(paths.secret, root.join("runtime-secret.json"));
+        assert_eq!(paths.llm_config, root.join("llm-config.json"));
+        assert_eq!(defaults.with_root_override(None).unwrap(), defaults);
+        assert!(
+            !root.exists(),
+            "resolving paths must not touch the filesystem"
+        );
+    }
+
+    #[test]
+    fn root_override_rejects_relative_and_empty_values() {
+        let defaults = AppPaths::from_local_data_root("unused-default");
+        for value in [
+            "",
+            "relative/profile",
+            "~/Library/Application Support/NovWr",
+        ] {
+            let error = defaults
+                .with_root_override(Some(OsStr::new(value)))
+                .unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_defaults_keep_application_support_and_logs_in_native_locations() {
+        let paths = AppPaths::from_macos_roots(
+            "/Users/test/Library/Application Support",
+            "/Users/test/Library/Logs",
+        );
+        assert_eq!(
+            paths.root,
+            PathBuf::from("/Users/test/Library/Application Support/NovWr")
+        );
+        assert_eq!(paths.logs, PathBuf::from("/Users/test/Library/Logs/NovWr"));
+        assert_eq!(paths.data, paths.root.join("data"));
     }
 }

@@ -6,6 +6,7 @@ import logging
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 from app.config import get_settings
+from app.core.desktop_http_client import desktop_http_client_kwargs
 from app.core.llm_config import ResolvedLlmConfig
 from app.core.safety_fuses import (
     ensure_ai_available_fresh_session,
@@ -184,6 +185,7 @@ def _create_openai_client(llm_config: ResolvedLlmConfig) -> AsyncOpenAI:
         return AsyncOpenAI(
             base_url=llm_config.base_url,
             api_key=llm_config.api_key,
+            **desktop_http_client_kwargs(get_settings().runtime_mode),
         )
     except Exception:
         _log_provider_failure(operation="client_initialization")

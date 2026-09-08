@@ -60,6 +60,14 @@ curl -fsSL https://raw.githubusercontent.com/Hurricane0698/novelwriter/main/inst
 
 数据保存在本机 `%LOCALAPPDATA%\NovWr`，覆盖安装不丢数据；API Key 用 Windows DPAPI 加密存储。安装包暂未做代码签名，SmartScreen 提示时选「更多信息 → 仍要运行」。
 
+### macOS 桌面版（Apple Silicon）
+
+面向 macOS 14 及以上的 Apple Silicon Mac，内含后端和 Rust 索引引擎，使用时无需安装 Python、Rust 或 Docker。
+
+在 Mac 上运行 `bash scripts/build_macos_desktop.sh` 可生成 `desktop/desktop-dist/macos/NovWr.app` 和 DMG。打开 DMG 后将 NovWr 拖到「应用程序」，首次启动在设置页填写模型连接信息。构建依赖、验证步骤与签名说明见 [macOS 桌面构建](docs/macos-desktop.md)。
+
+正文数据保存在 `~/Library/Application Support/NovWr`，日志在 `~/Library/Logs/NovWr`；模型配置保存在当前用户的 macOS 钥匙串。关闭窗口后可从 Dock 恢复，`⌘Q` 会退出并清理后台进程。当前构建使用本地临时签名，尚未做 Apple 公证。
+
 ### Docker Compose（手动）
 
 ```bash

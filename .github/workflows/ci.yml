@@ -187,3 +187,9 @@ jobs:
 
   selfhost-install-smoke:
     uses: ./.github/workflows/ci-selfhost-smoke.yml
+
+  macos-desktop:
+    name: macOS desktop
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-macos-desktop.yml

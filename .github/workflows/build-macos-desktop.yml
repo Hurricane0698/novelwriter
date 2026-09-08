@@ -1,0 +1,84 @@
+name: Build macOS desktop
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Build and smoke macOS desktop (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          architecture: arm64
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version-file: pyproject.toml
+          enable-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.5
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            web/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: aarch64-apple-darwin
+          components: rustfmt
+
+      - name: Build locked runtime, application and DMG
+        run: bash scripts/build_macos_desktop.sh
+
+      - name: Check native shell and process lifecycle
+        working-directory: desktop/src-tauri
+        run: |
+          cargo fmt --check
+          cargo test --locked
+
+      - name: Smoke actual application with disposable profile
+        run: >-
+          desktop/build/macos-venv/bin/python scripts/smoke_macos_desktop.py
+          --app desktop/desktop-dist/macos/NovWr.app
+          --report-dir reports/macos-desktop-ci
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: novwr-macos-desktop-smoke
+          path: |
+            reports/macos-desktop-ci/**/result.json
+            reports/macos-desktop-ci/**/*.log
+            reports/macos-desktop-ci/**/provider.jsonl
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload Apple Silicon DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: novwr-macos-desktop-arm64
+          path: |
+            desktop/desktop-dist/macos/NovWr_*_aarch64.dmg
+            desktop/desktop-dist/macos/SHA256SUMS
+            desktop/desktop-dist/macos/BUILD_INFO.json
+          if-no-files-found: error
+          retention-days: 7

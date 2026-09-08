@@ -11,7 +11,7 @@ use thiserror::Error;
 use tracing::{info, warn};
 
 use crate::paths::AppPaths;
-use crate::windows::{
+use crate::platform::{
     DEFAULT_TERMINATION_EXIT_CODE, EnvironmentDelta, JobObject, ManagedProcess, ProcessCommand,
     ShutdownEvent,
 };
@@ -32,6 +32,7 @@ const WORKER_GRACEFUL_SHUTDOWN_TIMEOUT: Duration =
 const FORCED_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const PROCESS_MONITOR_INTERVAL: Duration = Duration::from_secs(1);
 const STATIC_ROOT_MARKER: &str = "<div id=\"root\">";
+#[cfg(target_os = "windows")]
 const SHUTDOWN_EVENT_ENVIRONMENT_KEY: &str = "NOVWR_DESKTOP_SHUTDOWN_EVENT";
 const LLM_CONFIG_PATH_ENVIRONMENT_KEY: &str = "NOVWR_DESKTOP_LLM_CONFIG_PATH";
 
@@ -103,6 +104,26 @@ impl RuntimeError {
     }
 }
 
+fn runtime_executable_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "novwr-runtime.exe"
+    } else {
+        "novwr-runtime"
+    }
+}
+
+fn create_shutdown_event(job: &JobObject) -> io::Result<ShutdownEvent> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = job;
+        ShutdownEvent::create()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        ShutdownEvent::create(job)
+    }
+}
+
 pub struct RuntimeSupervisor {
     job: JobObject,
     shutdown_event: ShutdownEvent,
@@ -117,7 +138,7 @@ impl RuntimeSupervisor {
         paths: &AppPaths,
         jwt_secret: &str,
     ) -> Result<Self, RuntimeError> {
-        let executable = runtime_directory.join("novwr-runtime.exe");
+        let executable = runtime_directory.join(runtime_executable_name());
         if !runtime_directory.is_absolute() || !runtime_directory.is_dir() {
             return Err(RuntimeError::InvalidRuntimePath(
                 runtime_directory.display().to_string(),
@@ -131,7 +152,8 @@ impl RuntimeSupervisor {
         require_available_port()?;
 
         let job = JobObject::new().map_err(RuntimeError::CreateJob)?;
-        let shutdown_event = ShutdownEvent::create().map_err(RuntimeError::CreateShutdownEvent)?;
+        let shutdown_event =
+            create_shutdown_event(&job).map_err(RuntimeError::CreateShutdownEvent)?;
         let client = Client::builder()
             .no_proxy()
             .redirect(Policy::none())
@@ -140,7 +162,7 @@ impl RuntimeSupervisor {
             .map_err(|error| RuntimeError::HealthTimeout {
                 last_error: error.to_string(),
             })?;
-        let mut startup = WindowsRuntimeStartup {
+        let mut startup = DesktopRuntimeStartup {
             job,
             shutdown_event,
             executable,
@@ -305,7 +327,7 @@ fn execute_startup(operations: &mut impl StartupOperations) -> Result<(), Runtim
     Ok(())
 }
 
-struct WindowsRuntimeStartup<'a> {
+struct DesktopRuntimeStartup<'a> {
     job: JobObject,
     shutdown_event: ShutdownEvent,
     executable: PathBuf,
@@ -317,7 +339,7 @@ struct WindowsRuntimeStartup<'a> {
     worker: Option<ManagedProcess>,
 }
 
-impl WindowsRuntimeStartup<'_> {
+impl DesktopRuntimeStartup<'_> {
     fn command(&self, command: &'static str, log_prefix: &'static str) -> ProcessCommand {
         ProcessCommand::new(
             &self.executable,
@@ -334,8 +356,10 @@ impl WindowsRuntimeStartup<'_> {
         command: &'static str,
         log_prefix: &'static str,
     ) -> ProcessCommand {
-        self.command(command, log_prefix)
-            .set_env(SHUTDOWN_EVENT_ENVIRONMENT_KEY, self.shutdown_event.name())
+        let command = self.command(command, log_prefix);
+        #[cfg(target_os = "windows")]
+        let command = command.set_env(SHUTDOWN_EVENT_ENVIRONMENT_KEY, self.shutdown_event.name());
+        command
     }
 
     fn finish(mut self) -> Result<RuntimeSupervisor, RuntimeError> {
@@ -355,7 +379,7 @@ impl WindowsRuntimeStartup<'_> {
     }
 }
 
-impl StartupOperations for WindowsRuntimeStartup<'_> {
+impl StartupOperations for DesktopRuntimeStartup<'_> {
     fn bootstrap(&mut self) -> Result<(), RuntimeError> {
         info!("running desktop database bootstrap");
         let process = self

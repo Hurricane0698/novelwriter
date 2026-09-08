@@ -7,6 +7,7 @@ from importlib import import_module
 import logging
 import os
 import socket
+import stat
 import sys
 import threading
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ _DATA_DIR_ENV = "NOVWR_DESKTOP_DATA_DIR"
 _JWT_SECRET_ENV = "NOVWR_DESKTOP_JWT_SECRET"
 _LLM_CONFIG_PATH_ENV = "NOVWR_DESKTOP_LLM_CONFIG_PATH"
 _SHUTDOWN_EVENT_ENV = "NOVWR_DESKTOP_SHUTDOWN_EVENT"
+_SHUTDOWN_FD_ENV = "NOVWR_DESKTOP_SHUTDOWN_FD"
 _DATABASE_FILE_NAME = "novels.db"
 _HOST = "127.0.0.1"
 _PORT = 8000
@@ -59,7 +61,7 @@ class DesktopRuntimeContext:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="novwr-runtime",
-        description="Internal NovWr Windows desktop runtime.",
+        description="Internal NovWr desktop runtime.",
         allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -253,6 +255,8 @@ def _load_kernel32():
 
 
 def _open_desktop_shutdown_event(*, kernel32=None) -> threading.Event:
+    if kernel32 is None and sys.platform == "darwin":
+        return _open_desktop_shutdown_pipe()
     event_name = _required_environment_value(_SHUTDOWN_EVENT_ENV)
     kernel32 = kernel32 or _load_kernel32()
     handle = kernel32.OpenEventW(_SYNCHRONIZE, False, event_name)
@@ -289,6 +293,59 @@ def _open_desktop_shutdown_event(*, kernel32=None) -> threading.Event:
         name="novwr-desktop-shutdown",
         daemon=True,
     ).start()
+    return stop_event
+
+
+def _open_desktop_shutdown_pipe() -> threading.Event:
+    """Bridge the guardian's owned pipe to the existing graceful-stop contract.
+
+    The guardian handles abrupt shell death independently of this Python thread
+    and kills the complete process group. Here S or EOF asks server/worker to
+    drain normally; the read handle is private and cannot reach descendants.
+    """
+    raw_fd = _required_environment_value(_SHUTDOWN_FD_ENV)
+    owned_fd = None
+    try:
+        fd = int(raw_fd)
+        if fd < 0 or not stat.S_ISFIFO(os.fstat(fd).st_mode):
+            raise ValueError("shutdown descriptor is not a pipe")
+        import fcntl
+
+        if fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_ACCMODE != os.O_RDONLY:
+            raise ValueError("shutdown pipe must be read-only")
+        owned_fd = os.dup(fd)
+        os.set_inheritable(owned_fd, False)
+        os.close(fd)
+    except (OSError, OverflowError, ValueError) as exc:
+        if owned_fd is not None:
+            os.close(owned_fd)
+        raise DesktopRuntimeError(
+            f"{_SHUTDOWN_FD_ENV} must identify an open read-only shutdown pipe."
+        ) from exc
+
+    stop_event = threading.Event()
+
+    def wait_for_shutdown() -> None:
+        try:
+            while True:
+                command = os.read(owned_fd, 1)
+                if not command or command == b"S":
+                    break
+        except OSError:
+            logger.error("desktop shutdown pipe wait failed")
+        finally:
+            os.close(owned_fd)
+            stop_event.set()
+
+    try:
+        threading.Thread(
+            target=wait_for_shutdown,
+            name="novwr-desktop-shutdown",
+            daemon=True,
+        ).start()
+    except BaseException:
+        os.close(owned_fd)
+        raise
     return stop_event
 
 
