@@ -4,7 +4,7 @@
 
 ## 从源码构建
 
-构建机需要原生 arm64 环境、Xcode Command Line Tools、Node.js 20.19.5、Rust 1.85.0、Python 3.13 和 `.uv-version` 指定的 uv 0.10.4。各工具须在当前 shell 的 `PATH` 中；不要在 Rosetta 终端构建。依赖版本来自现有 npm、uv、Cargo 锁文件。
+构建机需要原生 arm64 环境、Xcode Command Line Tools、Node.js 20.19.5、Rust 1.85.0 和 `.uv-version` 指定的 uv 0.10.4。各工具须在当前 shell 的 `PATH` 中；不要在 Rosetta 终端构建。脚本通过 uv 选择或下载受管理的独立 Python 3.13.12，保证本地与 CI 使用同一种发行版；不使用系统 Python.framework。依赖版本来自现有 npm、uv、Cargo 锁文件。
 
 ```bash
 bash scripts/build_macos_desktop.sh

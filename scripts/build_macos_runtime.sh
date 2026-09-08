@@ -7,9 +7,20 @@ cd "$NOVWR_ROOT"
 runtime_dist="${1:-$NOVWR_ROOT/desktop/runtime-dist/macos}"
 mkdir -p "$runtime_dist" desktop/build/macos-pyinstaller
 runtime_dist="$(cd "$runtime_dist" && pwd)"
-uv sync --frozen --no-dev --group desktop-build
+# Use the same standalone Python distribution locally and on hosted runners.
+# System framework builds can retain a resource signature that does not describe
+# the framework subset collected by PyInstaller.
+uv sync --frozen --managed-python --python "$NOVWR_MACOS_PYTHON" --no-dev --group desktop-build
 python_bin="$UV_PROJECT_ENVIRONMENT/bin/python"
-"$python_bin" -c 'import platform, sys; assert sys.version_info[:2] == (3, 13); assert platform.machine() == "arm64"'
+"$python_bin" - "$NOVWR_MACOS_PYTHON" <<'PY'
+import platform
+import sys
+import sysconfig
+
+assert platform.python_version() == sys.argv[1]
+assert platform.machine() == "arm64"
+assert not sysconfig.get_config_var("PYTHONFRAMEWORK"), "Use uv-managed standalone Python for macOS packaging"
+PY
 
 (
     cd web

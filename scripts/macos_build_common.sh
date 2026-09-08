@@ -3,6 +3,7 @@
 
 NOVWR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NOVWR_MACOS_TARGET=aarch64-apple-darwin
+NOVWR_MACOS_PYTHON=3.13.12
 
 novwr_check_macos_toolchain() {
     [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || {

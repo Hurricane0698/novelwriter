@@ -18,12 +18,6 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-          architecture: arm64
-
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
