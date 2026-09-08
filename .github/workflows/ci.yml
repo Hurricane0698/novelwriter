@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
 
 jobs:
@@ -35,9 +35,6 @@ jobs:
       - name: Ruff
         run: ./scripts/uv_run.sh ruff check app tests scripts
 
-      - name: Bootstrap invariant gate (backend)
-        run: ./scripts/uv_run.sh pytest tests/bootstrap/test_invariants.py -q
-
       - name: Run pytest
         run: ./scripts/uv_run.sh pytest tests/
 
@@ -66,9 +63,6 @@ jobs:
 
       - name: Vitest
         run: npm run test:run
-
-      - name: Bootstrap invariant gate (frontend)
-        run: npm run test:run -- src/__tests__/contracts/world/BootstrapPanel.invariants.test.tsx
 
       - name: Build
         run: npm run build
@@ -102,18 +96,23 @@ jobs:
       - name: Playwright (mock)
         run: npm run test:e2e:mock
 
+      - name: Playwright (production startup recovery)
+        run: npm run test:e2e:production
+
       - name: Upload Playwright report (mock)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-mock
-          path: web/playwright-report/mock
+          path: |
+            web/playwright-report/mock
+            web/test-results
           retention-days: 7
 
   e2e-integration-smoke:
     name: Frontend (e2e integration)
-    # PR gate + post-merge signal on master.
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+    # PR gate + post-merge signal on main.
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     env:
       SCNGS_DATA_DIR: /tmp/scngs_data

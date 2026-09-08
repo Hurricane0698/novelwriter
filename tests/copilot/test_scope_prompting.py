@@ -3,9 +3,25 @@
 
 """Copilot scope snapshot and prompting tests."""
 
+import pytest
+
 from app.models import WorldEntity, WorldRelationship, WorldSystem
 
 class TestScopeAndPrompt:
+    @pytest.mark.parametrize("locale", ["zh", "en"])
+    def test_entity_fallback_prompt_includes_attributes(self, db, novel, entities, attributes, locale):
+        from app.core.copilot.prompting import build_copilot_system_prompt
+        from app.core.copilot.scope import load_scope_snapshot
+
+        context = {"entity_id": entities[0].id}
+        snapshot = load_scope_snapshot(db, novel, "current_entity", "current_entity", context)
+        prompt = build_copilot_system_prompt(
+            snapshot, [], "current_entity", locale,
+            {"context_json": context, "display_title": entities[0].name}, "task_query",
+        )
+
+        assert f"{attributes[0].key}: {attributes[0].surface}" in prompt
+
     def test_whole_book_loads_all(self, db, novel, entities, relationships, systems, chapters):
         from app.core.copilot.scope import load_scope_snapshot
         snapshot = load_scope_snapshot(db, novel, "research", "whole_book", None)

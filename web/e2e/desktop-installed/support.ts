@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 
 export const INSTALLED_ORIGIN = 'http://127.0.0.1:8000'
 export const INSTALLED_NOVEL_TITLE = 'NovWr Desktop Installed Smoke'
+export const INSTALLED_EDITED_CHAPTER_CONTENT = '这段正文经过 Windows 编辑器保存，重启后应仍然可见。'
 
 // Individual navigations and first paints during the installed first-launch
 // storm (WebView2 first-run, Defender scanning the fresh install, queued demo
@@ -196,19 +197,19 @@ async function expectDesktopLandingSurface(page: Page) {
 }
 
 export async function assertDesktopLanding(page: Page) {
-  await page.goto('/')
+  await page.goto(`${INSTALLED_ORIGIN}/`)
   await expectDesktopLandingSurface(page)
 }
 
 export async function assertDesktopLoginRouteRemoved(page: Page) {
-  await page.goto('/login')
+  await page.goto(`${INSTALLED_ORIGIN}/login`)
   await expectDesktopLandingSurface(page)
 }
 
 export async function enterLibraryThroughDesktopLanding(page: Page) {
   const startWritingLink = page.getByTestId('home-start-writing')
   await expect(startWritingLink).toHaveAttribute('href', '/library')
-  await page.goto('/library', { waitUntil: 'domcontentloaded' })
+  await page.goto(`${INSTALLED_ORIGIN}/library`, { waitUntil: 'domcontentloaded' })
   await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/library`, { timeout: INSTALLED_STORM_TIMEOUT_MS })
   await expect(page.getByTestId('library-create-novel')).toBeVisible()
 }
@@ -225,7 +226,7 @@ function isLlmTestResponse(response: Response) {
 
 export async function saveDesktopLlmConfig(page: Page) {
   const loadResponsePromise = page.waitForResponse((response) => isLlmConfigResponse(response, 'GET'))
-  await page.goto('/settings')
+  await page.goto(`${INSTALLED_ORIGIN}/settings`)
   const loadResponse = await loadResponsePromise
   expect(loadResponse.ok(), `Desktop LLM config load returned HTTP ${loadResponse.status()}.`).toBe(true)
 
@@ -256,7 +257,7 @@ export async function saveDesktopLlmConfig(page: Page) {
 
 export async function assertDesktopLlmConfigRestored(page: Page) {
   const loadResponsePromise = page.waitForResponse((response) => isLlmConfigResponse(response, 'GET'))
-  await page.goto('/settings')
+  await page.goto(`${INSTALLED_ORIGIN}/settings`)
   const loadResponse = await loadResponsePromise
   expect(loadResponse.ok(), `Desktop LLM config reload returned HTTP ${loadResponse.status()}.`).toBe(true)
 

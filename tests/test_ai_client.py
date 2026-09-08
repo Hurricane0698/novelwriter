@@ -359,6 +359,43 @@ async def test_generate_stream_sanitizes_iteration_provider_error(MockOpenAI, ca
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("reply_kind", ["tool_call", "empty"])
+@patch("app.core.ai_client.ensure_ai_available_fresh_session")
+async def test_forced_tool_wrap_up_rejects_missing_final_answer(_gate, monkeypatch, reply_kind):
+    import httpx
+    from openai import AsyncOpenAI as RealOpenAI
+
+    def gateway(request):
+        body = json.loads(request.content)
+        assert body["tool_choice"] == "none"
+        message = {"role": "assistant", "content": ""}
+        reason = "stop"
+        if reply_kind == "tool_call":
+            # Observed gateway behavior: schemas override tool_choice=none.
+            message = {"role": "assistant", "content": None, "tool_calls": [{
+                "id": "call-1", "type": "function",
+                "function": {"name": "find", "arguments": "{}"},
+            }]}
+            reason = "tool_calls"
+        return httpx.Response(200, json={
+            "id": "completion", "object": "chat.completion", "created": 0,
+            "model": "gateway-model", "choices": [{
+                "index": 0, "message": message, "finish_reason": reason,
+            }],
+        })
+
+    monkeypatch.setattr("app.core.ai_client.AsyncOpenAI", lambda **kwargs: RealOpenAI(
+        **kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(gateway)),
+    ))
+    with pytest.raises(LLMUnavailableError, match="did not produce a final answer"):
+        await AIClient().generate_with_tools(
+            messages=[{"role": "user", "content": "Summarize the evidence."}],
+            tools=[{"type": "function", "function": {"name": "find", "parameters": {"type": "object"}}}],
+            tool_choice="none", llm_config=_SELFHOST_CONFIG,
+        )
+
+
+@pytest.mark.asyncio
 @patch("app.core.ai_client.ensure_ai_available_fresh_session")
 @patch("app.core.ai_client.AsyncOpenAI")
 async def test_generate_structured_uses_resolved_billing_source_for_ai_gate(

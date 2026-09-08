@@ -204,18 +204,20 @@ class TestHostedByokRejection:
 
         response = MagicMock(usage=None)
         mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         stream_chunk = MagicMock()
         stream_chunk.choices = [MagicMock(delta=MagicMock(content="ok"))]
         stream_chunk.usage = None
 
-        async def fake_stream():
-            yield stream_chunk
+        stream = MagicMock()
+        stream.__aiter__.return_value = [stream_chunk]
+        stream.close = AsyncMock()
 
         json_response = MagicMock(
             choices=[MagicMock(message=MagicMock(content='{"ok": true}'))]
         )
         mock_client.chat.completions.create = AsyncMock(
-            side_effect=[response, fake_stream(), json_response]
+            side_effect=[response, stream, json_response]
         )
         monkeypatch.setattr(llm_api, "AsyncOpenAI", lambda **kwargs: mock_client)
 
@@ -264,15 +266,17 @@ class TestHostedByokRejection:
             stream_chunk.choices = [MagicMock(delta=MagicMock(content="ok"))]
             stream_chunk.usage = None
 
-            async def fake_stream():
-                yield stream_chunk
+            stream = MagicMock()
+            stream.__aiter__.return_value = [stream_chunk]
+            stream.close = AsyncMock()
 
             json_response = MagicMock(
                 choices=[MagicMock(message=MagicMock(content='{"ok": true}'))]
             )
             mock_client = MagicMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.chat.completions.create = AsyncMock(
-                side_effect=[response, fake_stream(), json_response]
+                side_effect=[response, stream, json_response]
             )
             monkeypatch.setattr(llm_api, "AsyncOpenAI", lambda **kwargs: mock_client)
 
@@ -303,14 +307,16 @@ class TestHostedByokRejection:
         stream_chunk.choices = [MagicMock(delta=MagicMock(content="ok"))]
         stream_chunk.usage = None
 
-        async def fake_stream():
-            yield stream_chunk
+        stream = MagicMock()
+        stream.__aiter__.return_value = [stream_chunk]
+        stream.close = AsyncMock()
 
         mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.chat.completions.create = AsyncMock(
             side_effect=[
                 basic_response,
-                fake_stream(),
+                stream,
                 Exception("response_format json_object is not supported"),
             ]
         )
@@ -347,6 +353,7 @@ class TestHostedByokRejection:
         )
 
         mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.chat.completions.create = AsyncMock(
             side_effect=[
                 basic_response,
@@ -386,19 +393,21 @@ class TestHostedByokRejection:
         stream_chunk.choices = [MagicMock(delta=MagicMock(content="ok"))]
         stream_chunk.usage = None
 
-        async def fake_stream():
-            yield stream_chunk
+        stream = MagicMock()
+        stream.__aiter__.return_value = [stream_chunk]
+        stream.close = AsyncMock()
 
         json_response = MagicMock(
             choices=[MagicMock(message=MagicMock(content='{"ok": true}'))]
         )
 
         mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.chat.completions.create = AsyncMock(
             side_effect=[
                 basic_response,
                 Exception("Unknown field: stream_options"),
-                fake_stream(),
+                stream,
                 json_response,
             ]
         )
@@ -455,15 +464,17 @@ class TestHostedByokRejection:
             stream_chunk.choices = [MagicMock(delta=MagicMock(content="ok"))]
             stream_chunk.usage = None
 
-            async def fake_stream():
-                yield stream_chunk
+            stream = MagicMock()
+            stream.__aiter__.return_value = [stream_chunk]
+            stream.close = AsyncMock()
 
             json_response = MagicMock(
                 choices=[MagicMock(message=MagicMock(content='{"ok": true}'))]
             )
             mock_client = MagicMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.chat.completions.create = AsyncMock(
-                side_effect=[basic_response, fake_stream(), json_response]
+                side_effect=[basic_response, stream, json_response]
             )
             monkeypatch.setattr(llm_api, "AsyncOpenAI", lambda **kwargs: mock_client)
 

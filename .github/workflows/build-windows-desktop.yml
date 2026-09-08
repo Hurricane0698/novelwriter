@@ -66,10 +66,6 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               throw "npm ci failed for the locked installed-product browser dependencies."
             }
-            npx --no-install playwright install chromium
-            if ($LASTEXITCODE -ne 0) {
-              throw "The locked Playwright CLI failed to install Chromium."
-            }
           } finally {
             Pop-Location
           }

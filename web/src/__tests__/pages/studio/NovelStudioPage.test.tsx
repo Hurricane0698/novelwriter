@@ -175,7 +175,9 @@ vi.mock('@/components/detail/ChapterEditor', () => ({
 }))
 
 vi.mock('@/components/detail/EmptyWorldOnboarding', () => ({
-  EmptyWorldOnboarding: () => <div data-testid="world-onboarding" />,
+  EmptyWorldOnboarding: ({ onGenerate }: { onGenerate: () => void }) => (
+    <div data-testid="world-onboarding"><button onClick={onGenerate}>generate-world</button></div>
+  ),
 }))
 
 vi.mock('@/components/world-model/shared/WorldGenerationDialog', () => ({
@@ -531,6 +533,21 @@ describe('NovelStudioPage', () => {
     expect(mockGetChapter).toHaveBeenCalledWith(7, 3)
   })
 
+  it('keeps the generation dialog alive when returned world data removes onboarding', async () => {
+    mockUseWorldEntities.mockReturnValue({ data: [], isLoading: false })
+    const { queryClient } = renderWithStudioShell('/novel/7')
+    await userEvent.click(await screen.findByRole('button', { name: 'generate-world' }))
+    expect(screen.getByTestId('mock-world-gen-success')).toBeInTheDocument()
+
+    mockUseWorldEntities.mockReturnValue({ data: [{ id: 1, name: '生成的人物' }], isLoading: false })
+    act(() => {
+      queryClient.setQueryData(novelKeys.detail(7), { ...buildNovelResponse(), title: 'Generated world' })
+    })
+
+    await waitFor(() => expect(screen.queryByTestId('world-onboarding')).not.toBeInTheDocument())
+    expect(screen.getByTestId('mock-world-gen-success')).toBeInTheDocument()
+  })
+
   it('shows a preparation gate while the upload ingest pipeline is still running', async () => {
     mockGetNovel.mockResolvedValue({
       id: 7,
@@ -788,7 +805,7 @@ describe('NovelStudioPage', () => {
     expect(screen.queryByText('第一章内容')).not.toBeInTheDocument()
   })
 
-  it('keeps the studio blocked while deferred auto-bootstrap is waiting on whole-book index', async () => {
+  it('lets the user resume editing while a deferred index is waiting for a worker', async () => {
     mockGetNovel.mockResolvedValue({
       id: 7,
       title: '测试小说',
@@ -821,16 +838,7 @@ describe('NovelStudioPage', () => {
           error_code: null,
           error: null,
         },
-        job: {
-          status: 'running',
-          target_revision: 2,
-          completed_revision: null,
-          error: null,
-          created_at: null,
-          started_at: null,
-          finished_at: null,
-          metrics: null,
-        },
+        job: null,
       },
     })
     mockUseWorldEntities.mockReturnValue({ data: [], isLoading: false })
@@ -845,6 +853,9 @@ describe('NovelStudioPage', () => {
     expect(await screen.findByTestId('studio-preparation-gate')).toBeInTheDocument()
     expect(screen.queryByTestId('world-onboarding')).not.toBeInTheDocument()
     expect(screen.queryByText('第一章内容')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '稍后处理' }))
+    expect(screen.queryByTestId('studio-preparation-gate')).not.toBeInTheDocument()
+    expect(await screen.findByText('第一章内容')).toBeInTheDocument()
   })
 
   it('waits to load chapter metadata until uploaded chapters are actually available', async () => {

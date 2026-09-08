@@ -37,9 +37,9 @@ from app.core.auth import (
     resolve_or_provision_hosted_user_for_identity,
     require_admin,
 )
+from app.core.event_funnel import build_hosted_beta_funnel_report
 from app.core.events import (
     PUBLIC_CLIENT_EVENT_NAMES,
-    build_hosted_beta_funnel_report,
     normalize_event_meta,
     public_event_forbids_novel_id,
     public_event_requires_novel_id,

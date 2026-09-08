@@ -10,47 +10,26 @@ describe('useTheme', () => {
     vi.restoreAllMocks()
   })
 
-  it('defaults to light when no preference saved', () => {
-    const { result } = renderHook(() => useTheme())
+  it('switches themes, syncs browser styling, and restores the saved choice', () => {
+    const { result, unmount } = renderHook(() => useTheme())
     expect(result.current.theme).toBe('light')
-  })
-
-  it('reads from localStorage', () => {
-    localStorage.setItem('novwr_theme', 'light')
-    const { result } = renderHook(() => useTheme())
-    expect(result.current.theme).toBe('light')
-  })
-
-  it('adds .light class only when light mode is active', () => {
-    localStorage.setItem('novwr_theme', 'light')
-    renderHook(() => useTheme())
     expect(document.documentElement.classList.contains('light')).toBe(true)
-  })
+    expect(document.documentElement.style.colorScheme).toBe('light')
 
-  it('does not add any class for dark mode when the user explicitly selected dark', () => {
-    localStorage.setItem('novwr_theme', 'dark')
-    const { result } = renderHook(() => useTheme())
+    act(() => result.current.toggleTheme())
     expect(result.current.theme).toBe('dark')
     expect(document.documentElement.classList.contains('light')).toBe(false)
     expect(document.documentElement.classList.contains('dark')).toBe(false)
-  })
+    expect(document.documentElement.style.colorScheme).toBe('dark')
+    expect(localStorage.getItem('novwr_theme')).toBe('dark')
 
-  it('toggleTheme switches light → dark → light', () => {
-    const { result } = renderHook(() => useTheme())
-    expect(result.current.theme).toBe('light')
-
-    act(() => result.current.toggleTheme())
-    expect(result.current.theme).toBe('dark')
-    expect(document.documentElement.classList.contains('light')).toBe(false)
-
-    act(() => result.current.toggleTheme())
-    expect(result.current.theme).toBe('light')
+    unmount()
+    const restored = renderHook(() => useTheme())
+    expect(restored.result.current.theme).toBe('dark')
+    act(() => restored.result.current.toggleTheme())
+    expect(restored.result.current.theme).toBe('light')
     expect(document.documentElement.classList.contains('light')).toBe(true)
-  })
-
-  it('persists theme to localStorage', () => {
-    const { result } = renderHook(() => useTheme())
-    act(() => result.current.setTheme('light'))
+    expect(document.documentElement.style.colorScheme).toBe('light')
     expect(localStorage.getItem('novwr_theme')).toBe('light')
   })
 
@@ -74,15 +53,8 @@ describe('useTheme', () => {
     })
     const { result } = renderHook(() => useTheme())
     expect(() => {
-      act(() => result.current.setTheme('light'))
+      act(() => result.current.setTheme('dark'))
     }).not.toThrow()
-    expect(result.current.theme).toBe('light')
-  })
-
-  it('sets color-scheme on documentElement', () => {
-    const { result } = renderHook(() => useTheme())
-    expect(document.documentElement.style.colorScheme).toBe('light')
-    act(() => result.current.setTheme('dark'))
-    expect(document.documentElement.style.colorScheme).toBe('dark')
+    expect(result.current.theme).toBe('dark')
   })
 })

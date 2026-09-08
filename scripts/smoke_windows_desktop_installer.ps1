@@ -345,6 +345,8 @@ function Invoke-InstalledProductPlaywright {
     Remove-Item -LiteralPath $StdoutPath, $StderrPath -Force -ErrorAction SilentlyContinue
 
     $PlaywrightEnvironment = [ordered]@{
+        NOVWR_DESKTOP_CDP_URL = "http://127.0.0.1:$script:WebViewDebugPort"
+        NO_PROXY = (@($env:NO_PROXY, "localhost", "127.0.0.1") | Where-Object { $_ }) -join ","
         NOVWR_DESKTOP_E2E_STATE = $StatePath
         NOVWR_DESKTOP_E2E_LLM_BASE_URL = $LlmBaseUrl
         NOVWR_DESKTOP_E2E_LLM_API_KEY = $LlmApiKey
@@ -1026,8 +1028,8 @@ if ($env:CI -ne "true" -or $env:NOVWR_INSTALLER_SMOKE_ALLOW_DATA_RESET -ne "1") 
 }
 
 $WindowsVersion = [Environment]::OSVersion.Version
-if ($WindowsVersion.Major -ne 10 -or $WindowsVersion.Build -lt 22000) {
-    throw "The NovWr desktop preview supports Windows 11 only; found $WindowsVersion."
+if ($WindowsVersion.Major -ne 10 -or $WindowsVersion.Build -lt 19041) {
+    throw "This validation harness requires Windows 10 build 19041 or newer; found $WindowsVersion."
 }
 $ProcessArchitecture = [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
 if ($ProcessArchitecture -ne "X64") {
@@ -1077,6 +1079,13 @@ if (Test-Path -LiteralPath $ProductRoot) {
     Remove-Item -LiteralPath $ProductRoot -Recurse -Force
 }
 Remove-Item -LiteralPath $PlaywrightStatePath -Force -ErrorAction SilentlyContinue
+
+$DebugListener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+$DebugListener.Start()
+$script:WebViewDebugPort = $DebugListener.LocalEndpoint.Port
+$DebugListener.Stop()
+$PreviousWebViewArguments = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$script:WebViewDebugPort"
 
 try {
     $LlmProvider = Start-LlmProviderStub `
@@ -1292,6 +1301,7 @@ try {
     Write-LlmProviderDiagnostics -LogPath $LlmProviderLogPath
     throw
 } finally {
+    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $PreviousWebViewArguments
     if ($null -ne $LlmProvider) {
         try {
             Stop-LlmProviderStub -Process $LlmProvider.Process -TimeoutSeconds $CleanupTimeoutSeconds

@@ -377,15 +377,17 @@ def test_desktop_probe_uses_saved_config_and_requires_origin(desktop_api, monkey
     stream_chunk.choices = [MagicMock(delta=MagicMock(content="ok"))]
     stream_chunk.usage = None
 
-    async def fake_stream():
-        yield stream_chunk
+    stream = MagicMock()
+    stream.__aiter__.return_value = [stream_chunk]
+    stream.close = AsyncMock()
 
     json_response = MagicMock(
         choices=[MagicMock(message=MagicMock(content='{"ok": true}'))]
     )
     provider = MagicMock()
+    provider.__aenter__ = AsyncMock(return_value=provider)
     provider.chat.completions.create = AsyncMock(
-        side_effect=[basic_response, fake_stream(), json_response]
+        side_effect=[basic_response, stream, json_response]
     )
     constructor = MagicMock(return_value=provider)
     monkeypatch.setattr(llm_api, "AsyncOpenAI", constructor)
@@ -414,6 +416,7 @@ def test_desktop_probe_uses_saved_config_and_requires_origin(desktop_api, monkey
         base_url="https://probe.example/v1",
         api_key="probe-secret",
         timeout=10.0,
+        max_retries=0,
     )
 
 
@@ -457,6 +460,7 @@ def test_probe_error_never_returns_provider_exception_text(desktop_api, monkeypa
     escaped_secret = json.dumps(secret)[1:-1]
     provider_error = f"provider rejected {escaped_secret}\r\nAuthorization: {secret}"
     provider = MagicMock()
+    provider.__aenter__ = AsyncMock(return_value=provider)
     provider.chat.completions.create = AsyncMock(
         side_effect=RuntimeError(provider_error),
     )

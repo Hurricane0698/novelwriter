@@ -34,7 +34,7 @@ const MAX_CONTEXT_CHAPTERS = 5
 const DEFAULT_CONTEXT_CHAPTERS = 5
 const MAX_CONTEXT_SUMMARY_RANGE_CHAPTERS = 100
 
-export function resolveTargetChars(selected: string): number {
+function resolveTargetChars(selected: string): number {
   const opt = LENGTH_OPTIONS.find(option => option.value === selected)
   if (opt) return parseInt(opt.value, 10)
   return 3000

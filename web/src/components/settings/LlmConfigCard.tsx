@@ -109,23 +109,30 @@ function formatLlmProbeResult(response: LlmProbeResponse, locale: UiLocale): Res
                 ok: false,
                 message: translateUiMessage(locale, 'llm.result.providerConnectionFailed'),
             }
-        case 'llm_probe_capability_mismatch':
-            if (!response.capabilities.stream && !response.capabilities.json_mode) {
-                return {
-                    ok: false,
-                    message: translateUiMessage(locale, 'llm.result.missingStreamAndJsonCapabilities'),
-                }
-            }
-            if (!response.capabilities.stream) {
-                return {
-                    ok: false,
-                    message: translateUiMessage(locale, 'llm.result.missingStreamCapability'),
-                }
-            }
+        default: {
+            const keys = {
+                stream: {
+                    supported: 'llm.result.streamSupported',
+                    unsupported: 'llm.result.missingStreamCapability',
+                    unknown: 'llm.result.streamUnknown',
+                },
+                json_mode: {
+                    supported: 'llm.result.jsonSupported',
+                    unsupported: 'llm.result.missingJsonCapability',
+                    unknown: 'llm.result.jsonUnknown',
+                },
+            } as const
             return {
                 ok: false,
-                message: translateUiMessage(locale, 'llm.result.missingJsonCapability'),
+                message: (['stream', 'json_mode'] as const).map((capability) => {
+                    // Older desktop backends only expose the boolean projection.
+                    const status = response.capability_statuses?.[capability]
+                        ?? (response.capabilities[capability] ? 'supported'
+                            : response.code === 'llm_probe_capability_mismatch' ? 'unsupported' : 'unknown')
+                    return translateUiMessage(locale, keys[capability][status])
+                }).join(' '),
             }
+        }
     }
 }
 

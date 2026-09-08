@@ -140,7 +140,9 @@ test.describe('World generation (real LLM, integration)', () => {
         file: {
           name: 'worldgen.txt',
           mimeType: 'text/plain',
-          buffer: Buffer.from('第一章 世界生成测试\n内容\n', 'utf-8'),
+          // An empty chapter prevents background auto-extraction from racing
+          // this test's explicit paste-settings generation flow.
+          buffer: Buffer.from('第一章 世界生成测试\n', 'utf-8'),
         },
         consent_acknowledged: 'true',
         consent_version: '2026-03-06',

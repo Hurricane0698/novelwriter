@@ -410,6 +410,11 @@ class AIClient:
                     arguments=tc.function.arguments,
                 ))
 
+        if tool_choice == "none" and (tool_calls or not (content or "").strip()):
+            # A gateway may ignore the forced wrap-up. Let the existing one-shot
+            # fallback recover instead of persisting an empty completed run.
+            raise LLMUnavailableError("LLM did not produce a final answer.")
+
         return ToolLLMResponse(
             content=content,
             tool_calls=tool_calls,

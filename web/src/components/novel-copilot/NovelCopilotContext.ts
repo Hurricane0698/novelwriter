@@ -13,7 +13,3 @@ export function useNovelCopilot() {
   }
   return context
 }
-
-export function useOptionalNovelCopilot() {
-  return useContext(NovelCopilotContext)
-}

@@ -24,10 +24,6 @@ vi.mock('@/components/atlas/review/DraftReviewSummaryCard', () => ({
   DraftReviewSummaryCard: () => <div data-testid="draft-review-summary" />,
 }))
 
-vi.mock('@/components/world-model/shared/WorldBuildPanel', () => ({
-  WorldBuildPanel: () => <div data-testid="world-build-panel" />,
-}))
-
 vi.mock('@/components/ui/glass-surface', () => ({
   GlassSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }))

@@ -64,16 +64,10 @@ describe('LibraryPage', () => {
     document.documentElement.lang = 'zh-CN'
   })
 
-  it('shows create actions without a legal consent gate', async () => {
-    renderPage()
-
-    const createButton = await screen.findByTestId('library-create-novel')
-    expect(createButton).not.toBeDisabled()
-    expect(screen.queryByText('上传前先确认权利边界')).not.toBeInTheDocument()
-  })
-
   it('uploads immediately without a library-side consent step', async () => {
     renderPage()
+    expect(await screen.findByTestId('library-create-novel')).toBeEnabled()
+    expect(screen.queryByText('上传前先确认权利边界')).not.toBeInTheDocument()
 
     const input = screen.getByTestId('library-file-input') as HTMLInputElement
     const file = new File(['hello'], 'test.txt', { type: 'text/plain' })

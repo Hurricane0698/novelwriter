@@ -17,6 +17,8 @@ test.describe('Local access', () => {
 
     await expect(page).toHaveURL('/library')
     await expect(page.getByText('我的作品库')).toBeVisible()
+    await expect(page.getByText(NOVELS[0].title)).toBeVisible()
+    await expect(page.getByText(NOVELS[1].title)).toBeVisible()
   })
 
   test('product routes remain available without an authenticated session', async ({ page }) => {
@@ -29,19 +31,12 @@ test.describe('Local access', () => {
     await page.goto('/novel/1')
     await expect(page).toHaveURL('/novel/1')
     await expect(page.getByText(NOVELS[0].title)).toBeVisible()
+    await expect(page.getByRole('button', { name: /第\s*1\s*章/ })).toBeVisible()
+    await expect(page.getByText(CHAPTERS[0].content)).toBeVisible()
   })
 })
 
 test.describe('Library', () => {
-  test('shows novels list', async ({ page }) => {
-    await mockAllApiRoutes(page)
-    await page.goto('/library')
-
-    await expect(page.getByText('我的作品库')).toBeVisible()
-    await expect(page.getByText(NOVELS[0].title)).toBeVisible()
-    await expect(page.getByText(NOVELS[1].title)).toBeVisible()
-  })
-
   test('shows empty state when no novels', async ({ page }) => {
     await page.route('**/api/**', route => route.abort('blockedbyclient'))
     await mockAuthRoutes(page)
@@ -93,19 +88,5 @@ test.describe('Library', () => {
     await page.getByTestId('confirm-ok').click()
 
     await expect(page.getByText(NOVELS[0].title)).not.toBeVisible()
-  })
-})
-
-test.describe('Novel detail', () => {
-  test('loads novel and chapters (after dismissing onboarding)', async ({ page }) => {
-    await mockAllApiRoutes(page)
-    await page.addInitScript(() => {
-      localStorage.setItem('novwr_world_onboarding_dismissed_1_2026-01-01T00:00:00Z', '1')
-    })
-    await page.goto('/novel/1')
-
-    await expect(page.getByText(NOVELS[0].title)).toBeVisible()
-    await expect(page.getByRole('button', { name: /第\s*1\s*章/ })).toBeVisible()
-    await expect(page.getByText(CHAPTERS[0].content)).toBeVisible()
   })
 })
