@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { UiLocaleProvider } from '@/contexts/UiLocaleContext'
 import { MarkdownContent } from '@/components/ui/markdown-content'
 
@@ -39,17 +39,38 @@ describe('MarkdownContent', () => {
   })
 
   it('keeps postcheck annotations inside Markdown text nodes', () => {
-    const { container } = renderWithProvider(
+    const annotations = [{
+      id: 'warning',
+      term: '未知名词',
+      className: 'nw-drift-highlight',
+      renderPopover: () => <span>警告详情</span>,
+    }]
+    const { container, rerender } = renderWithProvider(
       <MarkdownContent
         content="**未知名词** 再次出现"
-        annotations={[{
-          id: 'warning',
-          term: '未知名词',
-          className: 'nw-drift-highlight',
-        }]}
+        annotations={annotations}
       />,
     )
 
     expect(container.querySelector('.nw-drift-highlight')).toHaveTextContent('未知名词')
+    fireEvent.click(screen.getByRole('button', { name: '未知名词' }))
+    expect(screen.getByText('警告详情')).toBeVisible()
+    rerender(<UiLocaleProvider><MarkdownContent content="**未知名词** 再次出现，更多正文" annotations={annotations} /></UiLocaleProvider>)
+    expect(screen.getByText('警告详情')).toBeVisible()
+
+    rerender(<UiLocaleProvider><MarkdownContent content="**未知名词** 再次出现，更多正文" annotations={[{ ...annotations[0], term: '更多正文' }]} /></UiLocaleProvider>)
+    expect(container.querySelectorAll('.nw-drift-highlight')).toHaveLength(1)
+    expect(container.querySelector('.nw-drift-highlight')).toHaveTextContent('更多正文')
+  })
+
+  it('updates streamed text while preserving existing paragraph DOM nodes', () => {
+    const content = Array.from({ length: 100 }, (_, index) => `段落 ${index}`).join('\n\n')
+    const { container, rerender } = renderWithProvider(<MarkdownContent content={content} />)
+    const paragraphs = Array.from(container.querySelectorAll('p'))
+    rerender(<UiLocaleProvider><MarkdownContent content={`${content} 追加文本`} /></UiLocaleProvider>)
+    const updatedParagraphs = Array.from(container.querySelectorAll('p'))
+    expect(updatedParagraphs).toHaveLength(100)
+    expect(updatedParagraphs.filter((node, index) => node !== paragraphs[index])).toHaveLength(0)
+    expect(updatedParagraphs[99]).toHaveTextContent('段落 99 追加文本')
   })
 })

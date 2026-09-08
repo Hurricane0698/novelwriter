@@ -1,8 +1,10 @@
-import { Children, type ReactNode } from 'react'
+import { Children, useMemo, type ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { AnnotatedText, type TextAnnotation } from '@/components/ui/annotated-text'
 import { cn } from '@/lib/utils'
+
+const EMPTY_ANNOTATIONS: TextAnnotation[] = []
 
 function annotatedChildren(children: ReactNode, annotations: TextAnnotation[]) {
   return Children.map(children, (child) => (
@@ -63,7 +65,7 @@ export function MarkdownContent({
   content,
   loadingLabel,
   emptyLabel,
-  annotations = [],
+  annotations = EMPTY_ANNOTATIONS,
   maxWidth = false,
   className,
 }: {
@@ -76,6 +78,7 @@ export function MarkdownContent({
   className?: string
 }) {
   const { t } = useUiLocale()
+  const components = useMemo(() => markdownComponents(annotations), [annotations])
   if (isLoading) {
     return <div className={cn('flex h-full items-center justify-center text-sm text-muted-foreground', className)}>{loadingLabel ?? t('plainText.loading')}</div>
   }
@@ -85,7 +88,7 @@ export function MarkdownContent({
 
   return (
     <div className={cn(maxWidth && 'mx-auto max-w-3xl', className)} data-testid="markdown-content">
-      <ReactMarkdown components={markdownComponents(annotations)} skipHtml>
+      <ReactMarkdown components={components} skipHtml>
         {content ?? ''}
       </ReactMarkdown>
     </div>

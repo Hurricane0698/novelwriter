@@ -1,7 +1,8 @@
 import { translateUiMessage, type UiLocale } from '@/lib/uiMessages'
+import { parseApiTimestamp } from '@/lib/apiTimestamp'
 
 export function formatRelativeTime(dateStr: string, locale: UiLocale = 'zh'): string {
-  const ms = new Date(dateStr).getTime()
+  const ms = parseApiTimestamp(dateStr)
   if (!Number.isFinite(ms)) return translateUiMessage(locale, 'time.justNow')
 
   const diff = Date.now() - ms

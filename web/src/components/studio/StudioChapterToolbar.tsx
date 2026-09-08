@@ -13,6 +13,7 @@ type BooleanSetter = Dispatch<SetStateAction<boolean>>
 interface StudioChapterToolbarProps {
   currentMeta: ChapterMeta | undefined
   currentChapterIdentity: ChapterIdentityLike | null
+  updatedAt: string | undefined
   content: string
   canEdit: boolean
   canDelete: boolean
@@ -38,7 +39,7 @@ interface StudioChapterToolbarProps {
 
 /** Chapter metadata and commands; save ownership stays in the mounted Studio editor. */
 export function StudioChapterToolbar({
-  currentMeta, currentChapterIdentity, content, canEdit, canDelete,
+  currentMeta, currentChapterIdentity, updatedAt, content, canEdit, canDelete,
   editor, actions, assistOpen: showAssistRail, onToggleAssist: handleToggleAssist,
 }: StudioChapterToolbarProps) {
   const { t } = useUiLocale()
@@ -95,8 +96,8 @@ export function StudioChapterToolbar({
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                 <span>{t('studio.chapter.charCount', { count: wordCount.toLocaleString() })}</span>
-                {currentMeta.created_at ? (
-                  <span>{t('studio.chapter.updated', { time: formatRelativeTime(currentMeta.created_at) })}</span>
+                {updatedAt ? (
+                  <span>{t('studio.chapter.updated', { time: formatRelativeTime(updatedAt) })}</span>
                 ) : null}
               </div>
             </>

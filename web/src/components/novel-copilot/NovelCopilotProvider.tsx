@@ -33,7 +33,6 @@ export function NovelCopilotProvider({
     focusedSessionId: sessionsState.focusedSessionId,
     runsBySessionId: runsState.runsBySessionId,
     setRunsBySessionId: runsState.setRunsBySessionId,
-    timeoutIdsRef: runsState.timeoutIdsRef,
     resolveBackendSessionId: sessionsState.resolveBackendSessionId,
   })
 

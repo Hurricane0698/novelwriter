@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
@@ -12,6 +12,7 @@ import { createTestQueryClient } from '@/__tests__/support/queryClient'
 import { MARKDOWN_CHAPTER_BODY_INVALID } from '@/lib/chapterMutationError'
 import { ApiError } from '@/services/apiClient'
 import type { Chapter } from '@/types/api'
+import { formatChapterLabel } from '@/lib/chaptersPlainText'
 
 const ACTIVE_PENDING_STARTED_AT = Date.parse('2026-03-30T00:00:30Z')
 const ACTIVE_PENDING_NOW_MS = Date.parse('2026-03-30T00:10:00Z')
@@ -29,6 +30,11 @@ const mockReadGenerationResultsDebug = vi.fn()
 const mockLoadAtlasAssistWorkbench = vi.fn()
 const mockScheduleAtlasAssistWorkbenchPrefetch = vi.fn()
 const mockDownloadTextFile = vi.fn()
+
+vi.mock('@/lib/chaptersPlainText', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/chaptersPlainText')>()
+  return { ...actual, formatChapterLabel: vi.fn(actual.formatChapterLabel) }
+})
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -351,6 +357,7 @@ vi.mock('@/services/api', () => ({
     getNovel: vi.fn(),
     listChaptersMeta: vi.fn(),
     getChapter: vi.fn(),
+    updateChapter: vi.fn(),
     listChapters: vi.fn(),
     retryNovelIngest: vi.fn(),
   },
@@ -531,6 +538,106 @@ describe('NovelStudioPage', () => {
     expect(screen.getByText('归来')).toBeInTheDocument()
     expect(screen.queryByText('第一章内容')).not.toBeInTheDocument()
     expect(mockGetChapter).toHaveBeenCalledWith(7, 3)
+  })
+
+  it('refreshes the header from the saved chapter timestamp without rewriting its creation time', async () => {
+    const { useUpdateChapter } = await vi.importActual<typeof import('@/hooks/novel/useUpdateChapter')>(
+      '@/hooks/novel/useUpdateChapter',
+    )
+    const { useDebouncedAutoSave } = await vi.importActual<typeof import('@/hooks/useDebouncedAutoSave')>(
+      '@/hooks/useDebouncedAutoSave',
+    )
+    mockUseUpdateChapter.mockImplementation(useUpdateChapter)
+    mockUseDebouncedAutoSave.mockImplementation(useDebouncedAutoSave)
+    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-08T14:40:15Z'))
+    const initialChapter: Chapter = {
+      id: 13, novel_id: 7, chapter_number: 3, title: '归来',
+      source_chapter_label: '第844章 归来', source_chapter_number: 844, source_volume_title: null,
+      content: '第三章内容', created_at: '2026-09-08T14:20:26', updated_at: null,
+    }
+    const initialMeta = [{
+      id: initialChapter.id, novel_id: 7, chapter_number: 3, title: initialChapter.title,
+      source_chapter_label: initialChapter.source_chapter_label, source_chapter_number: 844,
+      source_volume_title: null, created_at: initialChapter.created_at,
+    }]
+    const savedChapter: Chapter = {
+      ...initialChapter, content: '修正后的正文', updated_at: '2026-09-08T14:40:01',
+    }
+    const update = createDeferred<Chapter>()
+    vi.mocked(api.updateChapter).mockReturnValue(update.promise)
+    mockGetChapter.mockResolvedValue(initialChapter)
+    mockListChaptersMeta.mockResolvedValue(initialMeta)
+
+    try {
+      const user = userEvent.setup()
+      const view = renderWithStudioShell('/novel/7?chapter=3')
+      await screen.findByText('第三章内容')
+      expect(screen.getByText('19 分钟前更新')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: '编辑' }))
+      await user.click(screen.getByTestId('mock-editor-valid-change'))
+      await user.click(screen.getByTestId('mock-editor-save'))
+      await waitFor(() => expect(api.updateChapter).toHaveBeenCalledWith(7, 3, { content: '修正后的正文' }))
+      expect(screen.getByText('19 分钟前更新')).toBeInTheDocument()
+      expect(view.queryClient.getQueryData(novelKeys.chapter(7, 3))).toEqual(initialChapter)
+
+      await act(async () => {
+        update.resolve(savedChapter)
+        await update.promise
+      })
+      await screen.findByText('刚刚更新')
+      await screen.findByText('修正后的正文')
+      expect(view.queryClient.getQueryData(novelKeys.chapter(7, 3))).toEqual(savedChapter)
+      expect(view.queryClient.getQueryData(novelKeys.chaptersMeta(7))).toEqual(initialMeta)
+      expect(mockGetChapter).toHaveBeenCalledTimes(1)
+
+      // A fresh page load must keep using persisted updated_at, rather than a local save clock.
+      view.unmount()
+      mockGetChapter.mockResolvedValue(savedChapter)
+      renderWithStudioShell('/novel/7?chapter=3')
+      await screen.findByText('修正后的正文')
+      expect(screen.getByText('刚刚更新')).toBeInTheDocument()
+    } finally {
+      dateNowSpy.mockRestore()
+    }
+  })
+
+  it('keeps chapter navigation and stored warnings outside repeated editor changes', async () => {
+    const view = renderWithStudioShell('/novel/7?chapter=3')
+    await screen.findByText('第三章内容')
+    // Measure the large, ready workspace independently of the startup query chain.
+    act(() => {
+      view.queryClient.setQueryData(novelKeys.chaptersMeta(7), Array.from({ length: 1000 }, (_, index) => ({
+        id: index + 1, novel_id: 7, chapter_number: index + 1, title: `章节 ${index + 1}`,
+        source_chapter_label: null, source_chapter_number: null, created_at: '2026-03-03T00:00:00Z',
+      })))
+    })
+    await screen.findByText('共 1000 章')
+    expect(view.queryClient.getQueryData(novelKeys.chaptersMeta(7))).toHaveLength(1000)
+    expect(screen.getByText('第 3 章 · 章节 3')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('编辑'))
+    await screen.findByTestId('chapter-editor')
+
+    const reads = vi.spyOn(Storage.prototype, 'getItem')
+    vi.mocked(formatChapterLabel).mockClear()
+    try {
+      for (let index = 0; index < 10; index += 1) {
+        fireEvent.click(screen.getByTestId('mock-editor-invalid-change'))
+        fireEvent.click(screen.getByTestId('mock-editor-valid-change'))
+      }
+      expect(vi.mocked(formatChapterLabel).mock.calls.length).toBe(0)
+      expect(reads.mock.calls.filter(([key]) => key === 'novwr_postcheck_active_7_3')).toHaveLength(0)
+
+      // The cached rail must still refresh for actual chapter metadata changes.
+      act(() => {
+        view.queryClient.setQueryData(novelKeys.chaptersMeta(7), (previous: Array<{ chapter_number: number; title: string }>) => (
+          previous.map(chapter => chapter.chapter_number === 3 ? { ...chapter, title: '更新后的章节' } : chapter)
+        ))
+      })
+      await screen.findByText('第 3 章 · 更新后的章节')
+      expect(formatChapterLabel).toHaveBeenCalled()
+    } finally {
+      reads.mockRestore()
+    }
   })
 
   it('keeps the generation dialog alive when returned world data removes onboarding', async () => {

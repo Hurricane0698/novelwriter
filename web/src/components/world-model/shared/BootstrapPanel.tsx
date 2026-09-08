@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, ChevronRight } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
 import '@/lib/uiMessagePacks/novel'
 import { useBootstrapStatus, useTriggerBootstrap } from '@/hooks/world/useBootstrap'
 import { useNovelWindowIndex } from '@/hooks/novel/useNovelWindowIndex'
-import { worldKeys } from '@/hooks/world/keys'
 import { useToast } from '@/components/world-model/shared/useToast'
 import { isBootstrapInitialized, isBootstrapStatusRunning } from '@/lib/bootstrapStatus'
 import { trackHostedAnalyticsEvent } from '@/lib/hostedAnalytics'
@@ -77,7 +75,6 @@ export function BootstrapPanel({
   })
   const trigger = useTriggerBootstrap(novelId)
   const { toast } = useToast()
-  const qc = useQueryClient()
   const previousStatusRef = useRef<BootstrapStatus | null>(null)
   const [reextractConfirmOpen, setReextractConfirmOpen] = useState(false)
   const isInitialized = isBootstrapInitialized(job)
@@ -129,9 +126,6 @@ export function BootstrapPanel({
 
     if (!previousStatus || !isBootstrapStatusRunning(previousStatus)) return
 
-    qc.invalidateQueries({ queryKey: worldKeys.entities(novelId) })
-    qc.invalidateQueries({ queryKey: worldKeys.relationships(novelId) })
-
     if (!onLifecycleChange) return
 
     if (job.status === 'failed') {
@@ -157,7 +151,7 @@ export function BootstrapPanel({
         relationshipCount: job.result.relationships_found,
       })
     }
-  }, [isLoading, job, novelId, onLifecycleChange, qc, stepLabels, t])
+  }, [isLoading, job, onLifecycleChange, stepLabels, t])
 
   const handleTrigger = (payload: BootstrapTriggerRequest) => {
     const startedAtMs = Date.now()

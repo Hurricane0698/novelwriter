@@ -3,14 +3,15 @@ import type {
   WorldEntryPendingState,
 } from '@/components/novel-shell/NovelShellRouteState'
 import type { BootstrapJobResponse } from '@/types/api'
+import { parseApiTimestamp } from '@/lib/apiTimestamp'
 
 const PENDING_START_SKEW_MS = 1_000
 export const WORLD_ENTRY_PENDING_TTL_MS = 30 * 60 * 1_000
 
 function getBootstrapJobTimestampMs(job: BootstrapJobResponse): number | null {
-  const updatedAtMs = Date.parse(job.updated_at)
+  const updatedAtMs = parseApiTimestamp(job.updated_at)
   if (Number.isFinite(updatedAtMs)) return updatedAtMs
-  const createdAtMs = Date.parse(job.created_at)
+  const createdAtMs = parseApiTimestamp(job.created_at)
   return Number.isFinite(createdAtMs) ? createdAtMs : null
 }
 

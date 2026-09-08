@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Check, Redo2, Undo2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NwButton } from '@/components/ui/nw-button'
@@ -78,7 +78,7 @@ export function ChapterEditor({
   contentFormat: NovelContentFormat
 }) {
   const { t } = useUiLocale()
-  const wordCount = value.replace(/\s/g, '').length
+  const wordCount = useMemo(() => value.replace(/\s/g, '').length, [value])
   const [markdownTab, setMarkdownTab] = useState<'source' | 'preview'>('source')
   const isMarkdown = isMarkdownContentFormat(contentFormat)
   const saveErrorMessage = saveErrorCode === null

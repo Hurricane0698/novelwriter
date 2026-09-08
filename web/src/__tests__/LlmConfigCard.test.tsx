@@ -53,6 +53,15 @@ function renderCard() {
   )
 }
 
+function expectLiteralConfigInputs() {
+  for (const label of ['API Base URL', 'API Key', 'Model Name']) {
+    const input = screen.getByLabelText(label)
+    expect(input).toHaveAttribute('autocorrect', 'off')
+    expect(input).toHaveAttribute('autocapitalize', 'none')
+    expect(input).toHaveAttribute('spellcheck', 'false')
+  }
+}
+
 describe('LlmConfigCard desktop persistence', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -94,15 +103,16 @@ describe('LlmConfigCard desktop persistence', () => {
     renderCard()
 
     await waitFor(() => expect(screen.getByLabelText('API Base URL')).toBeEnabled())
+    expectLiteralConfigInputs()
     await user.type(screen.getByLabelText('API Base URL'), SAVED_CONFIG.base_url)
     await user.type(screen.getByLabelText('API Key'), 'desktop-secret')
-    await user.type(screen.getByLabelText('Model Name'), SAVED_CONFIG.model)
+    await user.type(screen.getByLabelText('Model Name'), 'novwr-native-ui')
     await user.click(screen.getByTestId('llm-config-save'))
 
     await waitFor(() => {
       expect(vi.mocked(api.updateLlmConfig).mock.calls[0]?.[0]).toEqual({
         base_url: SAVED_CONFIG.base_url,
-        model: SAVED_CONFIG.model,
+        model: 'novwr-native-ui',
         api_key: 'desktop-secret',
       })
     })
@@ -392,6 +402,7 @@ describe('LlmConfigCard selfhost transport validation', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     renderCard()
 
+    expectLiteralConfigInputs()
     await user.type(screen.getByLabelText('API Base URL'), baseUrl)
     await user.type(screen.getByLabelText('API Key'), apiKey)
     await user.type(screen.getByLabelText('Model Name'), 'selfhost-model')
