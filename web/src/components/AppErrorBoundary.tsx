@@ -16,9 +16,9 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, { faile
         <p className="my-4">{english
           ? 'Reload the page. If this keeps happening in the desktop app, update Microsoft Edge WebView2 and reopen NovWr.'
           : '请重新加载页面。若桌面版仍无法打开，请更新 Microsoft Edge WebView2 后重启 NovWr。'}</p>
-        <a className="underline" href={window.location.href}>
+        <button type="button" className="underline" onClick={() => window.location.reload()}>
           {english ? 'Reload page' : '重新加载页面'}
-        </a>
+        </button>
       </main>
     )
   }

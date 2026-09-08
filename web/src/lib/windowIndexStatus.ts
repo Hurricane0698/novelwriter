@@ -11,6 +11,10 @@ export interface WindowIndexStatusMeta {
 const ACTIVE_READINESS_STATES = new Set(['accepting', 'processing'])
 const WINDOW_INDEX_ACTIVE_POLL_INTERVAL_MS = 2000
 
+export function getWaitingPollInterval(pollCount: number): number {
+  return Math.min(30_000, WINDOW_INDEX_ACTIVE_POLL_INTERVAL_MS * 2 ** Math.min(4, Math.floor(pollCount / 3)))
+}
+
 function localeOrDefault(locale?: UiLocale): UiLocale {
   return locale ?? readDocumentUiLocale() ?? 'zh'
 }
@@ -25,6 +29,7 @@ export function isWindowIndexRebuilding(state: WindowIndexState | null | undefin
 
 export function getWindowIndexPollingInterval(
   state: WindowIndexState | null | undefined,
+  pollCount = 0,
 ): number | false {
   // Large imports become readable before their deferred index is built. Keep
   // refreshing that handoff even though readiness already says degraded_ready.
@@ -36,9 +41,11 @@ export function getWindowIndexPollingInterval(
     && state.status !== 'failed'
     && state.job?.status !== 'failed'
   )
-  return isWindowIndexRebuilding(state) || deferredIndexPending
-    ? WINDOW_INDEX_ACTIVE_POLL_INTERVAL_MS
-    : false
+  if (!isWindowIndexRebuilding(state) && !deferredIndexPending) return false
+  if (state?.ingest?.status === 'running' || state?.job?.status === 'running') {
+    return WINDOW_INDEX_ACTIVE_POLL_INTERVAL_MS
+  }
+  return getWaitingPollInterval(pollCount)
 }
 
 function resolveWindowIndexStatusMeta(

@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { UiLocaleProvider } from '@/contexts/UiLocaleContext'
@@ -54,6 +55,41 @@ describe('WorldGenerationDialog', () => {
     navigateMock.mockReset()
     trackHostedAnalyticsEventMock.mockReset()
     trackHostedAnalyticsEventMock.mockResolvedValue(true)
+  })
+
+  it('removes closed controls, restores focus, and rejects a previous dialog session completion', async () => {
+    let complete!: (response: unknown) => void
+    const onGenerateSuccess = vi.fn()
+    mockUseGenerateWorld.mockReturnValue({
+      mutate: vi.fn((_data, options) => { complete = options.onSuccess }), isPending: false,
+    })
+    function Host() {
+      const [open, setOpen] = useState(false)
+      return <>
+        <button onClick={() => setOpen(true)}>open-generator</button>
+        <input aria-label="chapter draft" />
+        <WorldGenerationDialog novelId={7} open={open} onOpenChange={setOpen} onGenerateSuccess={onGenerateSuccess} />
+      </>
+    }
+    render(<MemoryRouter><UiLocaleProvider><Host /></UiLocaleProvider></MemoryRouter>)
+    expect(screen.queryByTestId('world-gen-text')).not.toBeInTheDocument()
+    const user = userEvent.setup()
+    const trigger = screen.getByRole('button', { name: 'open-generator' })
+    await user.click(trigger)
+    await user.type(screen.getByTestId('world-gen-text'), 'Enough setting text to generate a world.')
+    await user.click(screen.getByTestId('world-gen-submit'))
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(trigger).toHaveFocus()
+    expect(screen.queryByTestId('world-gen-text')).not.toBeInTheDocument()
+    await user.tab()
+    expect(screen.getByLabelText('chapter draft')).toHaveFocus()
+    await user.type(screen.getByLabelText('chapter draft'), 'unsaved chapter')
+    await user.click(trigger)
+    act(() => complete({ entities_created: 1, relationships_created: 0, systems_created: 0 }))
+    expect(navigateMock).not.toHaveBeenCalled()
+    expect(onGenerateSuccess).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('chapter draft')).toHaveValue('unsaved chapter')
+    expect(screen.getByTestId('world-gen-text')).toBeInTheDocument()
   })
 
   it('renders LLM failures in English when the UI locale is en', async () => {

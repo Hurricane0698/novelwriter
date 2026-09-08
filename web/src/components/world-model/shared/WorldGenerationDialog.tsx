@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import '@/lib/uiMessagePacks/novel'
-import { cn } from '@/lib/utils'
 import { getLlmApiErrorMessage } from '@/lib/llmErrorMessages'
 import { trackHostedAnalyticsEvent } from '@/lib/hostedAnalytics'
 import { ApiError } from '@/services/api'
@@ -29,10 +28,6 @@ type FastApiValidationErrorItem = {
   ctx?: unknown
 }
 
-function isFastApiValidationErrorItem(value: unknown): value is FastApiValidationErrorItem {
-  return isRecord(value)
-}
-
 function isTextFieldValidationError(item: FastApiValidationErrorItem): boolean {
   const loc = item.loc
   return Array.isArray(loc) && loc.length > 0 && loc[loc.length - 1] === 'text'
@@ -43,7 +38,7 @@ function getWorldGenerate422Message(
   t: ReturnType<typeof useUiLocale>['t'],
 ): string | null {
   if (!Array.isArray(detail)) return null
-  const items = detail.filter(isFastApiValidationErrorItem).filter(isTextFieldValidationError)
+  const items = detail.filter(isRecord).filter(isTextFieldValidationError)
   for (const item of items) {
     const type = typeof item.type === 'string' ? item.type : ''
     if (type === 'string_too_long') return t('worldModel.generate.validation.maxChars', { count: MAX_LEN.toLocaleString() })
@@ -74,6 +69,9 @@ export function WorldGenerationDialog({
 }) {
   const { locale, t } = useUiLocale()
   const navigate = useNavigate()
+  const location = useLocation()
+  const sessionRef = useRef(0)
+  const modalRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const trackedOpenRef = useRef(false)
@@ -85,15 +83,38 @@ export function WorldGenerationDialog({
   const generate = useGenerateWorld(novelId)
   const importWorldpack = useImportWorldpack(novelId)
 
+  // Mutation ownership survives dismissal; permission to change this view does not.
+  useLayoutEffect(() => {
+    sessionRef.current += 1
+    return () => { sessionRef.current += 1 }
+  }, [open, novelId, location.key])
+
+  const closeDialog = useCallback(() => {
+    sessionRef.current += 1
+    onOpenChange(false)
+  }, [onOpenChange])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const modal = modalRef.current
+    const frame = requestAnimationFrame(() => textareaRef.current?.focus())
+    return () => {
+      cancelAnimationFrame(frame)
+      if (trigger?.isConnected && (document.activeElement === document.body || modal?.contains(document.activeElement))) {
+        trigger.focus()
+      }
+    }
+  }, [open])
+
   useEffect(() => {
     if (!open) return
     setGenError(null)
     setImportError(null)
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onOpenChange(false) }
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') closeDialog() }
     document.addEventListener('keydown', handler)
-    requestAnimationFrame(() => textareaRef.current?.focus())
     return () => document.removeEventListener('keydown', handler)
-  }, [open, onOpenChange])
+  }, [open, closeDialog])
 
   useEffect(() => {
     if (!open) {
@@ -118,6 +139,7 @@ export function WorldGenerationDialog({
 
   const handleSubmit = () => {
     if (!canSubmit) return
+    const session = sessionRef.current
     setGenError(null)
     void trackHostedAnalyticsEvent('world_generate_submit', {
       novelId,
@@ -130,8 +152,9 @@ export function WorldGenerationDialog({
       { text: trimmed },
       {
         onSuccess: (response) => {
+          if (session !== sessionRef.current) return
           onGenerateSuccess?.(response)
-          onOpenChange(false)
+          closeDialog()
           if (navigateOnGenerateSuccess) {
             navigate(`/world/${novelId}?tab=review&kind=entities`)
           }
@@ -145,6 +168,7 @@ export function WorldGenerationDialog({
               error_code: err instanceof ApiError ? err.code ?? null : 'client_error',
             },
           })
+          if (session !== sessionRef.current) return
           if (err instanceof ApiError) {
             const llmMessage = getLlmApiErrorMessage(err, locale)
             if (llmMessage) {
@@ -173,9 +197,11 @@ export function WorldGenerationDialog({
   const handleImportSelect = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    const session = sessionRef.current
     setImportError(null)
     try {
       const parsed = JSON.parse(await file.text()) as unknown
+      if (session !== sessionRef.current) return
       if (!isWorldpackV1(parsed)) {
         void trackHostedAnalyticsEvent('worldpack_import_failed', {
           novelId,
@@ -195,8 +221,9 @@ export function WorldGenerationDialog({
       })
       importWorldpack.mutate(parsed, {
         onSuccess: (response) => {
+          if (session !== sessionRef.current) return
           onImportSuccess?.(response)
-          onOpenChange(false)
+          closeDialog()
           if (navigateOnImportSuccess) {
             navigate(`/world/${novelId}`)
           }
@@ -209,7 +236,7 @@ export function WorldGenerationDialog({
               error_code: err instanceof ApiError ? err.code ?? null : 'worldpack_import_failed',
             },
           })
-          setImportError(t('worldModel.worldpack.failed'))
+          if (session === sessionRef.current) setImportError(t('worldModel.worldpack.failed'))
         },
       })
     } catch (err) {
@@ -221,30 +248,30 @@ export function WorldGenerationDialog({
           error_code: 'worldpack_file_unreadable',
         },
       })
-      setImportError(t('worldModel.worldpack.fileUnreadable'))
+      if (session === sessionRef.current) setImportError(t('worldModel.worldpack.fileUnreadable'))
     } finally {
       e.target.value = ''
     }
   }
 
+  if (!open) return null
+
   return (
     <>
       {/* Overlay */}
       <div
-        className={cn(
-          'fixed inset-0 z-40 bg-[var(--nw-backdrop)] backdrop-blur-sm transition-opacity',
-          open ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        )}
-        onClick={() => onOpenChange(false)}
+        className="fixed inset-0 z-40 bg-[var(--nw-backdrop)] backdrop-blur-sm"
+        onClick={closeDialog}
       />
       {/* Centered modal */}
       <div
-        className={cn(
-          'fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-200',
-          open ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        )}
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('worldModel.generate.title')}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
         data-testid="bottom-sheet"
-        data-open={open ? 'true' : 'false'}
+        data-open="true"
       >
         <div
           className="w-full max-w-2xl rounded-2xl border border-[var(--nw-glass-border-hover)] bg-[hsl(var(--nw-modal-bg))] backdrop-blur-[24px] shadow-[0_24px_80px_var(--nw-backdrop)]"
@@ -292,7 +319,7 @@ export function WorldGenerationDialog({
                 size="sm"
                 variant="outline"
                 className="h-8 border-[var(--nw-glass-border)] bg-transparent hover:bg-[var(--nw-glass-bg-hover)]"
-                onClick={() => onOpenChange(false)}
+                onClick={closeDialog}
               >
                 {t('dialog.cancel')}
               </Button>

@@ -29,7 +29,7 @@
       <main id="app-startup" style="max-width:36rem;margin:3rem auto;padding:2rem;font-family:system-ui,sans-serif">
         <h1 id="app-startup-title">正在加载 NovWr…</h1>
         <p id="app-startup-help">如果长时间没有响应，请重新加载页面。</p>
-        <a id="app-startup-reload" href="">重新加载页面</a>
+        <button id="app-startup-reload" type="button">重新加载页面</button>
       </main>
     </div>
     <script>
@@ -39,6 +39,7 @@
         var startup = document.getElementById('app-startup');
         var title = document.getElementById('app-startup-title');
         var help = document.getElementById('app-startup-help');
+        document.getElementById('app-startup-reload').addEventListener('click', function () { window.location.reload(); });
         if (english) {
           title.textContent = 'Loading NovWr…';
           help.textContent = 'If loading does not finish, reload the page.';

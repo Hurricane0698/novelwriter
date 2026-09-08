@@ -212,6 +212,26 @@ describe('LlmConfigCard desktop persistence', () => {
     expect(screen.getByTestId('llm-config-result')).not.toHaveTextContent('JSON 模式')
   })
 
+  it.each([
+    { stream: 'unsupported', json_mode: 'unknown', known: '不支持流式输出', unknown: 'JSON 模式暂时无法确认', absent: '不支持 JSON 模式' },
+    { stream: 'unknown', json_mode: 'unsupported', known: '不支持 JSON 模式', unknown: '流式输出暂时无法确认', absent: '不支持流式输出' },
+  ] as const)('preserves mixed capability results: $stream / $json_mode', async ({ stream, json_mode, known, unknown, absent }) => {
+    vi.mocked(api.getLlmConfig).mockResolvedValue(SAVED_CONFIG)
+    vi.mocked(api.testLlmConnection).mockResolvedValue({
+      ...COMPATIBLE_PROBE,
+      code: 'llm_probe_capability_mismatch',
+      capabilities: { basic: true, stream: false, json_mode: false },
+      capability_statuses: { basic: 'supported', stream, json_mode },
+    })
+    renderCard()
+    await waitFor(() => expect(screen.getByTestId('llm-config-test')).toBeEnabled())
+    await userEvent.click(screen.getByTestId('llm-config-test'))
+    const result = await screen.findByTestId('llm-config-result')
+    expect(result).toHaveTextContent(known)
+    expect(result).toHaveTextContent(unknown)
+    expect(result).not.toHaveTextContent(absent)
+  })
+
   it('locks every field and action while saving', async () => {
     const user = userEvent.setup()
     const deferred = createDeferred<LlmConfigResponse>()
@@ -249,7 +269,7 @@ describe('LlmConfigCard desktop persistence', () => {
     await waitFor(() => expect(screen.getByTestId('llm-config-test')).toBeEnabled())
     await user.click(screen.getByTestId('llm-config-test'))
     const result = await screen.findByTestId('llm-config-result')
-    expect(result).toHaveTextContent('未能确认')
+    expect(result).toHaveTextContent('JSON 模式暂时无法确认')
     expect(result).toHaveTextContent('重试')
     expect(result).not.toHaveTextContent('不支持 JSON')
   })

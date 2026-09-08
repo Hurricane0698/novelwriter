@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { mockAllApiRoutes } from '../../fixtures/api-helpers'
+import { CHAPTERS } from '../../fixtures/data'
 
 function nowIso() {
   return new Date().toISOString()
@@ -68,6 +69,79 @@ type MockWorldEntity = {
 }
 
 test.describe('World onboarding + world generation (mock)', () => {
+  test('late generation refreshes world data without changing the editor route or unsaved draft', async ({ page }) => {
+    await mockAllApiRoutes(page)
+    await mockChapterReadyStudio(page)
+    let finishGeneration!: () => void
+    const generationReady = new Promise<void>((resolve) => { finishGeneration = resolve })
+    let generated = false
+    let worldRefreshes = 0
+    let saveCount = 0
+    let chapter = { ...CHAPTERS[0] }
+    await page.route('**/api/novels/1/chapters/1', async (route) => {
+      if (route.request().method() === 'PUT') {
+        saveCount += 1
+        chapter = { ...chapter, ...route.request().postDataJSON() }
+      }
+      await route.fulfill({ json: chapter })
+    })
+    await page.route('**/api/novels/1/world/entities**', async (route) => {
+      if (generated) worldRefreshes += 1
+      await route.fulfill({ json: generated ? [{
+        id: 101, novel_id: 1, name: '迟到的角色', entity_type: 'Character',
+        description: '', aliases: [], origin: 'manual', status: 'draft',
+        worldpack_pack_id: null, worldpack_key: null, created_at: nowIso(), updated_at: nowIso(),
+      }] : [] })
+    })
+    await page.route('**/api/novels/1/world/generate', async (route) => {
+      await generationReady
+      generated = true
+      await route.fulfill({ json: { entities_created: 1, relationships_created: 0, systems_created: 0, warnings: [] } })
+    })
+    await page.goto('/novel/1?chapter=1')
+    await page.getByTestId('world-onboarding-dismiss').click()
+    await expect(page).toHaveURL('/world/1')
+    await page.goto('/novel/1?chapter=1')
+    await page.getByRole('button', { name: '编辑', exact: true }).click()
+    const editor = page.getByTestId('chapter-editor-textarea')
+    await expect(editor).toBeVisible()
+    const trigger = page.getByTestId('world-build-generate')
+    await trigger.click()
+    await page.getByTestId('world-gen-text').fill('一份足够长的世界设定，用于验证迟到的生成结果。')
+    const started = page.waitForRequest('**/world/generate')
+    await page.getByTestId('world-gen-submit').click()
+    await started
+    await page.getByTestId('world-gen-dialog').getByRole('button', { name: '取消', exact: true }).click()
+    await expect(trigger).toBeFocused()
+    await expect(page.getByTestId('world-gen-text')).toHaveCount(0)
+    for (let i = 0; i < 6; i += 1) {
+      await page.keyboard.press('Tab')
+      expect(await page.evaluate(() => {
+        const focused = document.activeElement
+        return focused === document.body || (focused instanceof HTMLElement
+          && focused.getBoundingClientRect().width > 0 && getComputedStyle(focused).visibility === 'visible')
+      })).toBe(true)
+    }
+    await page.clock.install()
+    await page.clock.pauseAt(new Date())
+    const draft = '这段正文还没有到三秒自动保存时间，不能被迟到的生成结果覆盖。'
+    const editorUrl = page.url()
+    await editor.fill(draft)
+    finishGeneration()
+    await expect.poll(() => worldRefreshes).toBeGreaterThan(0)
+    await page.clock.runFor(1)
+    await expect(page).toHaveURL(editorUrl)
+    await expect(editor).toHaveValue(draft)
+    expect(saveCount).toBe(0)
+    await page.clock.runFor(3100)
+    await expect.poll(() => saveCount).toBe(1)
+    expect(chapter.content).toBe(draft)
+    await page.clock.resume()
+    await page.reload()
+    await page.getByRole('button', { name: '编辑', exact: true }).click()
+    await expect(editor).toHaveValue(draft)
+  })
+
   test('ready imported studio does not reopen empty-world onboarding on first entry', async ({ page }) => {
     await page.route('**/api/**', route => route.abort('blockedbyclient'))
     await mockAllApiRoutes(page)

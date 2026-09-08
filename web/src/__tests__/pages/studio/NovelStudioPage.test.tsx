@@ -805,7 +805,7 @@ describe('NovelStudioPage', () => {
     expect(screen.queryByText('第一章内容')).not.toBeInTheDocument()
   })
 
-  it('keeps the studio blocked while deferred auto-bootstrap is waiting on whole-book index', async () => {
+  it('lets the user resume editing while a deferred index is waiting for a worker', async () => {
     mockGetNovel.mockResolvedValue({
       id: 7,
       title: '测试小说',
@@ -838,16 +838,7 @@ describe('NovelStudioPage', () => {
           error_code: null,
           error: null,
         },
-        job: {
-          status: 'running',
-          target_revision: 2,
-          completed_revision: null,
-          error: null,
-          created_at: null,
-          started_at: null,
-          finished_at: null,
-          metrics: null,
-        },
+        job: null,
       },
     })
     mockUseWorldEntities.mockReturnValue({ data: [], isLoading: false })
@@ -862,6 +853,9 @@ describe('NovelStudioPage', () => {
     expect(await screen.findByTestId('studio-preparation-gate')).toBeInTheDocument()
     expect(screen.queryByTestId('world-onboarding')).not.toBeInTheDocument()
     expect(screen.queryByText('第一章内容')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '稍后处理' }))
+    expect(screen.queryByTestId('studio-preparation-gate')).not.toBeInTheDocument()
+    expect(await screen.findByText('第一章内容')).toBeInTheDocument()
   })
 
   it('waits to load chapter metadata until uploaded chapters are actually available', async () => {

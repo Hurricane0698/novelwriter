@@ -257,7 +257,7 @@ export function NovelStudioPage() {
     queryKey: novelKeys.detail(novelId),
     queryFn: () => api.getNovel(novelId),
     enabled: !!novelIdParam,
-    refetchInterval: (query) => getWindowIndexPollingInterval(query.state.data?.window_index ?? null),
+    refetchInterval: (query) => getWindowIndexPollingInterval(query.state.data?.window_index, query.state.dataUpdateCount),
   })
   const cancelNovelDetailFetch = useCallback(async (targetNovelId: number) => {
     await queryClient.cancelQueries({
@@ -344,12 +344,14 @@ export function NovelStudioPage() {
       || (novel?.total_chapters ?? 0) > 0
     )
   )
-  const chaptersMetaPollingInterval = getWindowIndexPollingInterval(novel?.window_index ?? null)
   const { data: chaptersMeta = [] } = useQuery({
     queryKey: novelKeys.chaptersMeta(novelId),
     queryFn: () => api.listChaptersMeta(novelId),
     enabled: chaptersMetaEnabled,
-    refetchInterval: chaptersMetaPollingInterval,
+    // Published chapters are immutable during deferred indexing; chapter edits
+    // invalidate this cache through their mutations. Only poll active ingestion.
+    refetchInterval: (query) => novel?.window_index?.ingest?.status === 'running'
+      ? getWindowIndexPollingInterval(novel.window_index, query.state.dataUpdateCount) : false,
   })
   const activeChapterNum = useMemo(() => {
     if (

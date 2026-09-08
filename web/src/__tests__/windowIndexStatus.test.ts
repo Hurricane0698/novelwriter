@@ -26,6 +26,11 @@ describe('windowIndexStatus', () => {
       job: null,
     }
     expect(getWindowIndexPollingInterval(state)).toBe(2000)
+    expect([3, 6, 9, 12, 100].map((polls) => getWindowIndexPollingInterval(state, polls)))
+      .toEqual([4000, 8000, 16000, 30000, 30000])
+    expect(getWindowIndexPollingInterval({
+      ...state, job: { status: 'running', target_revision: 1, completed_revision: null, error: null },
+    }, 100)).toBe(2000)
     expect(getWindowIndexPollingInterval({ ...state, status: 'failed' })).toBe(false)
     expect(getWindowIndexPollingInterval({
       ...state, status: 'fresh', readiness: 'ready', built_revision: 1,

@@ -219,8 +219,14 @@ export function resolveStudioPreparationGate({
     return {
       title: t('studio.preparation.title'),
       description: t('studio.preparation.bootstrapDescription'),
-      detail: t('worldModel.windowIndex.bootstrap.organizingChapters'),
+      detail: novelWindowIndex?.job?.status === 'running'
+        ? t('worldModel.windowIndex.bootstrap.organizingChapters')
+        : t('studio.preparation.waitingForIndex'),
       error: null,
+      primaryActionLabel: t('studio.preparation.defer'),
+      onPrimaryAction: onDeferBootstrap,
+      secondaryActionLabel: t('studio.preparation.returnLibrary'),
+      onSecondaryAction: onReturnToLibrary,
     }
   }
 

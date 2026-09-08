@@ -213,7 +213,7 @@ export function NovelAtlasPage() {
     queryKey: novelKeys.detail(nid),
     queryFn: () => api.getNovel(nid),
     enabled: !invalidNovelId,
-    refetchInterval: (query) => getWindowIndexPollingInterval(query.state.data?.window_index ?? null),
+    refetchInterval: (query) => getWindowIndexPollingInterval(query.state.data?.window_index, query.state.dataUpdateCount),
   })
   const { data: bootstrapJob } = useBootstrapStatus(nid, {
     refetchWhenMissing: novel?.window_index?.ingest?.bootstrap_plan != null,

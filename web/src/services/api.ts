@@ -88,6 +88,7 @@ export interface LlmProbeResponse {
     stream: boolean
     json_mode: boolean
   }
+  capability_statuses?: Record<'basic' | 'stream' | 'json_mode', 'supported' | 'unsupported' | 'unknown'>
 }
 
 interface AnalyticsEventRequest {

@@ -146,19 +146,24 @@ export function useStudioWorldOnboardingFlow({
     triggerInitialBootstrap,
   ])
 
-  const handleDismissWorldOnboarding = useCallback(() => {
+  const handleDeferBootstrap = useCallback(() => {
     void trackHostedAnalyticsEvent('world_onboarding_dismissed', {
       novelId,
       meta: { surface: 'studio' },
     })
     dismissWorldOnboarding(novelId, novelCreatedAt)
+  }, [novelCreatedAt, novelId])
+
+  const handleDismissWorldOnboarding = useCallback(() => {
+    handleDeferBootstrap()
     dismissWorldOnboardingRoute()
-  }, [dismissWorldOnboardingRoute, novelCreatedAt, novelId])
+  }, [dismissWorldOnboardingRoute, handleDeferBootstrap])
 
   return {
     bootstrapError,
     chaptersAvailable,
     handleDismissWorldOnboarding,
+    handleDeferBootstrap,
     handleTriggerBootstrap,
     showWorldOnboarding,
     worldEmpty,
