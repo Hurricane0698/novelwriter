@@ -587,6 +587,41 @@ class TestWriterContext:
         assert "丙" not in injected_names
 
 
+def test_budget_prunes_large_world_without_repeated_full_text_scans():
+    from app.core.context_assembly import apply_writer_context_budget
+
+    class CountedText(str):
+        visits = 0
+
+        def __str__(self):
+            type(self).visits += 1
+            return super().__str__()
+
+        def __deepcopy__(self, memo):
+            return self  # Immutable; count text estimation, not fixture copying.
+
+    size = 512
+    context = {
+        "entities": [
+            {"id": i, "description": CountedText("x" * 10)}
+            for i in range(1, size + 1)
+        ],
+        "relationships": [
+            {"source_id": i, "target_id": i + 1, "label": CountedText("r")}
+            for i in range(1, size)
+        ],
+    }
+    result = apply_writer_context_budget(context, max_estimated_tokens=21)
+
+    assert [entity["id"] for entity in result["entities"]] == [1, 2]
+    assert result["relationships"] == context["relationships"][:1]
+    assert len(context["entities"]) == size
+    assert len(context["relationships"]) == size - 1
+    # Growing the world may add a constant amount of estimation per item,
+    # but removing each tail entity must not rescan every remaining item.
+    assert CountedText.visits <= 6 * (size + size - 1)
+
+
 
 # ===========================================================================
 # Helpers

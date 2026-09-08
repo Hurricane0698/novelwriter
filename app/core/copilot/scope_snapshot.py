@@ -8,6 +8,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.core.indexing import (
+    WINDOW_INDEX_STATUS_FRESH,
     WindowIndexLifecycleSnapshot,
     inspect_window_index_lifecycle,
 )
@@ -26,6 +27,7 @@ from .scope_shared import (
     MAX_SCOPE_ENTITIES,
     MAX_SCOPE_RELATIONSHIPS,
     MAX_SCOPE_SYSTEMS,
+    NovelScopeValue,
     ScopeSnapshot,
     SystemLookupRef,
     normalize_lookup_key,
@@ -91,7 +93,18 @@ def _build_scope_snapshot(
 ) -> ScopeSnapshot:
     entities_by_id = {entity.id: entity for entity in entities}
     return ScopeSnapshot(
-        novel=novel,
+        novel=NovelScopeValue(
+            id=novel.id,
+            title=novel.title,
+            author=novel.author,
+            language=novel.language,
+            window_index=(
+                novel.window_index
+                if window_index_state.status == WINDOW_INDEX_STATUS_FRESH
+                and window_index_state.has_payload
+                else None
+            ),
+        ),
         novel_language=novel.language or "zh",
         entities=entities,
         entities_by_id=entities_by_id,
@@ -120,7 +133,9 @@ def _load_novel_entity_lookup(
 ) -> dict[str, tuple[EntityLookupRef, ...]]:
     refs_by_key: dict[str, list[EntityLookupRef]] = {}
     seen: set[tuple[str, int]] = set()
-    rows = db.query(WorldEntity).filter(WorldEntity.novel_id == novel.id).all()
+    rows = db.query(
+        WorldEntity.id, WorldEntity.name, WorldEntity.status, WorldEntity.aliases
+    ).filter(WorldEntity.novel_id == novel.id)
     for entity in rows:
         ref = EntityLookupRef(
             entity_id=int(entity.id),
@@ -145,7 +160,9 @@ def _load_novel_system_lookup(
 ) -> dict[str, tuple[SystemLookupRef, ...]]:
     refs_by_key: dict[str, list[SystemLookupRef]] = {}
     seen: set[tuple[str, int]] = set()
-    rows = db.query(WorldSystem).filter(WorldSystem.novel_id == novel.id).all()
+    rows = db.query(WorldSystem.id, WorldSystem.name, WorldSystem.status).filter(
+        WorldSystem.novel_id == novel.id
+    )
     for system in rows:
         key = normalize_lookup_key(system.name, language=novel.language)
         if not key:

@@ -125,7 +125,7 @@ class NovelIndex:
         if isinstance(payload, Mapping) and payload.get("kind") == "state_proto":
             from .state_proto_runtime import StateProtoIndex
 
-            return StateProtoIndex.from_msgpack(data).to_window_index_compat()
+            return StateProtoIndex.from_payload(payload).to_window_index_compat()
 
         compact_entity_windows = payload.get("e")
         if isinstance(compact_entity_windows, Mapping):

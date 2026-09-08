@@ -23,7 +23,7 @@ from app.core.continuation_text import (
     format_recent_chapters_for_prompt,
     format_world_context_for_prompt,
 )
-from app.core.context_summaries import is_context_summary_stale
+from app.core.context_summaries import inspect_context_summary_staleness
 from app.models import NovelContextSummary, User
 from app.schemas import ContinueDebugSummary, ContinueRequest
 
@@ -62,6 +62,10 @@ def _format_selected_context_summaries(
             f"Selected context summary {missing[0]} no longer exists.",
         )
 
+    stale_flags = inspect_context_summary_staleness(
+        db, novel_id=novel_id, summaries=rows, locale=locale,
+    )
+
     use_chinese = str(locale or "").lower().startswith("zh")
     sections: list[str] = []
     labels: list[str] = []
@@ -72,14 +76,7 @@ def _format_selected_context_summaries(
                 "context_summary_unconfirmed",
                 f"Selected context summary {summary_id} has not been confirmed.",
             )
-        if is_context_summary_stale(
-            db,
-            novel_id=novel_id,
-            start_chapter=row.start_chapter,
-            end_chapter=row.end_chapter,
-            source_fingerprint=row.source_fingerprint,
-            locale=locale,
-        ):
+        if stale_flags[summary_id]:
             raise _context_summary_error(
                 "context_summary_stale",
                 f"Selected context summary {summary_id} is stale. Regenerate and confirm it first.",

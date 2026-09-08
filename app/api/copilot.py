@@ -262,11 +262,18 @@ def run_list(
         return
 
     runs = list_session_runs(db, session.id)
+    changed = False
     for run in runs:
         if check_stale_run(run):
-            db.commit()
+            changed = True
 
-    return [_run_to_response(run) for run in runs]
+    # Build value responses before commit expires the whole session history.
+    # Commit failure still aborts the request; no response escapes an uncommitted
+    # stale-run transition or quota settlement.
+    responses = [_run_to_response(run) for run in runs]
+    if changed:
+        db.commit()
+    return responses
 
 
 # ---------------------------------------------------------------------------

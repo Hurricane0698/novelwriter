@@ -1,5 +1,6 @@
 from typing import Any, Literal, Type, TypeVar
 from dataclasses import dataclass, field
+from contextlib import asynccontextmanager
 import json
 import logging
 from openai import AsyncOpenAI
@@ -189,6 +190,23 @@ def _create_openai_client(llm_config: ResolvedLlmConfig) -> AsyncOpenAI:
     raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
 
 
+async def _close_provider_resource(resource: Any, *, operation: str) -> None:
+    try:
+        await resource.close()
+    except Exception:
+        # Cleanup errors must not replace a valid result or expose provider details.
+        _log_provider_failure(operation=operation)
+
+
+@asynccontextmanager
+async def _openai_client(llm_config: ResolvedLlmConfig):
+    client = _create_openai_client(llm_config)
+    try:
+        yield client
+    finally:
+        await _close_provider_resource(client, operation="client_close")
+
+
 async def _create_completion(
     client: AsyncOpenAI,
     *,
@@ -220,20 +238,20 @@ class AIClient:
     ) -> str:
         usage_billing_source = llm_config.billing_source_hint
         ensure_ai_available_fresh_session(billing_source=usage_billing_source)
-        client = _create_openai_client(llm_config)
-        response = await _create_completion(
-            client,
-            operation="generate",
-            request_kwargs={
-                "model": llm_config.model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt},
-                ],
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-            },
-        )
+        async with _openai_client(llm_config) as client:
+            response = await _create_completion(
+                client,
+                operation="generate",
+                request_kwargs={
+                    "model": llm_config.model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                },
+            )
         if response.usage:
             _record_usage(llm_config.model, response.usage.prompt_tokens,
                           response.usage.completion_tokens, node_name=role, user_id=user_id,
@@ -262,83 +280,85 @@ class AIClient:
         """Yield content chunks from streaming LLM response."""
         usage_billing_source = llm_config.billing_source_hint
         ensure_ai_available_fresh_session(billing_source=usage_billing_source)
-        client = _create_openai_client(llm_config)
-        request_kwargs = {
-            "model": llm_config.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "stream": True,
-        }
-        stream: Any = None
-        retry_without_stream_options = False
-        provider_request_failed = False
-        try:
-            # Provider-dependent; some OpenAI-compatible gateways 400 on unknown params.
-            stream = await client.chat.completions.create(
-                **request_kwargs,
-                stream_options={"include_usage": True},
-            )
-        except Exception as exc:
-            retry_without_stream_options = _stream_options_unsupported(exc)
-            provider_request_failed = not retry_without_stream_options
+        async with _openai_client(llm_config) as client:
+            request_kwargs = {
+                "model": llm_config.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "stream": True,
+            }
+            stream: Any = None
+            retry_without_stream_options = False
+            provider_request_failed = False
+            try:
+                # Provider-dependent; some OpenAI-compatible gateways 400 on unknown params.
+                stream = await client.chat.completions.create(
+                    **request_kwargs,
+                    stream_options={"include_usage": True},
+                )
+            except Exception as exc:
+                retry_without_stream_options = _stream_options_unsupported(exc)
+                provider_request_failed = not retry_without_stream_options
 
-        if provider_request_failed:
-            _log_provider_failure(operation="generate_stream_create")
-            raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
+            if provider_request_failed:
+                _log_provider_failure(operation="generate_stream_create")
+                raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
 
-        if retry_without_stream_options:
-            logger.warning(
-                "Streaming include_usage unsupported; retrying without stream_options",
-                extra={"llm_operation": "generate_stream_create"},
-            )
-            stream = await _create_completion(
-                client,
-                operation="generate_stream_fallback_create",
-                request_kwargs=request_kwargs,
-            )
-        prompt_tokens: int | None = None
-        completion_tokens: int | None = None
-        finish_reason: str | None = None
-        stream_iteration_failed = False
-        try:
-            async for chunk in stream:
-                usage = getattr(chunk, "usage", None)
-                if usage:
-                    try:
-                        prompt_tokens = int(usage.prompt_tokens)
-                        completion_tokens = int(usage.completion_tokens)
-                    except Exception:
-                        pass
-                if chunk.choices:
-                    finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
-                    if chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
-        except Exception:
-            stream_iteration_failed = True
+            if retry_without_stream_options:
+                logger.warning(
+                    "Streaming include_usage unsupported; retrying without stream_options",
+                    extra={"llm_operation": "generate_stream_create"},
+                )
+                stream = await _create_completion(
+                    client,
+                    operation="generate_stream_fallback_create",
+                    request_kwargs=request_kwargs,
+                )
+            prompt_tokens: int | None = None
+            completion_tokens: int | None = None
+            finish_reason: str | None = None
+            stream_iteration_failed = False
+            try:
+                async for chunk in stream:
+                    usage = getattr(chunk, "usage", None)
+                    if usage:
+                        try:
+                            prompt_tokens = int(usage.prompt_tokens)
+                            completion_tokens = int(usage.completion_tokens)
+                        except Exception:
+                            pass
+                    if chunk.choices:
+                        finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
+                        if chunk.choices[0].delta.content:
+                            yield chunk.choices[0].delta.content
+            except Exception:
+                stream_iteration_failed = True
+            finally:
+                await _close_provider_resource(stream, operation="stream_close")
 
-        if stream_iteration_failed:
-            _log_provider_failure(operation="generate_stream_iterate")
-            raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
-        if prompt_tokens is not None and completion_tokens is not None:
-            _record_usage(
-                llm_config.model,
-                prompt_tokens,
-                completion_tokens,
-                node_name=role,
-                user_id=user_id,
-                billing_source=usage_billing_source,
-            )
-        if finish_reason == "length":
-            logger.warning(
-                "generate_stream truncated (max_tokens=%s, finish_reason=%s)",
-                max_tokens,
-                finish_reason,
-                extra={"base_url": llm_config.base_url, "model": llm_config.model},
-            )
+            if stream_iteration_failed:
+                _log_provider_failure(operation="generate_stream_iterate")
+                raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
+            if prompt_tokens is not None and completion_tokens is not None:
+                _record_usage(
+                    llm_config.model,
+                    prompt_tokens,
+                    completion_tokens,
+                    node_name=role,
+                    user_id=user_id,
+                    billing_source=usage_billing_source,
+                )
+            if finish_reason == "length":
+                logger.warning(
+                    "generate_stream truncated (max_tokens=%s, finish_reason=%s)",
+                    max_tokens,
+                    finish_reason,
+                    extra={"base_url": llm_config.base_url, "model": llm_config.model},
+                )
 
     async def generate_with_tools(
         self,
@@ -358,7 +378,6 @@ class AIClient:
         """
         usage_billing_source = llm_config.billing_source_hint
         ensure_ai_available_fresh_session(billing_source=usage_billing_source)
-        client = _create_openai_client(llm_config)
 
         request_kwargs: dict[str, Any] = {
             "model": llm_config.model,
@@ -373,13 +392,14 @@ class AIClient:
 
         response: Any = None
         provider_error_kind: Literal["tool_unsupported", "request_failed"] | None = None
-        try:
-            response = await client.chat.completions.create(**request_kwargs)
-        except Exception as exc:
-            if _tool_call_unsupported(exc):
-                provider_error_kind = "tool_unsupported"
-            else:
-                provider_error_kind = "request_failed"
+        async with _openai_client(llm_config) as client:
+            try:
+                response = await client.chat.completions.create(**request_kwargs)
+            except Exception as exc:
+                if _tool_call_unsupported(exc):
+                    provider_error_kind = "tool_unsupported"
+                else:
+                    provider_error_kind = "request_failed"
 
         if provider_error_kind == "tool_unsupported":
             raise ToolCallUnsupportedError(_TOOL_CALL_UNSUPPORTED_MESSAGE) from None
@@ -445,7 +465,6 @@ class AIClient:
         """
         usage_billing_source = llm_config.billing_source_hint
         ensure_ai_available_fresh_session(billing_source=usage_billing_source)
-        client = _create_openai_client(llm_config)
 
         schema_json = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
         structured_system = (
@@ -455,80 +474,81 @@ class AIClient:
 
         saw_response = False
 
-        for attempt in range(max_retries):
-            try:
-                response = await client.chat.completions.create(
-                    model=llm_config.model,
-                    messages=[
-                        {"role": "system", "content": structured_system},
-                        {"role": "user", "content": prompt},
-                    ],
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    response_format={"type": "json_object"},
-                )
-            except Exception:
-                _log_provider_failure(
-                    operation="generate_structured",
-                    attempt=attempt + 1,
-                    max_attempts=max_retries,
-                )
-                continue
+        async with _openai_client(llm_config) as client:
+            for attempt in range(max_retries):
+                try:
+                    response = await client.chat.completions.create(
+                        model=llm_config.model,
+                        messages=[
+                            {"role": "system", "content": structured_system},
+                            {"role": "user", "content": prompt},
+                        ],
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        response_format={"type": "json_object"},
+                    )
+                except Exception:
+                    _log_provider_failure(
+                        operation="generate_structured",
+                        attempt=attempt + 1,
+                        max_attempts=max_retries,
+                    )
+                    continue
 
-            saw_response = True
-            if response.usage:
-                _record_usage(
-                    llm_config.model,
-                    response.usage.prompt_tokens,
-                    response.usage.completion_tokens,
-                    node_name=role,
-                    user_id=user_id,
-                    billing_source=usage_billing_source,
-                )
-            raw = response.choices[0].message.content or ""
-            finish_reason = response.choices[0].finish_reason
-            response_id = getattr(response, "id", None)
+                saw_response = True
+                if response.usage:
+                    _record_usage(
+                        llm_config.model,
+                        response.usage.prompt_tokens,
+                        response.usage.completion_tokens,
+                        node_name=role,
+                        user_id=user_id,
+                        billing_source=usage_billing_source,
+                    )
+                raw = response.choices[0].message.content or ""
+                finish_reason = response.choices[0].finish_reason
+                response_id = getattr(response, "id", None)
 
-            # If truncated (length limit hit), retrying won't help.
-            if finish_reason == "length":
-                logger.warning(
-                    "generate_structured truncated (max_tokens=%s, finish_reason=%s, content_len=%s, response_id=%s)",
-                    max_tokens,
-                    finish_reason,
-                    len(raw),
-                    response_id,
-                    extra={"base_url": llm_config.base_url, "model": llm_config.model},
-                )
-                raise StructuredOutputParseError(
-                    max_retries=1,
-                    last_error=ValueError(
-                        f"LLM response truncated (finish_reason=length, max_tokens={max_tokens}). "
-                        "Increase max_tokens or reduce input."
-                    ),
-                )
+                # If truncated (length limit hit), retrying won't help.
+                if finish_reason == "length":
+                    logger.warning(
+                        "generate_structured truncated (max_tokens=%s, finish_reason=%s, content_len=%s, response_id=%s)",
+                        max_tokens,
+                        finish_reason,
+                        len(raw),
+                        response_id,
+                        extra={"base_url": llm_config.base_url, "model": llm_config.model},
+                    )
+                    raise StructuredOutputParseError(
+                        max_retries=1,
+                        last_error=ValueError(
+                            f"LLM response truncated (finish_reason=length, max_tokens={max_tokens}). "
+                            "Increase max_tokens or reduce input."
+                        ),
+                    )
 
-            try:
-                return response_model.model_validate_json(raw)
-            except Exception as exc:
-                logger.warning(
-                    "generate_structured parse failed (attempt %s/%s, finish_reason=%s, content_len=%s, response_id=%s)",
-                    attempt + 1,
-                    max_retries,
-                    finish_reason,
-                    len(raw),
-                    response_id,
-                    extra={
-                        "base_url": llm_config.base_url,
-                        "model": llm_config.model,
-                        "parse_error_type": type(exc).__name__,
-                    },
-                )
-                continue
+                try:
+                    return response_model.model_validate_json(raw)
+                except Exception as exc:
+                    logger.warning(
+                        "generate_structured parse failed (attempt %s/%s, finish_reason=%s, content_len=%s, response_id=%s)",
+                        attempt + 1,
+                        max_retries,
+                        finish_reason,
+                        len(raw),
+                        response_id,
+                        extra={
+                            "base_url": llm_config.base_url,
+                            "model": llm_config.model,
+                            "parse_error_type": type(exc).__name__,
+                        },
+                    )
+                    continue
 
-        if saw_response:
-            raise StructuredOutputParseError(max_retries=max_retries) from None
+            if saw_response:
+                raise StructuredOutputParseError(max_retries=max_retries) from None
 
-        raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
+            raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
 
 
 ai_client = AIClient()

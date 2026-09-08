@@ -14,7 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import relationship, validates
+from sqlalchemy.orm import column_property, deferred, relationship, validates
 from sqlalchemy.sql import func
 from app.database import Base
 from app.content_formats import PLAIN_TEXT_CONTENT_FORMAT
@@ -45,7 +45,10 @@ class Novel(Base):
     file_path = Column(String(512), nullable=False)
     content_format = Column(String(20), nullable=False, default=PLAIN_TEXT_CONTENT_FORMAT)
     total_chapters = Column(Integer, default=0)
-    window_index = Column(LargeBinary, nullable=True)
+    window_index = deferred(Column(LargeBinary, nullable=True))
+    # Compute metadata in SQL without transferring the whole-book BLOB. NULL
+    # and empty bytes remain distinct for historical presence/readiness rules.
+    _window_index_size = column_property(func.length(window_index.expression))
     window_index_status = Column(String(20), nullable=False, default="missing")
     window_index_revision = Column(Integer, nullable=False, default=0)
     window_index_built_revision = Column(Integer, nullable=True)
@@ -64,6 +67,14 @@ class Novel(Base):
     bootstrap_job = relationship("BootstrapJob", back_populates="novel", uselist=False, cascade="all, delete-orphan")
     derived_asset_jobs = relationship("DerivedAssetJob", back_populates="novel", cascade="all, delete-orphan")
     ingest_job = relationship("NovelIngestJob", back_populates="novel", uselist=False, cascade="all, delete-orphan")
+
+    @property
+    def window_index_payload_size(self) -> int | None:
+        # A newly assigned payload must affect readiness before flush/commit.
+        if "window_index" in self.__dict__:
+            payload = self.__dict__["window_index"]
+            return len(payload) if payload is not None else None
+        return self._window_index_size
 
 
 class Chapter(Base):
@@ -548,7 +559,8 @@ class CopilotSession(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     mode = Column(String(50), nullable=False)
     scope = Column(String(50), nullable=False)
-    context_json = Column(JSON, nullable=True)
+    # Locale/identity reads and stale lease recovery do not consume UI context.
+    context_json = deferred(Column(JSON, nullable=True))
     interaction_locale = Column(String(10), nullable=False, default="zh")
     signature = Column(String(255), nullable=False)
     display_title = Column(String(255), nullable=False, default="")
@@ -593,12 +605,14 @@ class CopilotRun(Base):
     quick_action_id = Column(String(64), nullable=True)
     status = Column(String(20), nullable=False, default="queued")
     prompt = Column(Text, nullable=False)
-    context_json = Column(JSON, nullable=True)
+    # Default row reads serve poll/list/result consumers. Execution explicitly
+    # hydrates private context/workspace before closing its owning Session.
+    context_json = deferred(Column(JSON, nullable=True))
     answer = Column(Text, nullable=True)
     trace_json = Column(JSON, default=list)
     evidence_json = Column(JSON, default=list)
     suggestions_json = Column(JSON, default=list)
-    workspace_json = Column(JSON, nullable=True)
+    workspace_json = deferred(Column(JSON, nullable=True))
     error = Column(Text, nullable=True)
     lease_owner = Column(String(64), nullable=True)
     lease_expires_at = Column(DateTime, nullable=True)

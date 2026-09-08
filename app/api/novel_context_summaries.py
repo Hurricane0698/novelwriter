@@ -14,6 +14,7 @@ from app.core.ai_client import AIClient, LLMUnavailableError
 from app.core.auth import QuotaScope, ensure_ai_available, get_current_user_or_default
 from app.core.context_summaries import (
     context_summary_source_fingerprint,
+    inspect_context_summary_staleness,
     is_context_summary_stale,
     load_context_summary_source,
 )
@@ -313,7 +314,10 @@ def list_context_summaries(
         )
         .all()
     )
-    return [_response(row, is_stale=_is_stale(db, row, novel.language)) for row in rows]
+    stale_flags = inspect_context_summary_staleness(
+        db, novel_id=novel_id, summaries=rows, locale=novel.language,
+    )
+    return [_response(row, is_stale=stale_flags[row.id]) for row in rows]
 
 
 @router.post("", response_model=NovelContextSummaryResponse, status_code=201)

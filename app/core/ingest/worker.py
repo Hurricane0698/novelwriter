@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import Callable
+from typing import Callable, Iterable
 
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
@@ -326,10 +326,12 @@ def run_next_novel_ingest_job(
     *,
     session_factory: Callable[[], Session],
     settings: Settings | None = None,
+    excluded_novel_ids: Iterable[int] = (),
 ) -> bool:
     novel_id = select_next_novel_ingest_job_novel_id(
         session_factory=session_factory,
         settings=settings,
+        excluded_novel_ids=excluded_novel_ids,
     )
     if novel_id is None:
         return False

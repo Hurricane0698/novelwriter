@@ -232,12 +232,13 @@ def select_next_window_index_rebuild_job_novel_id(
     *,
     session_factory: Callable[[], Session],
     settings: Settings | None = None,
+    excluded_novel_ids: Iterable[int] = (),
 ) -> int | None:
     resolved_settings = settings or get_settings()
     db = session_factory()
     try:
         now = utcnow_naive()
-        row = (
+        query = (
             db.query(DerivedAssetJob.novel_id)
             .filter(
                 DerivedAssetJob.asset_kind == DERIVED_ASSET_KIND_WINDOW_INDEX,
@@ -249,9 +250,11 @@ def select_next_window_index_rebuild_job_novel_id(
                     ),
                 ),
             )
-            .order_by(DerivedAssetJob.created_at.asc(), DerivedAssetJob.id.asc())
-            .first()
         )
+        excluded = tuple(excluded_novel_ids)
+        if excluded:
+            query = query.filter(DerivedAssetJob.novel_id.notin_(excluded))
+        row = query.order_by(DerivedAssetJob.created_at.asc(), DerivedAssetJob.id.asc()).first()
         if row is None:
             return None
         return int(row[0])
@@ -263,11 +266,13 @@ def run_next_window_index_rebuild_job(
     *,
     session_factory: Callable[[], Session],
     settings: Settings | None = None,
+    excluded_novel_ids: Iterable[int] = (),
 ) -> bool:
     resolved_settings = settings or get_settings()
     novel_id = select_next_window_index_rebuild_job_novel_id(
         session_factory=session_factory,
         settings=resolved_settings,
+        excluded_novel_ids=excluded_novel_ids,
     )
     if novel_id is None:
         return False
@@ -315,7 +320,11 @@ def _build_window_index_lifecycle_snapshot(
     has_payload = (
         bool(has_payload_override)
         if has_payload_override is not None
-        else bool(getattr(novel, "window_index", None))
+        else (
+            bool(novel.window_index_payload_size)
+            if isinstance(novel, Novel)
+            else bool(getattr(novel, "window_index", None))
+        )
     )
     built_revision = getattr(novel, "window_index_built_revision", None)
     normalized_status = normalize_window_index_status(

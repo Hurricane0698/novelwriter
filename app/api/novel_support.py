@@ -10,7 +10,7 @@ from typing import Any
 import sqlalchemy as sa
 from fastapi import HTTPException
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session
 
 from app.core.ingest import inspect_novel_readiness
 from app.core.indexing.lifecycle import (
@@ -116,20 +116,9 @@ def get_accessible_novel(db: Session, novel_id: int, user: User) -> Novel:
 
 
 def fetch_novel_with_presence(db: Session, novel_id: int, user: User) -> tuple[Novel, bool]:
-    """Load a novel with the window-index payload deferred plus a presence flag."""
-    row = (
-        db.query(Novel)
-        .options(defer(Novel.window_index))
-        .add_columns(novel_window_index_presence_column())
-        .filter(Novel.id == novel_id)
-        .first()
-    )
-    novel = verify_novel_access(row[0] if row is not None else None, user)
-    return novel, bool(row[1])
-
-
-def novel_window_index_presence_column():
-    return Novel.window_index.is_not(None).label("has_window_index_payload")
+    """Report payload presence from metadata without transferring its bytes."""
+    novel = get_accessible_novel(db, novel_id, user)
+    return novel, novel.window_index_payload_size is not None
 
 
 def _coerce_int(value: object) -> int | None:

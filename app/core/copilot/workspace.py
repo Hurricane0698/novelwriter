@@ -6,12 +6,19 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from collections.abc import Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
+
+from sqlalchemy.orm import Session, load_only
 
 from app.core.ai_client import ToolCall
 from app.core.copilot.messages import CopilotTextKey, get_copilot_text
 from app.core.copilot.scope import EvidenceItem, MAX_EVIDENCE_ITEMS
+from app.core.copilot.session_runtime import build_follow_up_conversation_messages
+from app.models import CopilotRun
 
 
 @dataclass
@@ -78,9 +85,10 @@ class Workspace:
     snapshot_fingerprint: str = ""
     final_answer_draft: str | None = None
     prompt_debug: dict[str, Any] | None = None
+    history: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "evidence_packs": {key: value.to_dict() for key, value in self.evidence_packs.items()},
             "tool_journal": self.tool_journal,
             "messages": self.messages,
@@ -92,6 +100,9 @@ class Workspace:
             "final_answer_draft": self.final_answer_draft,
             "prompt_debug": self.prompt_debug,
         }
+        if self.history is not None:
+            payload["history"] = deepcopy(self.history)
+        return payload
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> Workspace:
@@ -110,7 +121,105 @@ class Workspace:
             snapshot_fingerprint=payload.get("snapshot_fingerprint", ""),
             final_answer_draft=payload.get("final_answer_draft"),
             prompt_debug=payload.get("prompt_debug"),
+            history=deepcopy(payload.get("history")),
         )
+
+
+def _history_digest(messages: list[dict[str, Any]]) -> str:
+    encoded = json.dumps(
+        messages, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _validate_history(history: object) -> tuple[list[int], int, str]:
+    if not isinstance(history, dict):
+        raise ValueError("Workspace history metadata is missing")
+    ids = history.get("run_ids")
+    count = history.get("message_count")
+    digest = history.get("sha256")
+    if (
+        not isinstance(ids, list)
+        or any(type(value) is not int or value <= 0 for value in ids)
+        or len(set(ids)) != len(ids)
+        or type(count) is not int
+        or count < 0
+        or not isinstance(digest, str)
+        or len(digest) != 64
+    ):
+        raise ValueError("Workspace history metadata is invalid")
+    return ids, count, digest
+
+
+def workspace_to_storage(workspace: Workspace) -> dict[str, Any]:
+    """Store the current turn and frozen history references, without truncation.
+
+    Legacy resumed workspaces have no references; preserve their full messages.
+    Runtime serialization via to_dict() always retains the full model context.
+    """
+    payload = workspace.to_dict()
+    if workspace.history is None:
+        return payload
+    _, count, digest = _validate_history(workspace.history)
+    messages = workspace.messages
+    if (
+        not messages
+        or not isinstance(messages[0], dict)
+        or messages[0].get("role") != "system"
+        or _history_digest(messages[1:1 + count]) != digest
+        or len(messages) < 1 + count
+    ):
+        raise ValueError("Workspace history no longer matches the model messages")
+    payload["storage_version"] = 2
+    payload["messages"] = [messages[0], *messages[1 + count:]]
+    return payload
+
+
+def load_run_workspace(db: Session, run: CopilotRun) -> dict[str, Any] | None:
+    """Expand a persisted workspace while its owning database session is open."""
+    payload = run.workspace_json
+    if payload is None:
+        return None
+    if not isinstance(payload, dict):
+        raise ValueError("Workspace payload is invalid")
+    if "storage_version" not in payload:
+        return payload
+    if payload["storage_version"] != 2:
+        raise ValueError("Workspace history storage version is unsupported")
+
+    ids, count, digest = _validate_history(payload.get("history"))
+    rows_by_id: dict[int, CopilotRun] = {}
+    for offset in range(0, len(ids), 500):
+        rows = (
+            db.query(CopilotRun)
+            .options(load_only(CopilotRun.status, CopilotRun.prompt, CopilotRun.answer))
+            .filter(
+                CopilotRun.id.in_(ids[offset:offset + 500]),
+                CopilotRun.copilot_session_id == run.copilot_session_id,
+                CopilotRun.novel_id == run.novel_id,
+                CopilotRun.user_id == run.user_id,
+                CopilotRun.status == "completed",
+            )
+            .all()
+        )
+        rows_by_id.update((row.id, row) for row in rows)
+    if len(rows_by_id) != len(ids):
+        raise ValueError("Workspace history is unavailable or outside this session")
+    history = build_follow_up_conversation_messages([rows_by_id[row_id] for row_id in ids])
+    if len(history) != count or _history_digest(history) != digest:
+        raise ValueError("Workspace history changed after this turn was prepared")
+    messages = payload.get("messages")
+    if (
+        not isinstance(messages, list)
+        or not messages
+        or not isinstance(messages[0], dict)
+        or messages[0].get("role") != "system"
+    ):
+        raise ValueError("Workspace history insertion point is invalid")
+    restored = dict(payload)
+    restored.pop("storage_version")
+    restored["messages"] = [messages[0], *history, *messages[1:]]
+    return restored
 
 
 def serialize_tool_call(tool_call: ToolCall) -> dict[str, str]:
@@ -129,21 +238,37 @@ def deserialize_tool_call(payload: dict[str, Any]) -> ToolCall:
     )
 
 
-def build_follow_up_workspace_seed(workspace_payload: dict[str, Any] | None) -> dict[str, Any] | None:
+def build_follow_up_workspace_seed(
+    workspace_payload: dict[str, Any] | None,
+    *,
+    history_runs: Sequence[CopilotRun] | None = None,
+) -> dict[str, Any] | None:
     """Carry reusable research memory into a fresh follow-up run.
 
     Follow-up runs should inherit evidence-pack memory but not stale pending
     tool calls, exhausted round counters, or old assistant drafts. Those are
     run-scoped, not session-scoped.
     """
-    if not workspace_payload:
+    if not workspace_payload and not history_runs:
         return None
 
-    prior_workspace = Workspace.from_dict(workspace_payload)
+    prior_workspace = Workspace.from_dict(workspace_payload or {})
+    completed = [row for row in history_runs or () if row.status == "completed"]
+    messages = build_follow_up_conversation_messages(completed)
+    history = (
+        {
+            "run_ids": [row.id for row in completed],
+            "message_count": len(messages),
+            "sha256": _history_digest(messages),
+        }
+        if history_runs is not None
+        else None
+    )
     return Workspace(
         evidence_packs=dict(prior_workspace.evidence_packs),
         opened_pack_ids=list(prior_workspace.opened_pack_ids),
         snapshot_fingerprint=prior_workspace.snapshot_fingerprint,
+        history=history,
     ).to_dict()
 
 

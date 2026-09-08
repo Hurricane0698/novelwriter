@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import List
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user_or_default
 from app.core.events import ensure_project_start_event
@@ -27,20 +27,17 @@ def list_novels(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ):
-    rows = (
+    novels = (
         novel_support.user_novels(db, current_user)
-        .options(defer(Novel.window_index))
-        .add_columns(novel_support.novel_window_index_presence_column())
         .order_by(Novel.created_at.desc())
         .all()
     )
-    novels = [novel for novel, _ in rows]
     index_states = inspect_window_index_lifecycles(
         novels,
         db=db,
         has_payload_overrides={
-            novel.id: bool(has_window_index_payload)
-            for novel, has_window_index_payload in rows
+            novel.id: novel.window_index_payload_size is not None
+            for novel in novels
             if isinstance(getattr(novel, "id", None), int)
         },
     )

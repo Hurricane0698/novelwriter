@@ -340,35 +340,54 @@ def apply_writer_context_budget(
                 if isinstance(a, dict) and (a.get("visibility") != VIS_REFERENCE)
             ]
 
-    if _estimate_writer_context_tokens(ctx) <= max_estimated_tokens:
+    estimated_tokens = _estimate_writer_context_tokens(ctx)
+    if estimated_tokens <= max_estimated_tokens:
         return ctx
 
     # 3) Drop tail entities until within budget; also remove dangling relationships.
     if isinstance(entities, list):
-        while entities and _estimate_writer_context_tokens(ctx) > max_estimated_tokens:
+        # Each item contributes independently to the estimate. Index incident
+        # relationships once so pruning a tail does not repeatedly rescan and
+        # re-estimate the entire world (including unchanged system JSON).
+        rels = ctx.get("relationships")
+        relationships_by_entity: dict[int, list[int]] = {}
+        if isinstance(rels, list):
+            for index, relationship in enumerate(rels):
+                if not isinstance(relationship, dict):
+                    continue
+                try:
+                    source_id = int(relationship.get("source_id"))
+                    target_id = int(relationship.get("target_id"))
+                except Exception:
+                    # Preserve relationships with malformed endpoints, as before.
+                    continue
+                for entity_id in {source_id, target_id}:
+                    relationships_by_entity.setdefault(entity_id, []).append(index)
+
+        removed_relationships: set[int] = set()
+        while entities and estimated_tokens > max_estimated_tokens:
             dropped = entities.pop()
+            estimated_tokens -= _estimate_writer_context_tokens({"entities": [dropped]})
             dropped_id = dropped.get("id") if isinstance(dropped, dict) else None
             try:
                 dropped_id_int = int(dropped_id) if dropped_id is not None else None
             except Exception:
                 dropped_id_int = None
 
-            rels = ctx.get("relationships")
             if dropped_id_int is not None and isinstance(rels, list):
-                kept_rels: list[dict[str, Any]] = []
-                for r in rels:
-                    if not isinstance(r, dict):
+                for index in relationships_by_entity.pop(dropped_id_int, []):
+                    if index in removed_relationships:
                         continue
-                    try:
-                        src = int(r.get("source_id"))
-                        tgt = int(r.get("target_id"))
-                    except Exception:
-                        kept_rels.append(r)
-                        continue
-                    if src == dropped_id_int or tgt == dropped_id_int:
-                        continue
-                    kept_rels.append(r)
-                ctx["relationships"] = kept_rels
+                    removed_relationships.add(index)
+                    estimated_tokens -= _estimate_writer_context_tokens(
+                        {"relationships": [rels[index]]}
+                    )
+        if removed_relationships:
+            ctx["relationships"] = [
+                relationship
+                for index, relationship in enumerate(rels)
+                if index not in removed_relationships
+            ]
 
     return ctx
 

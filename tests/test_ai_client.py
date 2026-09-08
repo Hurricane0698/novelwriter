@@ -17,6 +17,19 @@ from app.core.ai_client import (
 from app.core.llm_config import ResolvedLlmConfig
 
 
+class _MockStream:
+    """Expose the SDK stream lifecycle around a controlled async iterator."""
+
+    def __init__(self, iterator):
+        self.iterator = iterator
+
+    def __aiter__(self):
+        return self.iterator
+
+    async def close(self):
+        await self.iterator.aclose()
+
+
 @pytest.fixture
 def client():
     return AIClient()
@@ -106,7 +119,7 @@ async def test_generate_uses_resolved_billing_source_for_ai_gate(
     mock_response = MagicMock()
     mock_response.usage = None
     mock_response.choices = [MagicMock(message=MagicMock(content="Generated text"))]
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(return_value=mock_response)
     MockOpenAI.return_value = mock_client_instance
 
@@ -133,7 +146,7 @@ async def test_generate_openai(MockOpenAI, mock_settings):
 
     mock_response = MagicMock()
     mock_response.choices = [MagicMock(message=MagicMock(content="Generated text"))]
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(return_value=mock_response)
     MockOpenAI.return_value = mock_client_instance
 
@@ -156,8 +169,8 @@ async def test_generate_stream_uses_resolved_billing_source_for_ai_gate(
     async def fake_stream():
         yield chunk
 
-    mock_client_instance = MagicMock()
-    mock_client_instance.chat.completions.create = AsyncMock(return_value=fake_stream())
+    mock_client_instance = MagicMock(close=AsyncMock())
+    mock_client_instance.chat.completions.create = AsyncMock(return_value=_MockStream(fake_stream()))
     MockOpenAI.return_value = mock_client_instance
 
     c = AIClient()
@@ -201,8 +214,8 @@ async def test_generate_stream_records_usage_when_available(MockOpenAI, mock_set
         yield chunk2
         yield chunk3
 
-    mock_client_instance = MagicMock()
-    mock_client_instance.chat.completions.create = AsyncMock(return_value=fake_stream())
+    mock_client_instance = MagicMock(close=AsyncMock())
+    mock_client_instance.chat.completions.create = AsyncMock(return_value=_MockStream(fake_stream()))
     MockOpenAI.return_value = mock_client_instance
 
     c = AIClient()
@@ -248,8 +261,8 @@ async def test_generate_stream_retries_without_stream_options_on_unsupported_gat
 
     bad_exc = _provider_error("Unknown field: stream_options", status_code=400)
 
-    mock_client_instance = MagicMock()
-    mock_client_instance.chat.completions.create = AsyncMock(side_effect=[bad_exc, fake_stream()])
+    mock_client_instance = MagicMock(close=AsyncMock())
+    mock_client_instance.chat.completions.create = AsyncMock(side_effect=[bad_exc, _MockStream(fake_stream())])
     MockOpenAI.return_value = mock_client_instance
 
     c = AIClient()
@@ -276,7 +289,7 @@ async def test_generate_stream_retries_without_stream_options_on_unsupported_gat
 @patch("app.core.ai_client.AsyncOpenAI")
 async def test_generate_stream_sanitizes_noncompat_provider_error(MockOpenAI, caplog):
     caplog.set_level(logging.WARNING, logger="app.core.ai_client")
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(
         side_effect=_provider_error("provider unavailable")
     )
@@ -300,7 +313,7 @@ async def test_generate_stream_sanitizes_noncompat_provider_error(MockOpenAI, ca
 @patch("app.core.ai_client.AsyncOpenAI")
 async def test_generate_stream_sanitizes_fallback_provider_error(MockOpenAI, caplog):
     caplog.set_level(logging.WARNING, logger="app.core.ai_client")
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(
         side_effect=[
             _provider_error("Unknown field: stream_options", status_code=400),
@@ -335,8 +348,8 @@ async def test_generate_stream_sanitizes_iteration_provider_error(MockOpenAI, ca
         yield chunk
         raise _provider_error("stream disconnected")
 
-    mock_client_instance = MagicMock()
-    mock_client_instance.chat.completions.create = AsyncMock(return_value=failing_stream())
+    mock_client_instance = MagicMock(close=AsyncMock())
+    mock_client_instance.chat.completions.create = AsyncMock(return_value=_MockStream(failing_stream()))
     MockOpenAI.return_value = mock_client_instance
 
     output = []
@@ -409,7 +422,7 @@ async def test_generate_structured_uses_resolved_billing_source_for_ai_gate(
     mock_response.choices = [
         MagicMock(message=MagicMock(content=json.dumps({"ok": True})), finish_reason="stop")
     ]
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(return_value=mock_response)
     MockOpenAI.return_value = mock_client_instance
 
@@ -448,8 +461,8 @@ async def test_generate_stream_logs_when_response_is_truncated(MockOpenAI, mock_
         yield chunk1
         yield chunk2
 
-    mock_client_instance = MagicMock()
-    mock_client_instance.chat.completions.create = AsyncMock(return_value=fake_stream())
+    mock_client_instance = MagicMock(close=AsyncMock())
+    mock_client_instance.chat.completions.create = AsyncMock(return_value=_MockStream(fake_stream()))
     MockOpenAI.return_value = mock_client_instance
 
     c = AIClient()
@@ -484,7 +497,7 @@ async def test_generate_logs_when_response_is_truncated(MockOpenAI, mock_setting
     mock_response.choices = [
         MagicMock(message=MagicMock(content="Partial text"), finish_reason="length")
     ]
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(return_value=mock_response)
     MockOpenAI.return_value = mock_client_instance
 
@@ -505,7 +518,7 @@ async def test_generate_logs_when_response_is_truncated(MockOpenAI, mock_setting
 @patch("app.core.ai_client.AsyncOpenAI")
 async def test_generate_sanitizes_provider_error(MockOpenAI, caplog):
     caplog.set_level(logging.WARNING, logger="app.core.ai_client")
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(
         side_effect=_provider_error("API error")
     )
@@ -526,7 +539,7 @@ async def test_generate_sanitizes_provider_error(MockOpenAI, caplog):
 @patch("app.core.ai_client.AsyncOpenAI")
 async def test_generate_with_tools_sanitizes_unsupported_error(MockOpenAI, caplog):
     caplog.set_level(logging.WARNING, logger="app.core.ai_client")
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(
         side_effect=_provider_error("tools are unsupported", status_code=400)
     )
@@ -550,7 +563,7 @@ async def test_generate_with_tools_sanitizes_unsupported_error(MockOpenAI, caplo
 @patch("app.core.ai_client.AsyncOpenAI")
 async def test_generate_with_tools_sanitizes_provider_error(MockOpenAI, caplog):
     caplog.set_level(logging.WARNING, logger="app.core.ai_client")
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(
         side_effect=_provider_error("provider unavailable", status_code=503)
     )
@@ -594,7 +607,7 @@ async def test_generate_structured_parses_json_mode(MockOpenAI, mock_settings):
     mock_response.choices = [
         MagicMock(message=MagicMock(content=json.dumps(dict(title="Scene", score=9))))
     ]
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(return_value=mock_response)
     MockOpenAI.return_value = mock_client_instance
 
@@ -633,7 +646,7 @@ async def test_generate_structured_retries_then_succeeds(MockOpenAI, mock_settin
         MagicMock(message=MagicMock(content=json.dumps(dict(title="Recovered", score=7))))
     ]
 
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(
         side_effect=[invalid_response, valid_response]
     )
@@ -667,7 +680,7 @@ async def test_generate_structured_raises_after_retry_exhaustion(MockOpenAI, moc
     invalid_response.usage = None
     invalid_response.choices = [MagicMock(message=MagicMock(content="still-not-json"))]
 
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(return_value=invalid_response)
     MockOpenAI.return_value = mock_client_instance
 
@@ -700,7 +713,7 @@ async def test_generate_structured_does_not_log_raw_llm_output(MockOpenAI, caplo
         MagicMock(message=MagicMock(content=secret), finish_reason="stop")
     ]
 
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(return_value=invalid_response)
     MockOpenAI.return_value = mock_client_instance
 
@@ -726,7 +739,7 @@ async def test_generate_structured_does_not_log_raw_llm_output(MockOpenAI, caplo
 @patch("app.core.ai_client.AsyncOpenAI")
 async def test_generate_structured_sanitizes_provider_errors(MockOpenAI, caplog):
     caplog.set_level(logging.WARNING, logger="app.core.ai_client")
-    mock_client_instance = MagicMock()
+    mock_client_instance = MagicMock(close=AsyncMock())
     mock_client_instance.chat.completions.create = AsyncMock(
         side_effect=[
             _provider_error("structured request failed"),

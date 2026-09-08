@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import StaticPool, create_engine
+from sqlalchemy import StaticPool, create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.config import Settings
@@ -200,6 +200,120 @@ def test_list_marks_summary_stale_after_source_chapter_changes(client, db, novel
     assert changed.status_code == 200
     assert changed.json()[0]["id"] == row.id
     assert changed.json()[0]["is_stale"] is True
+
+
+@pytest.mark.parametrize("surface", ["list", "continuation"])
+def test_summary_freshness_reads_overlapping_chapters_once(db, novel, user, surface, monkeypatch):
+    from app.api.novel_context_summaries import list_context_summaries
+    from app.api.novel_continuation_context import _format_selected_context_summaries
+    from app.core import context_summaries
+
+    rows = [
+        _fresh_summary(db, novel, start_chapter=start, end_chapter=end)
+        for start, end in [(1, 2), (1, 1), (2, 2), (1, 2)]
+    ]
+    novel_id = novel.id
+    summary_ids = [row.id for row in rows]
+    chapter_queries = []
+    formatted_chapters = []
+    original_format = context_summaries.format_recent_chapters_for_prompt
+
+    def format_once(chapters, **kwargs):
+        formatted_chapters.extend(chapter.chapter_number for chapter in chapters)
+        return original_format(chapters, **kwargs)
+
+    monkeypatch.setattr(context_summaries, "format_recent_chapters_for_prompt", format_once)
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if "from chapters" in statement.lower():
+            chapter_queries.append(statement)
+
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        if surface == "list":
+            result = list_context_summaries(novel_id, db, user)
+            assert all(not item["is_stale"] for item in result)
+        else:
+            _format_selected_context_summaries(
+                db,
+                novel_id=novel_id,
+                context_summary_ids=summary_ids,
+                locale=novel.language,
+            )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    assert len(chapter_queries) == 1
+    assert formatted_chapters == [1, 2]
+
+
+@pytest.mark.parametrize("locale", ["zh", "en", "ja", "ko"])
+def test_batched_summary_freshness_preserves_ranges_gaps_and_markdown(db, novel, user, locale):
+    from app.api.novel_context_summaries import list_context_summaries
+
+    novel.language = locale
+    db.add(Chapter(
+        novel_id=novel.id,
+        chapter_number=4,
+        title="",
+        source_chapter_label="第四回：原始标签",
+        content="",
+    ))
+    db.commit()
+    whole = _fresh_summary(db, novel, end_chapter=4)
+    first = _fresh_summary(db, novel, start_chapter=1, end_chapter=1)
+    second = _fresh_summary(db, novel, start_chapter=2, end_chapter=2)
+    blank = _fresh_summary(db, novel, start_chapter=4, end_chapter=4)
+    empty = _fresh_summary(db, novel, start_chapter=8, end_chapter=9)
+    expected = {whole.id: False, first.id: False, second.id: False, blank.id: False, empty.id: True}
+    result = list_context_summaries(novel.id, db, user)
+    assert {item["id"]: item["is_stale"] for item in result} == expected
+
+    blank_chapter = db.query(Chapter).filter_by(novel_id=novel.id, chapter_number=4).one()
+    blank_chapter.source_chapter_label = "Updated source label"
+    db.commit()
+    result = list_context_summaries(novel.id, db, user)
+    assert {item["id"]: item["is_stale"] for item in result} == expected
+
+    chapter = db.query(Chapter).filter_by(novel_id=novel.id, chapter_number=2).one()
+    db.delete(chapter)
+    db.commit()
+    expected[whole.id] = True
+    expected[second.id] = True
+    result = list_context_summaries(novel.id, db, user)
+    assert {item["id"]: item["is_stale"] for item in result} == expected
+
+    blank_chapter.title = "Changed heading"
+    db.commit()
+    expected[blank.id] = True
+    result = list_context_summaries(novel.id, db, user)
+    assert {item["id"]: item["is_stale"] for item in result} == expected
+
+
+def test_summary_batch_does_not_read_chapters_between_distant_ranges(db, novel, user):
+    from app.api.novel_context_summaries import list_context_summaries
+
+    db.add_all([
+        Chapter(novel_id=novel.id, chapter_number=500, title="Unselected", content="unrelated"),
+        Chapter(novel_id=novel.id, chapter_number=1000, title="Selected", content="related"),
+    ])
+    db.commit()
+    _fresh_summary(db, novel)
+    _fresh_summary(db, novel, start_chapter=1000, end_chapter=1000)
+    novel_id = novel.id
+    db.expunge_all()
+    loaded = []
+
+    def capture(chapter, _context):
+        loaded.append(chapter.chapter_number)
+
+    event.listen(Chapter, "load", capture)
+    try:
+        result = list_context_summaries(novel_id, db, user)
+    finally:
+        event.remove(Chapter, "load", capture)
+    assert all(not row["is_stale"] for row in result)
+    assert loaded == [1, 2, 1000]
 
 
 def test_update_allows_edit_and_confirm_only_when_source_is_fresh(client, db, novel):
