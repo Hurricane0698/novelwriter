@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timedelta
 import logging
-from typing import Any, Mapping
+from typing import Any, Mapping, Protocol
 
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
@@ -86,6 +87,14 @@ _SEGMENT_OUTCOMES = {
 }
 
 
+class _EventRow(Protocol):
+    user_id: int | None
+    novel_id: int | None
+    event: str
+    meta: Mapping[str, Any] | None
+    created_at: datetime
+
+
 def _meta_get_int(meta: Mapping[str, Any] | None, key: str) -> int | None:
     value = _meta_get(meta, key)
     if isinstance(value, bool) or value is None:
@@ -101,7 +110,7 @@ def _isoformat(value: datetime | None) -> str | None:
     return value.isoformat() if isinstance(value, datetime) else None
 
 
-def _new_project(event_row: UserEvent) -> dict[str, Any]:
+def _new_project(event_row: _EventRow) -> dict[str, Any]:
     return {
         "user_id": int(event_row.user_id),
         "novel_id": int(event_row.novel_id),
@@ -163,7 +172,7 @@ def _new_project(event_row: UserEvent) -> dict[str, Any]:
 
 
 def _apply_project_event(
-    project: dict[str, Any], row: UserEvent, meta: Mapping[str, Any]
+    project: dict[str, Any], row: _EventRow, meta: Mapping[str, Any]
 ) -> None:
     if project["first_seen_at"] is None or row.created_at < project["first_seen_at"]:
         project["first_seen_at"] = row.created_at
@@ -235,22 +244,30 @@ def _apply_project_event(
             project["copilot_applied"] = True
 
 
-def _trusted_rows(db: Session, rows: list[UserEvent]) -> list[UserEvent]:
-    trusted_project_keys: set[tuple[int, int]] = {
+def _trusted_project_keys(db: Session, through_event_id: int) -> set[tuple[int, int]]:
+    keys = {
         (int(owner_id), int(novel_id))
-        for novel_id, owner_id in (
-            db.query(Novel.id, Novel.owner_id).filter(Novel.owner_id.is_not(None)).all()
-        )
-        if owner_id is not None
+        for novel_id, owner_id in db.query(Novel.id, Novel.owner_id)
+        .filter(Novel.owner_id.is_not(None)).yield_per(1000)
     }
-    for event_row in rows:
-        if event_row.user_id is None or event_row.novel_id is None:
-            continue
-        if event_row.event not in TRUSTED_PROJECT_EVENT_NAMES:
-            continue
-        trusted_project_keys.add((int(event_row.user_id), int(event_row.novel_id)))
+    # A later trusted event can establish ownership for earlier public events,
+    # including projects that have since been deleted. Keep this full-history pass.
+    keys.update(
+        (int(user_id), int(novel_id))
+        for user_id, novel_id in db.query(UserEvent.user_id, UserEvent.novel_id)
+        .filter(
+            UserEvent.id <= through_event_id,
+            UserEvent.event.in_(TRUSTED_PROJECT_EVENT_NAMES),
+            UserEvent.user_id.is_not(None),
+            UserEvent.novel_id.is_not(None),
+        ).distinct().yield_per(1000)
+    )
+    return keys
 
-    filtered_rows: list[UserEvent] = []
+
+def _trusted_rows(
+    rows: Iterable[_EventRow], trusted_project_keys: set[tuple[int, int]],
+) -> Iterator[_EventRow]:
     for event_row in rows:
         if (
             event_row.event in PUBLIC_PROJECT_EVENT_NAMES
@@ -266,13 +283,11 @@ def _trusted_rows(db: Session, rows: list[UserEvent]) -> list[UserEvent]:
                 event_row.novel_id,
             )
             continue
-        filtered_rows.append(event_row)
-
-    return filtered_rows
+        yield event_row
 
 
 def _summarize_events(
-    rows: list[UserEvent],
+    rows: Iterable[_EventRow],
 ) -> tuple[dict[str, Any], dict[tuple[int, int], dict[str, Any]]]:
     raw_totals: dict[str, int] = defaultdict(int)
     raw_users: dict[str, set[int]] = defaultdict(set)
@@ -365,7 +380,7 @@ def _summarize_segments(projects: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _derive_metrics(
-    project_rows: list[dict[str, Any]], filtered_rows: list[UserEvent]
+    project_rows: list[dict[str, Any]], filtered_rows: Iterable[_EventRow]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     demo_guide_completed_at_by_user: dict[int, datetime] = {}
     for project in project_rows:
@@ -452,26 +467,31 @@ def _derive_metrics(
 
 
 def build_hosted_beta_funnel_report(db: Session) -> dict[str, Any]:
-    rows = (
-        db.query(UserEvent)
-        .order_by(UserEvent.created_at.asc(), UserEvent.id.asc())
-        .all()
-    )
+    # Read plain column rows in batches instead of retaining ORM event instances.
+    # All passes use the same event boundary, even if ingestion appends meanwhile.
+    through_event_id = db.query(sa_func.max(UserEvent.id)).scalar() or 0
+    rows = db.query(
+        UserEvent.user_id, UserEvent.novel_id, UserEvent.event,
+        UserEvent.meta, UserEvent.created_at,
+    ).filter(UserEvent.id <= through_event_id).order_by(UserEvent.created_at.asc(), UserEvent.id.asc())
     total_users = db.query(sa_func.count(User.id)).scalar() or 0
-
-    filtered_rows = _trusted_rows(db, rows)
-    funnel_summary, projects = _summarize_events(filtered_rows)
-
+    trusted_keys = _trusted_project_keys(db, through_event_id)
     cutoff = datetime.now() - timedelta(days=30)
     daily_breakdown: dict[str, dict[str, int]] = defaultdict(dict)
-    for event_row in filtered_rows:
-        created_at = event_row.created_at
-        if not isinstance(created_at, datetime) or created_at < cutoff:
-            continue
-        day = created_at.date().isoformat()
-        daily_breakdown[event_row.event][day] = (
-            daily_breakdown[event_row.event].get(day, 0) + 1
-        )
+    recent_rows: deque[_EventRow] = deque(maxlen=100)
+
+    def report_rows() -> Iterator[_EventRow]:
+        for event_row in _trusted_rows(rows.yield_per(1000), trusted_keys):
+            recent_rows.append(event_row)
+            created_at = event_row.created_at
+            if isinstance(created_at, datetime) and created_at >= cutoff:
+                day = created_at.date().isoformat()
+                daily_breakdown[event_row.event][day] = (
+                    daily_breakdown[event_row.event].get(day, 0) + 1
+                )
+            yield event_row
+
+    funnel_summary, projects = _summarize_events(report_rows())
 
     project_rows = sorted(
         projects.values(),
@@ -499,7 +519,9 @@ def build_hosted_beta_funnel_report(db: Session) -> dict[str, Any]:
     ]
 
     derived_metrics, cross_project_user_metrics = _derive_metrics(
-        project_rows, filtered_rows
+        project_rows, _trusted_rows(
+            rows.filter(UserEvent.event == "upload_cta_click").yield_per(1000), trusted_keys,
+        ),
     )
 
     recent_events = [
@@ -513,7 +535,7 @@ def build_hosted_beta_funnel_report(db: Session) -> dict[str, Any]:
             "meta": normalize_event_meta(event_row.meta),
             "created_at": _isoformat(event_row.created_at),
         }
-        for event_row in filtered_rows[-100:]
+        for event_row in recent_rows
     ]
 
     return {

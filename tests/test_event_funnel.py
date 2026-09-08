@@ -86,3 +86,40 @@ def test_repeated_events_preserve_first_outcome_times_and_weighted_counts():
     finally:
         engine.dispose()
 
+
+def test_history_trust_and_late_appends_use_one_event_boundary(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as db:
+            start = datetime.now() - timedelta(days=60)
+            db.add_all([User(id=i, username=f"user-{i}", hashed_password="unused") for i in (1, 2)])
+            # The deleted project's later trusted event must validate earlier public events.
+            for user, novel, event, meta, age in [
+                (1, None, "signup", {"channel": "historic"}, 0),
+                (1, 10, "world_model_view", {}, 1),
+                (2, 10, "world_model_view", {}, 1),  # Another user cannot borrow that trust.
+                (1, 10, "project_start", {"start_mode": "demo"}, 2),
+                (1, 10, "demo_guide_completed", {}, 3),
+                (1, None, "upload_cta_click", {}, 4),
+            ]:
+                db.add(UserEvent(user_id=user, novel_id=novel, event=event, meta=meta, created_at=start + timedelta(days=age)))
+            db.commit()
+            summarize = event_funnel._summarize_events
+
+            def append_after_first_pass(rows):
+                result = summarize(rows)
+                db.add(UserEvent(user_id=1, event="upload_cta_click", created_at=datetime.now()))
+                db.commit()
+                return result
+
+            monkeypatch.setattr(event_funnel, "_summarize_events", append_after_first_pass)
+            report = build_hosted_beta_funnel_report(db)
+            assert report["funnel_summary"]["world_model_view"]["total"] == 1
+            assert report["project_funnel_rows"][0]["channel"] == "historic"
+            assert report["daily_breakdown_last_30d"] == {}
+            assert report["funnel_summary"]["upload_cta_click"]["total"] == 1
+            assert report["cross_project_user_metrics"]["demo_guide_to_upload_click"]["events"] == 1
+            assert len(report["recent_events"]) == 5
+    finally:
+        engine.dispose()
