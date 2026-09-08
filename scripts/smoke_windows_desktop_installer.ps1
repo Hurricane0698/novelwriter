@@ -1086,8 +1086,36 @@ $script:WebViewDebugPort = $DebugListener.LocalEndpoint.Port
 $DebugListener.Stop()
 $PreviousWebViewArguments = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$script:WebViewDebugPort"
+$WebViewPolicyKey = $null
+$WebViewPolicyName = "NovWr.exe"
+$PreviousWebViewPolicyValue = $null
+$PreviousWebViewPolicyKind = $null
+$WebViewPolicyApplied = $false
 
 try {
+    # WebView2 150+ ignores environment overrides for elevated hosts. Scope the
+    # CI policy to NovWr and restore it after the installed-product smoke.
+    # https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645
+    $WindowsPrincipal = [Security.Principal.WindowsPrincipal]::new(
+        [Security.Principal.WindowsIdentity]::GetCurrent()
+    )
+    if ($WindowsPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        $WebViewPolicyKey = [Microsoft.Win32.Registry]::LocalMachine.CreateSubKey(
+            "Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments"
+        )
+        if ($WebViewPolicyKey.GetValueNames() -contains $WebViewPolicyName) {
+            $PreviousWebViewPolicyKind = $WebViewPolicyKey.GetValueKind($WebViewPolicyName)
+            $PreviousWebViewPolicyValue = $WebViewPolicyKey.GetValue(
+                $WebViewPolicyName, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+            )
+        }
+        $WebViewPolicyKey.SetValue(
+            $WebViewPolicyName, $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS,
+            [Microsoft.Win32.RegistryValueKind]::String
+        )
+        $WebViewPolicyApplied = $true
+    }
+
     $LlmProvider = Start-LlmProviderStub `
         -RootDirectory $RootDirectory `
         -RunnerTemp $env:RUNNER_TEMP `
@@ -1325,5 +1353,23 @@ try {
             $script:TrackedProcessHandles = @()
         }
     }
-    Stop-InstalledProcessesSafely -InstallRoot $InstallRoot -TimeoutSeconds $CleanupTimeoutSeconds
+    try {
+        Stop-InstalledProcessesSafely -InstallRoot $InstallRoot -TimeoutSeconds $CleanupTimeoutSeconds
+    } finally {
+        if ($null -ne $WebViewPolicyKey) {
+            try {
+                if ($WebViewPolicyApplied) {
+                    if ($null -ne $PreviousWebViewPolicyKind) {
+                        $WebViewPolicyKey.SetValue(
+                            $WebViewPolicyName, $PreviousWebViewPolicyValue, $PreviousWebViewPolicyKind
+                        )
+                    } else {
+                        $WebViewPolicyKey.DeleteValue($WebViewPolicyName, $false)
+                    }
+                }
+            } finally {
+                $WebViewPolicyKey.Dispose()
+            }
+        }
+    }
 }

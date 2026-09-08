@@ -16,6 +16,9 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+# Create the shared schema before the API and worker can race on first startup.
+"$ROOT_DIR/scripts/uv_run.sh" python -c 'import app.models; from app.database import init_db; init_db()'
+
 "$ROOT_DIR/scripts/uv_run.sh" python -m app.workers.background_jobs &
 WORKER_PID="$!"
 
