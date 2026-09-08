@@ -5,16 +5,11 @@ import { lazy, Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef, 
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import '@/lib/uiMessagePacks/novel'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MoreHorizontal, Pencil, Trash2, Upload } from 'lucide-react'
-import { AssistToggleButton } from '@/components/studio/AssistToggleButton'
+import { StudioChapterToolbar } from '@/components/studio/StudioChapterToolbar'
+import { WorldGenerationDialog } from '@/components/world-model/shared/WorldGenerationDialog'
 import { ChapterContent } from '@/components/detail/ChapterContent'
-import {
-  ChapterEditor,
-  type ChapterEditorSaveErrorCode,
-} from '@/components/detail/ChapterEditor'
+import { ChapterEditor } from '@/components/detail/ChapterEditor'
 import { PageShell } from '@/components/layout/PageShell'
-import { NwButton } from '@/components/ui/nw-button'
-import { GlassSurface } from '@/components/ui/glass-surface'
 import { api } from '@/services/api'
 import { novelKeys } from '@/hooks/novel/keys'
 import { useUpdateChapter } from '@/hooks/novel/useUpdateChapter'
@@ -25,12 +20,10 @@ import { useWorldEntities } from '@/hooks/world/useEntities'
 import { useWorldSystems } from '@/hooks/world/useSystems'
 import { useBootstrapStatus, useTriggerBootstrap } from '@/hooks/world/useBootstrap'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
-import { formatRelativeTime } from '@/lib/formatRelativeTime'
 import { downloadTextFile } from '@/lib/downloadTextFile'
 import {
   formatChapterBadgeLabel,
   formatChapterLabel,
-  getChapterDisplayTitle,
   matchesChapterSearch,
 } from '@/lib/chaptersPlainText'
 import {
@@ -38,9 +31,9 @@ import {
   serializeChapterToNativeFormat,
   serializeChaptersToNativeFormat,
 } from '@/lib/chaptersNativeFormat'
-import { isMarkdownChapterBodyInvalidError } from '@/lib/chapterMutationError'
 import type { Novel } from '@/types/api'
-import { useDebouncedAutoSave } from '@/hooks/useDebouncedAutoSave'
+import { useStudioChapterEditor } from '@/hooks/novel/useStudioChapterEditor'
+import { useStudioNavigation } from '@/hooks/novel/useStudioNavigation'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useContinuationSetupState } from '@/hooks/novel/useContinuationSetupState'
@@ -63,21 +56,11 @@ import { useNovelShell } from '@/components/novel-shell/NovelShellContext'
 import {
   readWorldEntryHandoffSearchParams,
   readWorldEntryPendingSearchParams,
-  setAtlasStudioOriginSearchParams,
-  setNovelShellArtifactPanelSearchParams,
   setAtlasReviewKindSearchParams,
-  setResultsProvenanceSearchParams,
   setAtlasSuggestionTargetSearchParams,
   setAtlasTabSearchParams,
   setWorldEntryHandoffSearchParams,
   setWorldEntryPendingSearchParams,
-  setStudioChapterSearchParams,
-  setStudioEntityStageSearchParams,
-  setStudioRelationshipStageSearchParams,
-  setStudioResultsStageSearchParams,
-  setStudioSystemStageSearchParams,
-  setStudioReviewKindSearchParams,
-  setStudioStageSearchParams,
 } from '@/components/novel-shell/NovelShellRouteState'
 import { useNovelCopilot } from '@/components/novel-copilot/NovelCopilotContext'
 import { NovelCopilotDrawerFallback } from '@/components/novel-copilot/NovelCopilotDrawerFallback'
@@ -111,11 +94,6 @@ import {
   scheduleNovelCopilotDrawerPrefetch,
 } from '@/components/novel-copilot/novelCopilotDrawerLoader'
 
-function countWords(text: string): number {
-  return text.replace(/\s/g, '').length
-}
-
-const AUTO_SAVE_DELAY = 3000
 const NovelCopilotDrawer = lazy(async () => {
   const mod = await loadNovelCopilotDrawer()
   return { default: mod.NovelCopilotDrawer }
@@ -193,18 +171,9 @@ export function NovelStudioPage() {
     return scheduleNovelCopilotDrawerPrefetch()
   }, [novelId])
 
-  const [editMode, setEditMode] = useState(false)
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
-  const [editorContent, setEditorContent] = useState('')
-  const [editorSaveError, setEditorSaveError] = useState<{
-    novelId: number
-    chapterNumber: number
-    locationKey: string
-    saveGeneration: number
-    code: ChapterEditorSaveErrorCode
-  } | null>(null)
   const [chapterCreateError, setChapterCreateError] = useState<{
     novelId: number
     locationKey: string
@@ -395,34 +364,6 @@ export function NovelStudioPage() {
     chapterCreateError?.novelId === novelId
     && chapterCreateError.locationKey === location.key
   )
-  const editorSaveGenerationRef = useRef(0)
-  const editorSaveContextRef = useRef({
-    novelId,
-    chapterNumber: activeChapterNum,
-    locationKey: location.key,
-  })
-  useLayoutEffect(() => {
-    const nextContext = {
-      novelId,
-      chapterNumber: activeChapterNum,
-      locationKey: location.key,
-    }
-    if (
-      editorSaveContextRef.current.novelId !== nextContext.novelId
-      || editorSaveContextRef.current.chapterNumber !== nextContext.chapterNumber
-      || editorSaveContextRef.current.locationKey !== nextContext.locationKey
-    ) {
-      editorSaveContextRef.current = nextContext
-      editorSaveGenerationRef.current += 1
-    }
-  }, [activeChapterNum, location.key, novelId])
-  const editorSaveErrorCode = (
-    editorSaveError?.novelId === novelId
-    && editorSaveError.chapterNumber === activeChapterNum
-    && editorSaveError.locationKey === location.key
-  )
-    ? editorSaveError.code
-    : null
   const nativeExportErrorVisible = (
     nativeExportError?.novelId === novelId
     && nativeExportError.locationKey === location.key
@@ -437,64 +378,6 @@ export function NovelStudioPage() {
   const updateChapter = useUpdateChapter(novelId, activeChapterNum ?? 0)
   const createChapter = useCreateChapter(novelId)
   const deleteChapter = useDeleteChapter(novelId)
-  const {
-    status: autoSaveStatus,
-    schedule: scheduleAutoSave,
-    saveNow: saveNowAutoSave,
-    cancel: cancelAutoSave,
-  } = useDebouncedAutoSave<string>({
-    delayMs: AUTO_SAVE_DELAY,
-    save: async (content) => {
-      const savingNovelId = novelId
-      const savingChapterNumber = activeChapterNum
-      const savingLocationKey = location.key
-      if (savingChapterNumber === null) return
-      const saveGeneration = editorSaveGenerationRef.current + 1
-      editorSaveGenerationRef.current = saveGeneration
-      setEditorSaveError(null)
-      const isCurrentSave = () => (
-        editorSaveGenerationRef.current === saveGeneration
-        && editorSaveContextRef.current.novelId === savingNovelId
-        && editorSaveContextRef.current.chapterNumber === savingChapterNumber
-        && editorSaveContextRef.current.locationKey === savingLocationKey
-      )
-      try {
-        await updateChapter.mutateAsync({ content })
-        if (isCurrentSave()) {
-          setEditorSaveError(null)
-        }
-      } catch (error) {
-        if (isCurrentSave()) {
-          setEditorSaveError({
-            novelId: savingNovelId,
-            chapterNumber: savingChapterNumber,
-            locationKey: savingLocationKey,
-            saveGeneration,
-            code: isMarkdownChapterBodyInvalidError(error) ? error.code : 'chapter_save_failed',
-          })
-        }
-        throw error
-      }
-    },
-  })
-  const saveCurrentEditorNow = useCallback(async (): Promise<boolean> => {
-    const targetNovelId = novelId
-    const targetChapterNumber = activeChapterNum
-    const targetLocationKey = location.key
-    if (targetChapterNumber === null) return false
-    const savePromise = saveNowAutoSave(editorContent)
-    // useDebouncedAutoSave invokes the current save callback synchronously before
-    // yielding, so this is the generation reserved for this manual save.
-    const saveGeneration = editorSaveGenerationRef.current
-    await savePromise
-    return (
-      editorSaveGenerationRef.current === saveGeneration
-      && editorSaveContextRef.current.novelId === targetNovelId
-      && editorSaveContextRef.current.chapterNumber === targetChapterNumber
-      && editorSaveContextRef.current.locationKey === targetLocationKey
-    )
-  }, [activeChapterNum, editorContent, location.key, novelId, saveNowAutoSave])
-
   const { data: chapter, isLoading: chapterLoading } = useQuery({
     queryKey: novelKeys.chapter(novelId, activeChapterNum ?? 0),
     queryFn: () => {
@@ -505,6 +388,15 @@ export function NovelStudioPage() {
       return api.getChapter(novelId, activeChapterNum)
     },
     enabled: !!novelIdParam && activeChapterNum !== null,
+  })
+
+  const {
+    editMode, setEditMode, editorContent, editorSaveErrorCode, autoSaveStatus,
+    handleEditorChange, handleSave, handleCancelEdit, saveCurrentEditorNow,
+    resetEditor, toggleEdit,
+  } = useStudioChapterEditor({
+    novelId, chapterNumber: activeChapterNum, locationKey: location.key,
+    chapterContent: chapter?.content ?? '', saveChapter: updateChapter.mutateAsync,
   })
 
   const currentMeta = chaptersMeta.find(c => c.chapter_number === activeChapterNum)
@@ -554,34 +446,6 @@ export function NovelStudioPage() {
     return chaptersMeta.filter((chapterMeta) => matchesChapterSearch(chapterMeta, searchQuery))
   })()
 
-  useEffect(() => {
-    // Prevent autosave timers from leaking across chapter switches.
-    cancelAutoSave()
-  }, [activeChapterNum, cancelAutoSave, location.key, novelId])
-
-  const handleEditorChange = (val: string) => {
-    editorSaveGenerationRef.current += 1
-    setEditorSaveError(null)
-    setEditorContent(val)
-    scheduleAutoSave(val)
-  }
-  const handleSave = () => {
-    if (activeChapterNum === null) return
-    void saveCurrentEditorNow()
-      .then((isCurrentSave) => {
-        if (isCurrentSave) setEditMode(false)
-      })
-      .catch(() => {
-        // Keep the editor open; user can retry.
-      })
-  }
-  const handleCancelEdit = () => {
-    editorSaveGenerationRef.current += 1
-    cancelAutoSave()
-    setEditorContent(chapter?.content ?? '')
-    setEditorSaveError(null)
-    setEditMode(false)
-  }
   const handleExportAll = async () => {
     const exportingNovelId = novelId
     const exportingLocationKey = location.key
@@ -645,12 +509,8 @@ export function NovelStudioPage() {
         ) {
           return
         }
-        editorSaveGenerationRef.current += 1
-        cancelAutoSave()
-        setEditorContent('')
-        setEditorSaveError(null)
+        resetEditor('', true)
         setEditingTitle(false)
-        setEditMode(true)
         setShowMoreActions(false)
         navigateToChapterStage(nc.chapter_number)
       },
@@ -688,14 +548,11 @@ export function NovelStudioPage() {
     if (!confirmed) return
     deleteChapter.mutate(activeChapterNum, {
       onSuccess: () => {
-        editorSaveGenerationRef.current += 1
-        cancelAutoSave()
+        resetEditor()
         // Clean up persisted drift warnings for the deleted chapter
         setActiveWarnings(novelId, activeChapterNum, [])
         const idx = chaptersMeta.findIndex(c => c.chapter_number === activeChapterNum)
         const next = chaptersMeta[idx + 1] ?? chaptersMeta[idx - 1]
-        setEditorContent('')
-        setEditMode(false)
         setEditingTitle(false)
         setShowMoreActions(false)
         navigateToChapterStage(next?.chapter_number ?? null)
@@ -714,21 +571,7 @@ export function NovelStudioPage() {
   const handleRedo = () => { textareaRef.current?.focus(); document.execCommand('redo') }
 
   const windowIndexStatusMeta = getWindowIndexCopilotStatusMeta(novel?.window_index ?? null, locale)
-  const {
-    activeArtifactPanelState,
-    applyActiveArtifactContextSearchParams,
-    atlasStudioOrigin,
-    effectiveResultsProvenance,
-    handleResultsDebugChange,
-    hasResultsContext,
-    injectionSummaryPanelState,
-    resultsDebug,
-    resultsNavigationState,
-    setInjectionSummaryCategory,
-    showInjectionSummaryRail,
-    toggleInjectionSummaryRail,
-    closeInjectionSummaryRail,
-  } = useStudioArtifactState({
+  const artifactState = useStudioArtifactState({
     novelId,
     activeStage,
     activeChapterNum,
@@ -737,6 +580,11 @@ export function NovelStudioPage() {
     searchParams,
     navigate,
   })
+  const {
+    handleResultsDebugChange, hasResultsContext, injectionSummaryPanelState,
+    resultsDebug, setInjectionSummaryCategory, showInjectionSummaryRail,
+    toggleInjectionSummaryRail, closeInjectionSummaryRail,
+  } = artifactState
 
   const applyWorldEntryRouteSearchParams = useCallback((params: URLSearchParams) => {
     let next = setWorldEntryHandoffSearchParams(params, worldEntryHandoff)
@@ -776,107 +624,15 @@ export function NovelStudioPage() {
     setSearchParams((prev) => setWorldEntryPendingSearchParams(prev, null), { replace: true })
   }, [bootstrapJob, setSearchParams, worldEntryPending])
 
-  const navigateToChapterStage = useCallback((chapterNumber: number | null = null) => {
-    let nextSearchParams = setStudioChapterSearchParams(new URLSearchParams(), chapterNumber)
-    nextSearchParams = setResultsProvenanceSearchParams(nextSearchParams, null)
-    nextSearchParams = setNovelShellArtifactPanelSearchParams(nextSearchParams, null)
-    nextSearchParams = applyWorldEntryRouteSearchParams(nextSearchParams)
-    const nextSearch = nextSearchParams.toString()
-    navigate(nextSearch ? `/novel/${novelId}?${nextSearch}` : `/novel/${novelId}`, { replace: true, state: null })
-  }, [applyWorldEntryRouteSearchParams, navigate, novelId])
-  const navigateToResultsStage = useCallback((options?: { replace?: boolean }) => {
-    let nextSearchParams = setStudioResultsStageSearchParams(new URLSearchParams(), activeChapterNum)
-    nextSearchParams = setResultsProvenanceSearchParams(nextSearchParams, null)
-    if (effectiveResultsProvenance) {
-      nextSearchParams.set('continuations', effectiveResultsProvenance.continuations)
-      if (effectiveResultsProvenance.totalVariants !== null) {
-        nextSearchParams.set('total_variants', String(effectiveResultsProvenance.totalVariants))
-      } else {
-        nextSearchParams.delete('total_variants')
-      }
-    } else {
-      nextSearchParams.delete('continuations')
-      nextSearchParams.delete('total_variants')
-    }
-    nextSearchParams = setNovelShellArtifactPanelSearchParams(nextSearchParams, activeArtifactPanelState)
-    nextSearchParams = applyWorldEntryRouteSearchParams(nextSearchParams)
-    navigate(`/novel/${novelId}?${nextSearchParams.toString()}`, {
-      replace: options?.replace ?? false,
-      state: resultsNavigationState,
-    })
-  }, [activeArtifactPanelState, activeChapterNum, applyWorldEntryRouteSearchParams, effectiveResultsProvenance, navigate, novelId, resultsNavigationState])
-  const navigateToWriteStage = useCallback(() => {
-    let nextSearchParams = setStudioStageSearchParams(new URLSearchParams(), 'write')
-    nextSearchParams = setResultsProvenanceSearchParams(nextSearchParams, null)
-    nextSearchParams = setNovelShellArtifactPanelSearchParams(nextSearchParams, null)
-    nextSearchParams = applyWorldEntryRouteSearchParams(nextSearchParams)
-    navigate(`/novel/${novelId}?${nextSearchParams.toString()}`, { replace: true, state: null })
-  }, [applyWorldEntryRouteSearchParams, navigate, novelId])
-  const navigateToEntityStage = useCallback((entityId: number | null, options?: {
-    chapterNumber?: number | null
-    replace?: boolean
-  }) => {
-    let nextSearchParams = setStudioChapterSearchParams(new URLSearchParams(), options?.chapterNumber ?? activeChapterNum)
-    nextSearchParams = setStudioEntityStageSearchParams(nextSearchParams, entityId)
-    nextSearchParams = applyActiveArtifactContextSearchParams(nextSearchParams)
-    nextSearchParams = applyWorldEntryRouteSearchParams(nextSearchParams)
-    navigate(`/novel/${novelId}?${nextSearchParams.toString()}`, { replace: options?.replace ?? false, state: resultsNavigationState })
-  }, [activeChapterNum, applyActiveArtifactContextSearchParams, applyWorldEntryRouteSearchParams, navigate, novelId, resultsNavigationState])
-  const navigateToReviewStage = useCallback((reviewKind: 'entities' | 'relationships' | 'systems', options?: {
-    chapterNumber?: number | null
-    replace?: boolean
-  }) => {
-    let nextSearchParams = setStudioChapterSearchParams(new URLSearchParams(), options?.chapterNumber ?? activeChapterNum)
-    nextSearchParams = setStudioReviewKindSearchParams(nextSearchParams, reviewKind)
-    nextSearchParams = applyActiveArtifactContextSearchParams(nextSearchParams)
-    nextSearchParams = applyWorldEntryRouteSearchParams(nextSearchParams)
-    navigate(`/novel/${novelId}?${nextSearchParams.toString()}`, { replace: options?.replace ?? false, state: resultsNavigationState })
-  }, [activeChapterNum, applyActiveArtifactContextSearchParams, applyWorldEntryRouteSearchParams, navigate, novelId, resultsNavigationState])
-  const navigateToRelationshipStage = useCallback((entityId: number | null, options?: {
-    chapterNumber?: number | null
-    replace?: boolean
-  }) => {
-    let nextSearchParams = setStudioChapterSearchParams(new URLSearchParams(), options?.chapterNumber ?? activeChapterNum)
-    nextSearchParams = setStudioRelationshipStageSearchParams(nextSearchParams, entityId)
-    nextSearchParams = applyActiveArtifactContextSearchParams(nextSearchParams)
-    nextSearchParams = applyWorldEntryRouteSearchParams(nextSearchParams)
-    navigate(`/novel/${novelId}?${nextSearchParams.toString()}`, { replace: options?.replace ?? false, state: resultsNavigationState })
-  }, [activeChapterNum, applyActiveArtifactContextSearchParams, applyWorldEntryRouteSearchParams, navigate, novelId, resultsNavigationState])
-  const navigateToSystemStage = useCallback((systemId: number | null, options?: {
-    chapterNumber?: number | null
-    replace?: boolean
-  }) => {
-    let nextSearchParams = setStudioChapterSearchParams(new URLSearchParams(), options?.chapterNumber ?? activeChapterNum)
-    nextSearchParams = setStudioSystemStageSearchParams(nextSearchParams, systemId)
-    nextSearchParams = applyActiveArtifactContextSearchParams(nextSearchParams)
-    nextSearchParams = applyWorldEntryRouteSearchParams(nextSearchParams)
-    navigate(`/novel/${novelId}?${nextSearchParams.toString()}`, { replace: options?.replace ?? false, state: resultsNavigationState })
-  }, [activeChapterNum, applyActiveArtifactContextSearchParams, applyWorldEntryRouteSearchParams, navigate, novelId, resultsNavigationState])
-  const navigateToAtlas = useCallback((params?: URLSearchParams) => {
-    warmAtlasAssist()
-
-    const commitNavigation = () => {
-      let nextParams = applyWorldEntryRouteSearchParams(params ?? new URLSearchParams())
-      nextParams = setAtlasStudioOriginSearchParams(nextParams, atlasStudioOrigin)
-      const nextSearch = nextParams.toString()
-      navigate(nextSearch ? `/world/${novelId}?${nextSearch}` : `/world/${novelId}`)
-    }
-
-    if (editMode) {
-      void saveCurrentEditorNow()
-        .then((isCurrentSave) => {
-          if (!isCurrentSave) return
-          setEditMode(false)
-          commitNavigation()
-        })
-        .catch(() => {
-          // Save failed — stay on the current Studio stage so the user can retry.
-        })
-      return
-    }
-
-    commitNavigation()
-  }, [applyWorldEntryRouteSearchParams, atlasStudioOrigin, editMode, navigate, novelId, saveCurrentEditorNow, warmAtlasAssist])
+  const {
+    navigateToChapterStage, navigateToResultsStage, navigateToWriteStage,
+    navigateToEntityStage, navigateToReviewStage, navigateToRelationshipStage,
+    navigateToSystemStage, navigateToAtlas,
+  } = useStudioNavigation({
+    novelId, activeChapterNum, artifacts: artifactState,
+    editor: { editMode, setEditMode, saveCurrentEditorNow },
+    applyWorldEntryRouteSearchParams, warmAtlasAssist,
+  })
   const handleReturnToArtifact = () => {
     if (hasResultsContext) {
       navigateToResultsStage()
@@ -1046,9 +802,7 @@ export function NovelStudioPage() {
     )
   }
 
-  const wordCount = countWords(editMode ? editorContent : (chapter?.content ?? ''))
   const currentChapterIdentity = chapter ?? currentMeta ?? null
-  const displayTitle = currentChapterIdentity ? getChapterDisplayTitle(currentChapterIdentity.title) : ''
   const activeChapterReference = currentChapterIdentity ? formatChapterBadgeLabel(currentChapterIdentity) : null
   const showEntryStage = visiblePreparationGate !== null || showWorldOnboarding
 
@@ -1056,7 +810,6 @@ export function NovelStudioPage() {
     <PageShell className="h-screen" navbarProps={{ position: 'static' }} mainClassName="min-h-0 flex-1 overflow-hidden">
       {showEntryStage ? (
         <StudioOnboardingStage
-          novelId={novelId}
           preparationGate={visiblePreparationGate}
           showWorldOnboarding={showWorldOnboarding}
           bootstrapPending={triggerBootstrap.isPending}
@@ -1069,7 +822,6 @@ export function NovelStudioPage() {
           }
           bootstrapError={bootstrapError}
           chaptersAvailable={chaptersAvailable}
-          worldGenOpen={worldGenOpen}
           onWorldGenOpenChange={setWorldGenOpen}
           onTriggerBootstrap={handleTriggerBootstrap}
           onDismissWorldOnboarding={handleDismissWorldOnboarding}
@@ -1106,12 +858,8 @@ export function NovelStudioPage() {
                 }))}
                 selectedChapterNumber={activeChapterNum}
                 onSelectChapter={(chapterNumber) => {
-                  editorSaveGenerationRef.current += 1
-                  cancelAutoSave()
-                  setEditorSaveError(null)
+                  resetEditor()
                   setEditingTitle(false)
-                  setEditorContent('')
-                  setEditMode(false)
                   setShowMoreActions(false)
                   navigateToChapterStage(chapterNumber)
                 }}
@@ -1285,164 +1033,20 @@ export function NovelStudioPage() {
             ) : (
               /* ── Chapter Stage ── */
               <div className="flex-1 min-w-0 flex flex-col gap-6 px-8 py-8 lg:px-16 overflow-hidden">
-                {/* Action Bar */}
-                <div className="shrink-0 border-b border-[var(--nw-glass-border)] pb-5">
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                    <div className="min-w-0 flex-1 space-y-3">
-                      {currentMeta ? (
-                        <>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center rounded-full border border-[var(--nw-glass-border)] bg-background/20 px-2.5 py-1 text-[11px] font-medium text-foreground/88">
-                              {formatChapterBadgeLabel(currentChapterIdentity ?? currentMeta)}
-                            </span>
-                            <span className="inline-flex items-center rounded-full border border-[var(--nw-glass-border)] bg-background/20 px-2.5 py-1 text-[11px] text-muted-foreground">
-                              {editMode ? t('studio.chapter.editing') : t('studio.chapter.reading')}
-                            </span>
-                          </div>
-
-                          <div className="min-w-0">
-                            {editingTitle ? (
-                              <input
-                                autoFocus
-                                value={titleDraft}
-                                onChange={e => setTitleDraft(e.target.value)}
-                                onBlur={() => { handleTitleSave() }}
-                                onKeyDown={e => { if (e.key === 'Enter') handleTitleSave(); if (e.key === 'Escape') setEditingTitle(false) }}
-                                className="w-full max-w-[720px] font-mono text-[22px] font-semibold text-foreground bg-[var(--nw-glass-bg)] border border-[hsl(var(--accent)/0.35)] rounded-md px-2 py-1 outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-0"
-                                placeholder={t('studio.chapter.titlePlaceholder')}
-                              />
-                            ) : (
-                              <div
-                                onDoubleClick={() => { setTitleDraft(displayTitle); setEditingTitle(true) }}
-                                title={t('studio.chapter.titleEditHint')}
-                                className="cursor-text"
-                              >
-                                {displayTitle ? (
-                                  <h1 className="font-mono text-[24px] font-semibold leading-tight text-foreground break-words">
-                                    {displayTitle}
-                                  </h1>
-                                ) : (
-                                  <span className="text-[22px] text-muted-foreground italic">{t('studio.chapter.titleAddHint')}</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                            <span>{t('studio.chapter.charCount', { count: wordCount.toLocaleString() })}</span>
-                            {currentMeta.created_at ? (
-                              <span>{t('studio.chapter.updated', { time: formatRelativeTime(currentMeta.created_at) })}</span>
-                            ) : null}
-                          </div>
-                        </>
-                      ) : (
-                        <div className="space-y-2">
-                          <span className="inline-flex items-center rounded-full border border-[var(--nw-glass-border)] bg-background/20 px-2.5 py-1 text-[11px] text-muted-foreground">
-                            {t('studio.header.workspace')}
-                          </span>
-                          <h1 className="font-mono text-[24px] font-semibold leading-tight text-foreground">
-                            {t('studio.header.selectChapter')}
-                          </h1>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex w-full flex-col gap-2.5 xl:w-auto xl:max-w-[520px] xl:items-end">
-                      <div className="flex flex-wrap gap-2">
-                        <NwButton
-                          onClick={() => {
-                            if (activeChapterNum === null) return
-                            editorSaveGenerationRef.current += 1
-                            if (!editMode) {
-                              setEditorContent(chapter?.content ?? '')
-                              cancelAutoSave()
-                              setEditorSaveError(null)
-                            } else {
-                              cancelAutoSave()
-                              setEditorSaveError(null)
-                            }
-                            setEditMode(!editMode)
-                          }}
-                          disabled={activeChapterNum === null}
-                          variant="accentOutline"
-                          className="rounded-[10px] px-4 py-2 text-sm font-medium disabled:cursor-not-allowed"
-                        >
-                          <Pencil size={14} />
-                          {t('studio.chapter.edit')}
-                        </NwButton>
-
-                        <div className="relative">
-                          <NwButton
-                            onClick={() => setShowMoreActions((prev) => !prev)}
-                            variant="glass"
-                            className="h-10 w-10 rounded-[10px] p-0 text-sm font-medium"
-                            aria-haspopup="menu"
-                            aria-expanded={showMoreActions}
-                            aria-label={t('studio.actions.moreActions')}
-                            title={t('studio.actions.moreActions')}
-                          >
-                            <MoreHorizontal size={14} />
-                          </NwButton>
-
-                          {showMoreActions ? (
-                            <>
-                              <div
-                                className="fixed inset-0 z-10"
-                                onClick={() => setShowMoreActions(false)}
-                              />
-                              <GlassSurface
-                                variant="floating"
-                                className="absolute right-0 top-[calc(100%+8px)] z-20 min-w-[188px] rounded-[16px] p-1.5"
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setShowMoreActions(false)
-                                    handleExportChapter()
-                                  }}
-                                  className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
-                                >
-                                  <Upload size={14} className="text-muted-foreground" />
-                                  <span>{t('studio.actions.exportChapter')}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setShowMoreActions(false)
-                                    handleExportAll()
-                                  }}
-                                  className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
-                                >
-                                  <Upload size={14} className="text-muted-foreground" />
-                                  <span>{t('studio.actions.exportAllChapters')}</span>
-                                </button>
-
-                                {activeChapterNum !== null && chaptersMeta.length > 1 ? (
-                                  <>
-                                    <div className="mx-2 my-1 h-px bg-[var(--nw-glass-border)]" />
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setShowMoreActions(false)
-                                        void handleDeleteChapter()
-                                      }}
-                                      className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-sm text-[hsl(var(--color-danger))] transition-colors hover:bg-[hsl(var(--color-danger)/0.10)]"
-                                    >
-                                      <Trash2 size={14} />
-                                      <span>{t('studio.chapter.delete')}</span>
-                                    </button>
-                                  </>
-                                ) : null}
-                              </GlassSurface>
-                            </>
-                          ) : null}
-                        </div>
-
-                        <AssistToggleButton active={showAssistRail} onClick={handleToggleAssist} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <StudioChapterToolbar
+                  currentMeta={currentMeta}
+                  currentChapterIdentity={currentChapterIdentity}
+                  content={editMode ? editorContent : (chapter?.content ?? '')}
+                  canEdit={activeChapterNum !== null}
+                  canDelete={activeChapterNum !== null && chaptersMeta.length > 1}
+                  editor={{ editMode, editingTitle, titleDraft, setTitleDraft, setEditingTitle, handleTitleSave, toggleEdit }}
+                  actions={{
+                    isOpen: showMoreActions, onOpenChange: setShowMoreActions,
+                    exportChapter: handleExportChapter, exportAll: handleExportAll, deleteChapter: handleDeleteChapter,
+                  }}
+                  assistOpen={showAssistRail}
+                  onToggleAssist={handleToggleAssist}
+                />
 
                 {/* ── Editor / Reader Area ── */}
                 {editMode && activeChapterNum !== null ? (
@@ -1519,6 +1123,13 @@ export function NovelStudioPage() {
           </NovelShellLayout>
         </div>
       )}
+      {/* Keep the mutation observer mounted when generated entities hide onboarding. */}
+      <WorldGenerationDialog
+        novelId={novelId}
+        open={worldGenOpen}
+        onOpenChange={setWorldGenOpen}
+        analyticsSource="world_onboarding"
+      />
       <ConfirmDialog {...confirmDialogProps} />
     </PageShell>
   )

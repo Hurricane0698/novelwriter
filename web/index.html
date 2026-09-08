@@ -2,7 +2,6 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NovWr - Continue Your Story</title>
   </head>
@@ -26,7 +25,45 @@
         }
       } catch (e) {}
     </script>
-    <div id="root"></div>
+    <div id="root">
+      <main id="app-startup" style="max-width:36rem;margin:3rem auto;padding:2rem;font-family:system-ui,sans-serif">
+        <h1 id="app-startup-title">正在加载 NovWr…</h1>
+        <p id="app-startup-help">如果长时间没有响应，请重新加载页面。</p>
+        <a id="app-startup-reload" href="">重新加载页面</a>
+      </main>
+    </div>
+    <script>
+      // Remain usable even when the entry module cannot execute in the WebView.
+      (function () {
+        var english = document.documentElement.lang.indexOf('en') === 0;
+        var startup = document.getElementById('app-startup');
+        var title = document.getElementById('app-startup-title');
+        var help = document.getElementById('app-startup-help');
+        if (english) {
+          title.textContent = 'Loading NovWr…';
+          help.textContent = 'If loading does not finish, reload the page.';
+          document.getElementById('app-startup-reload').textContent = 'Reload page';
+        }
+        function failed(event) {
+          if (!startup.isConnected) return;
+          if (event.type === 'error' && event.target !== window && event.target.tagName !== 'SCRIPT') return;
+          startup.setAttribute('role', 'alert');
+          title.textContent = english ? 'The page could not load' : '页面未能加载';
+          help.textContent = english
+            ? 'Reload the page. In the desktop app, update Microsoft Edge WebView2 if the problem persists.'
+            : '请重新加载页面。若桌面版仍无法打开，请更新 Microsoft Edge WebView2 后重启 NovWr。';
+        }
+        window.addEventListener('error', failed, true);
+        window.addEventListener('unhandledrejection', failed);
+        var observer = new MutationObserver(function () {
+          if (startup.isConnected) return;
+          window.removeEventListener('error', failed, true);
+          window.removeEventListener('unhandledrejection', failed);
+          observer.disconnect();
+        });
+        observer.observe(document.getElementById('root'), { childList: true });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

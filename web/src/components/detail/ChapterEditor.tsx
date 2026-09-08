@@ -12,8 +12,8 @@ import {
 } from '@/lib/chapterMutationError'
 import { isMarkdownContentFormat } from '@/lib/novelContentFormat'
 import type { NovelContentFormat } from '@/types/api'
+import type { AutoSaveStatus } from '@/hooks/useDebouncedAutoSave'
 
-export type AutoSaveStatus = 'saved' | 'unsaved' | 'idle'
 export type ChapterEditorSaveErrorCode = ChapterMutationErrorCode | 'chapter_save_failed'
 
 /**

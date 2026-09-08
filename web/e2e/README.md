@@ -19,11 +19,27 @@ Test layering:
 
 - `web/e2e/mock/**`: exploratory and deterministic browser probes with controlled API timing
 - `web/e2e/integration/**`: thin end-to-end chain validation against the real backend stack
+- `web/e2e/production/**`: built SPA entry and lazy-module failure recovery (`npm run test:e2e:production`)
+- `web/e2e/desktop-installed/**`: attach to the installed Tauri WebView through `NOVWR_DESKTOP_CDP_URL`; no separate Chromium window
 - `web/src/__tests__/**`: sink stable semantics here after pressure tests reveal the real failure mode
 
 Rule:
 
 Do not add broad new deterministic tests before a pressure probe reveals the concrete drift risk.
+
+## Runtime evidence
+
+The installed-product PowerShell harness enables a loopback WebView2 debugging
+port only for its child application and supplies `NOVWR_DESKTOP_CDP_URL` to
+Playwright. Run it only in a disposable Windows profile: it resets the current
+user's NovWr data and installer registry state. The normal application needs no
+debugging port. CDP tests use absolute URLs because the existing WebView context
+does not inherit Playwright's `baseURL` setting.
+
+The real-backend `llm-probe.spec.ts` supplies only the external provider response
+locally. It covers bounded reasoning-budget retries and UI classification, not
+live-provider availability. `E2E_PROBE_PROVIDER_PORT` optionally fixes the provider
+port for a reverse SSH tunnel when browser and backend run on different hosts.
 
 ## Hosted Credential Profiles
 

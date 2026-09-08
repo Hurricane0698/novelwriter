@@ -56,7 +56,7 @@ export const buildContinuationRequestId = () => {
   return `continue_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
 }
 
-export interface AuthOptions {
+interface AuthOptions {
   deploy_mode: 'hosted' | 'selfhost'
   invite_login_enabled: boolean
   github_login_enabled: boolean
@@ -69,7 +69,7 @@ export interface LlmConfigResponse {
   api_key_configured: boolean
 }
 
-export interface LlmConfigUpdateRequest {
+interface LlmConfigUpdateRequest {
   base_url: string
   model: string
   api_key?: string
@@ -80,6 +80,7 @@ export interface LlmProbeResponse {
     | 'llm_probe_compatible'
     | 'llm_probe_connection_failed'
     | 'llm_probe_capability_mismatch'
+    | 'llm_probe_inconclusive'
   model: string
   latency_ms: number
   capabilities: {
@@ -89,7 +90,7 @@ export interface LlmProbeResponse {
   }
 }
 
-export interface AnalyticsEventRequest {
+interface AnalyticsEventRequest {
   event: string
   anonymous_id?: string
   novel_id?: number
@@ -363,7 +364,7 @@ export async function* streamContinuation(
   }
 }
 
-export { ApiError, copilotApi, llmHeaders }
+export { ApiError, copilotApi }
 
 export const worldApi = {
   // World generation

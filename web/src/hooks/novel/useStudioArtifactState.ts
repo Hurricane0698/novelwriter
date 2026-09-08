@@ -21,7 +21,7 @@ import {
 } from '@/lib/injectionSummaryNavigation'
 import type { ContinueDebugSummary } from '@/types/api'
 
-export interface StudioResultsLocationState {
+interface StudioResultsLocationState {
   streamParams?: unknown
   novelId?: number
   studioResultsDebug?: ContinueDebugSummary | null
@@ -42,7 +42,7 @@ interface StudioArtifactContext {
   artifactPanelState: NovelShellArtifactPanelState | null
 }
 
-export function applyStudioArtifactContextSearchParams(
+function applyStudioArtifactContextSearchParams(
   current: URLSearchParams,
   context: StudioArtifactContext,
 ): URLSearchParams {

@@ -18,7 +18,7 @@ export type CopilotContextStage =
   | 'review'
 export type CopilotTargetTab = 'entities' | 'relationships' | 'systems' | 'review'
 export type CopilotReviewKind = 'entities' | 'relationships' | 'systems'
-export const DEFAULT_COPILOT_INTERACTION_LOCALE = DEFAULT_UI_LOCALE
+const DEFAULT_COPILOT_INTERACTION_LOCALE = DEFAULT_UI_LOCALE
 
 interface CopilotUiContextData {
   surface?: CopilotContextSurface
@@ -79,7 +79,7 @@ export type CopilotPrefill =
   | CopilotCurrentTabResearchPrefill
   | CopilotDraftCleanupPrefill
 
-export interface CopilotSessionIdentityContext {
+interface CopilotSessionIdentityContext {
   entity_id?: number
   tab?: CopilotContextTab
 }
@@ -224,7 +224,7 @@ export function buildCopilotSessionSignature(
   })
 }
 
-export function normalizeCopilotSessionContext(
+function normalizeCopilotSessionContext(
   prefill: CopilotPrefill,
 ): CopilotSessionIdentityContext | null {
   if (prefill.scope === 'whole_book') return null

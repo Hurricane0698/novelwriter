@@ -57,10 +57,6 @@ vi.mock('@/components/atlas/workbench/AtlasAssistWorkbench', () => ({
   ),
 }))
 
-vi.mock('@/components/world-model/shared/WorldBuildPanel', () => ({
-  WorldBuildPanel: () => <div data-testid="world-build-panel" />,
-}))
-
 vi.mock('@/components/atlas/entities/EntityNavigator', () => ({
   EntityNavigator: ({
     selectedEntityId,

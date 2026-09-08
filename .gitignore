@@ -1,5 +1,9 @@
 # Environment
 .env
+.env.*
+!.env.example
+llm-config.json
+runtime-secret.json
 .venv/
 venv/
 env/
@@ -123,7 +127,5 @@ worldpack.*.json
 .codex
 .codex/
 AGENTS.md
-test-results/
-.agent/
 test-results/
 .agent/

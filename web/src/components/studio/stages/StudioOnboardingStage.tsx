@@ -4,7 +4,6 @@
 import { EmptyWorldOnboarding } from '@/components/detail/EmptyWorldOnboarding'
 import { GlassSurface } from '@/components/ui/glass-surface'
 import { NwButton } from '@/components/ui/nw-button'
-import { WorldGenerationDialog } from '@/components/world-model/shared/WorldGenerationDialog'
 import type { StudioPreparationGateState } from '@/hooks/novel/useStudioOnboardingState'
 
 function StudioPreparationGate({
@@ -89,26 +88,22 @@ function StudioPreparationGate({
 }
 
 export function StudioOnboardingStage({
-  novelId,
   preparationGate,
   showWorldOnboarding,
   bootstrapPending,
   preparationActionPending,
   bootstrapError,
   chaptersAvailable,
-  worldGenOpen,
   onWorldGenOpenChange,
   onTriggerBootstrap,
   onDismissWorldOnboarding,
 }: {
-  novelId: number
   preparationGate: StudioPreparationGateState | null
   showWorldOnboarding: boolean
   bootstrapPending: boolean
   preparationActionPending: boolean
   bootstrapError: string | null
   chaptersAvailable: boolean
-  worldGenOpen: boolean
   onWorldGenOpenChange: (open: boolean) => void
   onTriggerBootstrap: () => void
   onDismissWorldOnboarding: () => void
@@ -132,21 +127,13 @@ export function StudioOnboardingStage({
   if (!showWorldOnboarding) return null
 
   return (
-    <>
-      <EmptyWorldOnboarding
-        onGenerate={() => onWorldGenOpenChange(true)}
-        onBootstrap={onTriggerBootstrap}
-        onDismiss={onDismissWorldOnboarding}
-        bootstrapPending={bootstrapPending}
-        bootstrapError={bootstrapError}
-        chaptersAvailable={chaptersAvailable}
-      />
-      <WorldGenerationDialog
-        novelId={novelId}
-        open={worldGenOpen}
-        onOpenChange={onWorldGenOpenChange}
-        analyticsSource="world_onboarding"
-      />
-    </>
+    <EmptyWorldOnboarding
+      onGenerate={() => onWorldGenOpenChange(true)}
+      onBootstrap={onTriggerBootstrap}
+      onDismiss={onDismissWorldOnboarding}
+      bootstrapPending={bootstrapPending}
+      bootstrapError={bootstrapError}
+      chaptersAvailable={chaptersAvailable}
+    />
   )
 }

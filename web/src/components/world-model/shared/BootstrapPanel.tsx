@@ -229,7 +229,7 @@ export function BootstrapPanel({
     />
   )
 
-  // ── Sidebar variant: inline row that lives inside WorldBuildPanel card ──
+  // Sidebar variant: compact inline row.
   if (variant === 'sidebar') {
     if (isLoading) {
       return (

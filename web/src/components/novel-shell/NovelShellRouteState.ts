@@ -307,7 +307,7 @@ export function setAtlasStudioOriginSearchParams(
   return next
 }
 
-export function parseAtlasReviewKind(raw: string | null): CopilotReviewKind {
+function parseAtlasReviewKind(raw: string | null): CopilotReviewKind {
   if (raw === 'entities' || raw === 'relationships' || raw === 'systems') return raw
   return 'entities'
 }
@@ -327,7 +327,7 @@ function parseStudioStage(raw: string | null): NovelShellStage {
   return 'chapter'
 }
 
-export function parseAtlasTab(raw: string | null): AtlasWorkbenchTab {
+function parseAtlasTab(raw: string | null): AtlasWorkbenchTab {
   if (raw === 'entities' || raw === 'relationships' || raw === 'review' || raw === 'systems') {
     return raw
   }
@@ -386,7 +386,7 @@ export function setStudioResultsStageSearchParams(
   return next
 }
 
-export function setNovelShellEntitySearchParams(
+function setNovelShellEntitySearchParams(
   current: URLSearchParams,
   entityId: number | null | undefined,
 ): URLSearchParams {
@@ -396,7 +396,7 @@ export function setNovelShellEntitySearchParams(
   return next
 }
 
-export function setNovelShellSystemSearchParams(
+function setNovelShellSystemSearchParams(
   current: URLSearchParams,
   systemId: number | null | undefined,
 ): URLSearchParams {

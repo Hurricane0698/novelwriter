@@ -23,8 +23,9 @@ const NovelShell = lazy(() => import('@/components/novel-shell/NovelShell').then
 
 const queryClient = new QueryClient()
 
-function HomeRouteFallback() {
-  return <div aria-hidden="true" className="min-h-[100svh]" />
+function RouteLoading() {
+  return <div role="status" className="p-8">{document.documentElement.lang.startsWith('en')
+    ? 'Loading NovWr…' : '正在加载 NovWr…'}</div>
 }
 
 /** Shared shell (animated background + navbar). */
@@ -74,15 +75,11 @@ export default function App() {
         <BrowserRouter>
           <PerformanceModeProvider>
             <AuthProvider>
-              <Suspense fallback={null}>
+              <Suspense fallback={<RouteLoading />}>
                 <Routes>
                   {/* Old-layout pages */}
                   <Route element={<Layout />}>
-                    <Route path="/" element={(
-                      <Suspense fallback={<HomeRouteFallback />}>
-                        <Home />
-                      </Suspense>
-                    )} />
+                    <Route path="/" element={<Home />} />
                     <Route element={<RequireHosted />}>
                       <Route path="/terms" element={<Terms />} />
                       <Route path="/privacy" element={<Privacy />} />

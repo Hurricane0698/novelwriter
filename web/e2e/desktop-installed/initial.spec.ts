@@ -1,7 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { waitForInitialNovelReady } from '../fixtures/novel-ready'
 import {
   INSTALLED_NOVEL_TITLE,
+  INSTALLED_EDITED_CHAPTER_CONTENT,
+  INSTALLED_ORIGIN,
   INSTALLED_STORM_TIMEOUT_MS,
   assertDesktopLanding,
   assertDesktopLoginRouteRemoved,
@@ -45,8 +47,19 @@ test('first installed launch imports a novel and verifies encrypted LLM config',
     page.getByTestId('studio-rail-chapters').getByRole('button', { name: /第\s*1\s*章/ }),
   ).toBeVisible({ timeout: INSTALLED_STORM_TIMEOUT_MS })
 
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  await page.getByTestId('chapter-editor-textarea').fill(INSTALLED_EDITED_CHAPTER_CONTENT)
+  const saved = page.waitForResponse(response => (
+    response.request().method() === 'PUT'
+    && new URL(response.url()).pathname === `/api/novels/${novelId}/chapters/1`
+  ))
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  expect((await saved).ok()).toBe(true)
+  await expect(page.getByTestId('chapter-editor-textarea')).toHaveCount(0)
+  await expect(page.getByText(INSTALLED_EDITED_CHAPTER_CONTENT, { exact: true })).toBeVisible()
+
   const state = { novelId, title: INSTALLED_NOVEL_TITLE }
-  await page.goto('/library')
+  await page.goto(`${INSTALLED_ORIGIN}/library`)
   await assertSeededDemoVisible(page)
   await assertUploadedNovelVisible(page, state)
   await saveDesktopLlmConfig(page)

@@ -444,7 +444,7 @@ def _format_entity_rows_for_prompt(
                 _prompt_text(
                     interaction_locale,
                     "entity_attribute_line",
-                    key=attr.key,
+                    attribute_key=attr.key,
                     surface=attr.surface[:200],
                     visibility=vis,
                 )

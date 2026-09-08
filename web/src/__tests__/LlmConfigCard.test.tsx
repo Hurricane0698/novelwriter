@@ -236,6 +236,24 @@ describe('LlmConfigCard desktop persistence', () => {
     await waitFor(() => expect(screen.getByTestId('llm-config-test')).toBeEnabled())
   })
 
+  it('does not present an inconclusive probe as unsupported JSON mode', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.getLlmConfig).mockResolvedValue(SAVED_CONFIG)
+    vi.mocked(api.testLlmConnection).mockResolvedValue({
+      code: 'llm_probe_inconclusive',
+      model: SAVED_CONFIG.model,
+      latency_ms: 20,
+      capabilities: { basic: true, stream: true, json_mode: false },
+    })
+    renderCard()
+    await waitFor(() => expect(screen.getByTestId('llm-config-test')).toBeEnabled())
+    await user.click(screen.getByTestId('llm-config-test'))
+    const result = await screen.findByTestId('llm-config-result')
+    expect(result).toHaveTextContent('未能确认')
+    expect(result).toHaveTextContent('重试')
+    expect(result).not.toHaveTextContent('不支持 JSON')
+  })
+
   it('locks every field and action while testing the saved config', async () => {
     const user = userEvent.setup()
     const deferred = createDeferred<LlmProbeResponse>()

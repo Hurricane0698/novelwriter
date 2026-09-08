@@ -27,14 +27,6 @@ vi.mock('@/components/detail/EmptyWorldOnboarding', () => ({
   ),
 }))
 
-vi.mock('@/components/world-model/shared/WorldGenerationDialog', () => ({
-  WorldGenerationDialog: ({
-    open,
-  }: {
-    open: boolean
-  }) => <div data-testid="world-generation-dialog">{open ? 'open' : 'closed'}</div>,
-}))
-
 describe('StudioOnboardingStage', () => {
   it('renders the preparation gate when preparation state is active', async () => {
     const user = userEvent.setup()
@@ -43,7 +35,6 @@ describe('StudioOnboardingStage', () => {
 
     render(
       <StudioOnboardingStage
-        novelId={7}
         preparationGate={{
           title: 'Preparing',
           description: 'Please wait',
@@ -58,7 +49,6 @@ describe('StudioOnboardingStage', () => {
         bootstrapPending={false}
         bootstrapError={null}
         chaptersAvailable
-        worldGenOpen={false}
         onWorldGenOpenChange={vi.fn()}
         onTriggerBootstrap={vi.fn()}
         onDismissWorldOnboarding={vi.fn()}
@@ -75,7 +65,7 @@ describe('StudioOnboardingStage', () => {
     expect(onDefer).toHaveBeenCalledTimes(1)
   })
 
-  it('renders the empty-world onboarding branch and wires dialog + callbacks', async () => {
+  it('renders the empty-world onboarding branch and wires callbacks', async () => {
     const user = userEvent.setup()
     const onWorldGenOpenChange = vi.fn()
     const onTriggerBootstrap = vi.fn()
@@ -83,13 +73,11 @@ describe('StudioOnboardingStage', () => {
 
     render(
       <StudioOnboardingStage
-        novelId={7}
         preparationGate={null}
         showWorldOnboarding
         bootstrapPending
         bootstrapError="bootstrap failed"
         chaptersAvailable
-        worldGenOpen
         onWorldGenOpenChange={onWorldGenOpenChange}
         onTriggerBootstrap={onTriggerBootstrap}
         onDismissWorldOnboarding={onDismissWorldOnboarding}
@@ -97,7 +85,6 @@ describe('StudioOnboardingStage', () => {
     )
 
     expect(screen.getByTestId('world-onboarding')).toBeInTheDocument()
-    expect(screen.getByTestId('world-generation-dialog')).toHaveTextContent('open')
 
     await user.click(screen.getByRole('button', { name: 'generate' }))
     await user.click(screen.getByRole('button', { name: 'bootstrap' }))

@@ -414,6 +414,7 @@ def test_desktop_probe_uses_saved_config_and_requires_origin(desktop_api, monkey
         base_url="https://probe.example/v1",
         api_key="probe-secret",
         timeout=10.0,
+        max_retries=0,
     )
 
 

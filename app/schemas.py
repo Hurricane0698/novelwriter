@@ -56,6 +56,7 @@ class LlmProbeResponse(BaseModel):
         "llm_probe_compatible",
         "llm_probe_connection_failed",
         "llm_probe_capability_mismatch",
+        "llm_probe_inconclusive",
     ]
     model: str
     latency_ms: int

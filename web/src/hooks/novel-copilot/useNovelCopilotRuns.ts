@@ -17,7 +17,7 @@ import { getLlmApiErrorMessage } from '@/lib/llmErrorMessages'
 // Run state container (shared across sessions)
 // ---------------------------------------------------------------------------
 
-export interface NovelCopilotRunsState {
+interface NovelCopilotRunsState {
   runsBySessionId: Record<string, CopilotRun[]>
   setRunsBySessionId: React.Dispatch<React.SetStateAction<Record<string, CopilotRun[]>>>
   timeoutIdsRef: React.MutableRefObject<Record<string, ReturnType<typeof setTimeout>>>
@@ -206,7 +206,7 @@ export function collectInvalidateQueryKeysForAppliedSuggestions(
   return [...keys.values()]
 }
 
-export function invalidateWorldQueriesForAppliedSuggestions(
+function invalidateWorldQueriesForAppliedSuggestions(
   queryClient: QueryClient,
   novelId: number,
   suggestions: CopilotRun['suggestions'],

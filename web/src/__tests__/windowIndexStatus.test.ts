@@ -8,6 +8,31 @@ import {
 import type { WindowIndexState } from '@/types/api'
 
 describe('windowIndexStatus', () => {
+  it('polls a readable large import until its deferred index handoff completes', () => {
+    const state: WindowIndexState = {
+      status: 'missing', revision: 1, built_revision: null, error: null,
+      readiness: 'degraded_ready',
+      capabilities: {
+        chapters_available: true, whole_book_index_available: false,
+        bootstrap_available: false, recent_fallback_only: true,
+      },
+      ingest: {
+        status: 'completed', stage: 'completed', size_tier: 'large',
+        source_bytes: 30 * 1024 * 1024, source_chars: 30 * 1024 * 1024,
+        chapter_count: 2, requested_language: null, resolved_language: 'en',
+        auto_index_plan: 'deferred', bootstrap_plan: 'defer_until_index',
+        readiness_mode: 'degraded_target', error_code: null, error: null,
+      },
+      job: null,
+    }
+    expect(getWindowIndexPollingInterval(state)).toBe(2000)
+    expect(getWindowIndexPollingInterval({ ...state, status: 'failed' })).toBe(false)
+    expect(getWindowIndexPollingInterval({
+      ...state, status: 'fresh', readiness: 'ready', built_revision: 1,
+      capabilities: { ...state.capabilities, whole_book_index_available: true, bootstrap_available: true },
+    })).toBe(false)
+  })
+
   it('treats accepting readiness as preparing without fallback', () => {
     const state: WindowIndexState = {
       status: 'missing',

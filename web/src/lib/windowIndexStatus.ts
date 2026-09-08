@@ -26,7 +26,19 @@ export function isWindowIndexRebuilding(state: WindowIndexState | null | undefin
 export function getWindowIndexPollingInterval(
   state: WindowIndexState | null | undefined,
 ): number | false {
-  return isWindowIndexRebuilding(state) ? WINDOW_INDEX_ACTIVE_POLL_INTERVAL_MS : false
+  // Large imports become readable before their deferred index is built. Keep
+  // refreshing that handoff even though readiness already says degraded_ready.
+  const deferredIndexPending = (
+    state?.readiness === 'degraded_ready'
+    && state.ingest?.bootstrap_plan === 'defer_until_index'
+    && state.ingest.status !== 'failed'
+    && !state.capabilities.whole_book_index_available
+    && state.status !== 'failed'
+    && state.job?.status !== 'failed'
+  )
+  return isWindowIndexRebuilding(state) || deferredIndexPending
+    ? WINDOW_INDEX_ACTIVE_POLL_INTERVAL_MS
+    : false
 }
 
 function resolveWindowIndexStatusMeta(

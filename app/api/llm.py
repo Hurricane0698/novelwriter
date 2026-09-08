@@ -45,6 +45,25 @@ _LLM_REQUEST_INVALID_MESSAGE = "LLM request validation failed."
 _PROBE_COMPATIBLE_CODE = "llm_probe_compatible"
 _PROBE_CONNECTION_FAILED_CODE = "llm_probe_connection_failed"
 _PROBE_CAPABILITY_MISMATCH_CODE = "llm_probe_capability_mismatch"
+_PROBE_INCONCLUSIVE_CODE = "llm_probe_inconclusive"
+_JSON_PROBE_TOKEN_BUDGETS = (256, 1024)
+
+
+class _ProbeInconclusiveError(ValueError):
+    """The response did not establish whether the requested capability works."""
+
+
+def _capability_unsupported(exc: Exception, names: tuple[str, ...]) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int) and status_code not in (400, 404, 422):
+        return False
+    message = str(exc).casefold()
+    return any(name in message for name in names) and any(
+        marker in message for marker in (
+            "not supported", "unsupported", "does not support", "unknown parameter",
+            "unknown field", "unrecognized request argument",
+        )
+    )
 
 
 def _validation_error_targets_api_key(exc: RequestValidationError) -> bool:
@@ -196,7 +215,9 @@ def remove_desktop_llm_config(request: Request) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def _probe_stream_support(client: AsyncOpenAI, model: str) -> None:
+async def _probe_stream_support(
+    client: AsyncOpenAI, model: str, record_usage: Callable[[object], None],
+) -> None:
     request_kwargs = {
         "model": model,
         "messages": [{"role": "user", "content": "Reply with exactly: ok"}],
@@ -213,21 +234,36 @@ async def _probe_stream_support(client: AsyncOpenAI, model: str) -> None:
             raise
         stream = await client.chat.completions.create(**request_kwargs)
 
-    async for _chunk in stream:
-        pass
+    async for chunk in stream:
+        record_usage(chunk)
 
 
-async def _probe_json_mode_support(client: AsyncOpenAI, model: str) -> None:
-    response = await client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": 'Return a JSON object: {"ok": true}'}],
-        max_tokens=32,
-        response_format={"type": "json_object"},
-    )
-    raw = response.choices[0].message.content or ""
-    parsed = json.loads(raw)
-    if not isinstance(parsed, dict):
-        raise ValueError("JSON mode response is not an object")
+async def _probe_json_mode_support(
+    client: AsyncOpenAI, model: str, record_usage: Callable[[object], None],
+) -> None:
+    # Reasoning consumes the completion budget even when content is still empty.
+    # Retry only an explicit truncation, with a bounded larger budget.
+    for budget in _JSON_PROBE_TOKEN_BUDGETS:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": 'Return a JSON object: {"ok": true}'}],
+            max_tokens=budget,
+            response_format={"type": "json_object"},
+        )
+        record_usage(response)
+        if not response.choices:
+            raise _ProbeInconclusiveError("JSON probe returned no choices")
+        choice = response.choices[0]
+        if choice.finish_reason == "length":
+            continue
+        try:
+            parsed = json.loads(choice.message.content or "")
+        except (ValueError, TypeError):
+            raise _ProbeInconclusiveError("JSON probe returned unusable content") from None
+        if not isinstance(parsed, dict):
+            raise _ProbeInconclusiveError("JSON probe did not return an object")
+        return
+    raise _ProbeInconclusiveError("JSON probe exhausted its completion budget")
 
 
 @router.post("/test", response_model=LlmProbeResponse)
@@ -250,11 +286,25 @@ async def test_llm_connection(
         stream=False,
         json_mode=False,
     )
+
+    def record_usage(response: object) -> None:
+        usage = getattr(response, "usage", None)
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        if not isinstance(prompt_tokens, int) or not isinstance(completion_tokens, int):
+            return
+        _record_usage(
+            config.model, prompt_tokens, completion_tokens,
+            endpoint="/api/llm/test", node_name="llm_test",
+            user_id=getattr(_user, "id", None), billing_source=billing_source,
+        )
+
     try:
         client = AsyncOpenAI(
             base_url=config.base_url,
             api_key=config.api_key,
             timeout=10.0,
+            max_retries=0,
         )
         response = await client.chat.completions.create(
             model=config.model,
@@ -262,24 +312,7 @@ async def test_llm_connection(
             max_tokens=1,
         )
         capabilities.basic = True
-        usage = getattr(response, "usage", None)
-        if usage is not None:
-            try:
-                prompt_tokens = int(usage.prompt_tokens)
-                completion_tokens = int(usage.completion_tokens)
-            except (TypeError, ValueError):
-                pass
-            else:
-                _record_usage(
-                    config.model,
-                    prompt_tokens,
-                    completion_tokens,
-                    endpoint="/api/llm/test",
-                    node_name="llm_test",
-                    user_id=getattr(_user, "id", None),
-                    billing_source=billing_source,
-                )
-        latency_ms = round((time.perf_counter() - start) * 1000)
+        record_usage(response)
     except Exception:
         return LlmProbeResponse(
             code=_PROBE_CONNECTION_FAILED_CODE,
@@ -288,26 +321,30 @@ async def test_llm_connection(
             capabilities=capabilities,
         )
 
+    inconclusive = False
     try:
-        await _probe_stream_support(client, config.model)
+        await _probe_stream_support(client, config.model, record_usage)
         capabilities.stream = True
-    except Exception:
-        pass
+    except Exception as exc:
+        inconclusive = not _capability_unsupported(exc, ("stream",))
 
     try:
-        await _probe_json_mode_support(client, config.model)
+        await _probe_json_mode_support(client, config.model, record_usage)
         capabilities.json_mode = True
-    except Exception:
-        pass
+    except Exception as exc:
+        inconclusive = inconclusive or not _capability_unsupported(
+            exc, ("response_format", "json_object", "json mode"),
+        )
 
     code = (
         _PROBE_COMPATIBLE_CODE
         if capabilities.stream and capabilities.json_mode
+        else _PROBE_INCONCLUSIVE_CODE if inconclusive
         else _PROBE_CAPABILITY_MISMATCH_CODE
     )
     return LlmProbeResponse(
         code=code,
         model=config.model,
-        latency_ms=latency_ms,
+        latency_ms=round((time.perf_counter() - start) * 1000),
         capabilities=capabilities,
     )

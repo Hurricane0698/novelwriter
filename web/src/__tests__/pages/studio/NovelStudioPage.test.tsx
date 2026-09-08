@@ -175,7 +175,9 @@ vi.mock('@/components/detail/ChapterEditor', () => ({
 }))
 
 vi.mock('@/components/detail/EmptyWorldOnboarding', () => ({
-  EmptyWorldOnboarding: () => <div data-testid="world-onboarding" />,
+  EmptyWorldOnboarding: ({ onGenerate }: { onGenerate: () => void }) => (
+    <div data-testid="world-onboarding"><button onClick={onGenerate}>generate-world</button></div>
+  ),
 }))
 
 vi.mock('@/components/world-model/shared/WorldGenerationDialog', () => ({
@@ -529,6 +531,21 @@ describe('NovelStudioPage', () => {
     expect(screen.getByText('归来')).toBeInTheDocument()
     expect(screen.queryByText('第一章内容')).not.toBeInTheDocument()
     expect(mockGetChapter).toHaveBeenCalledWith(7, 3)
+  })
+
+  it('keeps the generation dialog alive when returned world data removes onboarding', async () => {
+    mockUseWorldEntities.mockReturnValue({ data: [], isLoading: false })
+    const { queryClient } = renderWithStudioShell('/novel/7')
+    await userEvent.click(await screen.findByRole('button', { name: 'generate-world' }))
+    expect(screen.getByTestId('mock-world-gen-success')).toBeInTheDocument()
+
+    mockUseWorldEntities.mockReturnValue({ data: [{ id: 1, name: '生成的人物' }], isLoading: false })
+    act(() => {
+      queryClient.setQueryData(novelKeys.detail(7), { ...buildNovelResponse(), title: 'Generated world' })
+    })
+
+    await waitFor(() => expect(screen.queryByTestId('world-onboarding')).not.toBeInTheDocument())
+    expect(screen.getByTestId('mock-world-gen-success')).toBeInTheDocument()
   })
 
   it('shows a preparation gate while the upload ingest pipeline is still running', async () => {

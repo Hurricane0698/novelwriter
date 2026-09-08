@@ -14,6 +14,11 @@ data/*
 !data/worldpacks/
 !data/worldpacks/**
 .env
+.env.*
+**/.env
+**/.env.*
+**/llm-config.json
+**/runtime-secret.json
 .pytest_cache/
 .mypy_cache/
 *.egg-info/
@@ -21,3 +26,17 @@ data/*
 tests/
 uploads/
 Sync/
+
+# Local review material and generated browser output are not build inputs.
+docs/
+reports/
+drafts/
+logs/
+exports/
+web/dist/
+web/playwright-report/
+web/test-results/
+test-results/
+web/*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts

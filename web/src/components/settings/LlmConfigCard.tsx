@@ -109,6 +109,11 @@ function formatLlmProbeResult(response: LlmProbeResponse, locale: UiLocale): Res
                 ok: false,
                 message: translateUiMessage(locale, 'llm.result.providerConnectionFailed'),
             }
+        case 'llm_probe_inconclusive':
+            return {
+                ok: false,
+                message: translateUiMessage(locale, 'llm.result.probeInconclusive'),
+            }
         case 'llm_probe_capability_mismatch':
             if (!response.capabilities.stream && !response.capabilities.json_mode) {
                 return {
