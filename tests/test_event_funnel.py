@@ -1,11 +1,13 @@
 """Outcome accounting must survive repeated events and historical metadata."""
 
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.core.event_funnel import build_hosted_beta_funnel_report
+from app.core import event_funnel
 from app.database import Base
 from app.models import Novel, User, UserEvent
 
@@ -56,7 +58,9 @@ def test_repeated_events_preserve_first_outcome_times_and_weighted_counts():
                 )
             db.commit()
 
-            report = build_hosted_beta_funnel_report(db)
+            with patch.object(event_funnel, "_new_project", wraps=event_funnel._new_project) as factory:
+                report = build_hosted_beta_funnel_report(db)
+            assert factory.call_count == 1
             project = report["project_funnel_rows"][0]
             assert (
                 project["first_generation_at"]
@@ -81,3 +85,4 @@ def test_repeated_events_preserve_first_outcome_times_and_weighted_counts():
             assert report["funnel_summary"]["unknown_legacy_event"]["total"] == 1
     finally:
         engine.dispose()
+

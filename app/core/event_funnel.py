@@ -309,7 +309,10 @@ def _summarize_events(
             continue
 
         key = (int(event_row.user_id), int(event_row.novel_id))
-        project = projects.setdefault(key, _new_project(event_row))
+        project = projects.get(key)
+        if project is None:
+            project = _new_project(event_row)
+            projects[key] = project
         _apply_project_event(project, event_row, meta)
 
     for project in projects.values():
@@ -347,14 +350,14 @@ def _summarize_segments(projects: list[dict[str, Any]]) -> list[dict[str, Any]]:
     dimensions = ("channel", "invite_batch", "entry_path", "project_start_mode")
     for project in projects:
         key = tuple(str(project.get(name) or "unknown") for name in dimensions)
-        segment = segments.setdefault(
-            key,
-            {
+        segment = segments.get(key)
+        if segment is None:
+            segment = {
                 **dict(zip(dimensions, key)),
                 "projects": 0,
                 **dict.fromkeys(_SEGMENT_OUTCOMES, 0),
-            },
-        )
+            }
+            segments[key] = segment
         segment["projects"] += 1
         for metric, field in _SEGMENT_OUTCOMES.items():
             segment[metric] += int(bool(project[field]))
