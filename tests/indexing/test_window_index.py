@@ -1,4 +1,6 @@
 import msgpack
+import pytest
+from unittest.mock import patch
 
 from app.core.indexing.window_index import NovelIndex, WindowRef
 
@@ -79,6 +81,34 @@ def test_window_index_from_msgpack_keeps_legacy_payload_compatibility():
     restored = NovelIndex.from_msgpack(legacy_payload)
 
     assert set(restored.window_entities[1]) == {"云澈", "楚月仙"}
+
+
+@pytest.mark.parametrize("encoding", ["msgpack", "json"])
+def test_state_proto_compatibility_decodes_payload_once(monkeypatch, encoding):
+    import json
+    from app.core.indexing import state_proto_runtime, window_index
+    from app.core.indexing.state_proto_model import CoverageRepresentative, Segment, TargetSpec
+
+    original = state_proto_runtime.StateProtoIndex(
+        language="zh",
+        targets={"hero": TargetSpec(id="hero", canonical_name="云澈", aliases=("小澈",))},
+        segments=[Segment(1, 10, 1, 0, 120, 0)],
+        coverage_reps=[CoverageRepresentative("hero", 0, 1, 3.0)],
+    )
+    if encoding == "json":
+        monkeypatch.setattr(state_proto_runtime, "msgpack", None)
+        monkeypatch.setattr(window_index, "msgpack", None)
+        codec, method = json, "loads"
+    else:
+        codec, method = msgpack, "unpackb"
+    payload = original.to_msgpack()
+
+    with patch.object(codec, method, wraps=getattr(codec, method)) as decode:
+        restored = NovelIndex.from_msgpack(payload)
+
+    assert restored == original.to_window_index_compat()
+    assert restored.window_entities[1] == {"云澈", "小澈"}
+    assert decode.call_count == 1
 
 
 def test_find_entity_passages_sorted_by_entity_count():

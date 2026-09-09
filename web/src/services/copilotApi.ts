@@ -338,11 +338,11 @@ export const copilotApi = {
       body: JSON.stringify(data),
     }),
 
-  pollRun: (novelId: number, sessionId: string, runId: string) =>
-    requestParsed(`/api/novels/${novelId}/world/copilot/sessions/${sessionId}/runs/${runId}`, parseCopilotRunResponse, {}),
+  pollRun: (novelId: number, sessionId: string, runId: string, signal?: AbortSignal) =>
+    requestParsed(`/api/novels/${novelId}/world/copilot/sessions/${sessionId}/runs/${runId}`, parseCopilotRunResponse, { signal }),
 
-  listRuns: (novelId: number, sessionId: string) =>
-    requestParsed(`/api/novels/${novelId}/world/copilot/sessions/${sessionId}/runs`, parseCopilotRunListResponse, {}),
+  listRuns: (novelId: number, sessionId: string, signal?: AbortSignal) =>
+    requestParsed(`/api/novels/${novelId}/world/copilot/sessions/${sessionId}/runs`, parseCopilotRunListResponse, { signal }),
 
   applySuggestions: (novelId: number, sessionId: string, runId: string, suggestionIds: string[]) =>
     requestParsed(`/api/novels/${novelId}/world/copilot/sessions/${sessionId}/runs/${runId}/apply`, parseCopilotApplyResponse, {

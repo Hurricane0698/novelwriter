@@ -1,14 +1,35 @@
-import { useEffect, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { worldApi, ApiError } from '@/services/api'
 import { worldKeys } from './keys'
 import { getWaitingPollInterval } from '@/lib/windowIndexStatus'
-import type { BootstrapStatus, BootstrapTriggerRequest } from '@/types/api'
+import { isBootstrapStatusRunning } from '@/lib/bootstrapStatus'
+import type { BootstrapJobResponse, BootstrapTriggerRequest } from '@/types/api'
 
-const RUNNING_STATUSES: BootstrapStatus[] = ['pending', 'tokenizing', 'extracting', 'windowing', 'refining']
+// Query identity shares ownership across observers and remounts, while cache eviction
+// releases the stamp. New terminal revisions still refresh the same novel.
+const terminalRefreshes = new WeakMap<object, string>()
 
-function isRunning(status: BootstrapStatus): boolean {
-  return RUNNING_STATUSES.includes(status)
+function refreshTerminalWorldQueries(qc: QueryClient, novelId: number) {
+  const query = qc.getQueryCache().find<BootstrapJobResponse | null>({
+    queryKey: worldKeys.bootstrapStatus(novelId),
+    exact: true,
+  })
+  if (!query) return
+
+  // Read the current cache, not a potentially superseded observer render.
+  const data = query.state.data
+  if (!data || isBootstrapStatusRunning(data.status)) {
+    terminalRefreshes.delete(query)
+    return
+  }
+  const revision = `${data.job_id}:${data.status}:${data.updated_at}`
+  if (terminalRefreshes.get(query) === revision) return
+  terminalRefreshes.set(query, revision)
+
+  void qc.invalidateQueries({ queryKey: worldKeys.entities(novelId) })
+  void qc.invalidateQueries({ queryKey: worldKeys.relationships(novelId) })
+  void qc.invalidateQueries({ queryKey: worldKeys.systems(novelId) })
 }
 
 interface UseBootstrapStatusOptions {
@@ -33,25 +54,14 @@ export function useBootstrapStatus(novelId: number, options: UseBootstrapStatusO
     refetchInterval: (query) => {
       const data = query.state.data
       if (data?.status === 'pending') return getWaitingPollInterval(query.state.dataUpdateCount)
-      if (data && isRunning(data.status)) return 2000
+      if (data && isBootstrapStatusRunning(data.status)) return 2000
       if (options.refetchWhenMissing && data === null) return getWaitingPollInterval(query.state.dataUpdateCount)
       return false
     },
   })
 
-  const lastTerminalRefreshKeyRef = useRef<string | null>(null)
-
   useEffect(() => {
-    const data = bootstrapQuery.data
-    if (!data || isRunning(data.status)) return
-
-    const refreshKey = `${data.job_id}:${data.status}:${data.updated_at}`
-    if (lastTerminalRefreshKeyRef.current === refreshKey) return
-    lastTerminalRefreshKeyRef.current = refreshKey
-
-    qc.invalidateQueries({ queryKey: worldKeys.entities(novelId) })
-    qc.invalidateQueries({ queryKey: worldKeys.relationships(novelId) })
-    qc.invalidateQueries({ queryKey: worldKeys.systems(novelId) })
+    refreshTerminalWorldQueries(qc, novelId)
   }, [bootstrapQuery.data, novelId, qc])
 
   return bootstrapQuery
@@ -63,8 +73,11 @@ export function useTriggerBootstrap(novelId: number) {
     mutationFn: (payload: BootstrapTriggerRequest) => worldApi.triggerBootstrap(novelId, payload),
     onSuccess: (data) => {
       qc.setQueryData(worldKeys.bootstrapStatus(novelId), data)
-      qc.invalidateQueries({ queryKey: worldKeys.entities(novelId) })
-      qc.invalidateQueries({ queryKey: worldKeys.relationships(novelId) })
+      refreshTerminalWorldQueries(qc, novelId)
+      if (isBootstrapStatusRunning(data.status)) {
+        void qc.invalidateQueries({ queryKey: worldKeys.entities(novelId) })
+        void qc.invalidateQueries({ queryKey: worldKeys.relationships(novelId) })
+      }
     },
   })
 }

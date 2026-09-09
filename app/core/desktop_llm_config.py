@@ -4,6 +4,7 @@ import base64
 import ctypes
 from ctypes import wintypes
 from dataclasses import dataclass, field
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -42,6 +43,22 @@ class DataProtector(Protocol):
     def protect(self, plaintext: bytes) -> bytes: ...
 
     def unprotect(self, ciphertext: bytes) -> bytes: ...
+
+
+class DesktopLlmConfigStorage(Protocol):
+    def load(self) -> StoredDesktopLlmConfig | None: ...
+
+    def save(self, config: StoredDesktopLlmConfig) -> None: ...
+
+    def delete(self) -> None: ...
+
+
+class KeychainStorage(Protocol):
+    def read(self, account: str) -> bytes | None: ...
+
+    def write(self, account: str, payload: bytes) -> None: ...
+
+    def delete(self, account: str) -> None: ...
 
 
 class _DataBlob(ctypes.Structure):
@@ -153,38 +170,18 @@ class WindowsDataProtector:
                 self._kernel32.LocalFree(ctypes.cast(description, wintypes.HLOCAL))
 
 
-class DesktopLlmConfigStore:
-    def __init__(self, path: Path, *, protector: DataProtector):
-        self.path = Path(path)
-        self._protector = protector
+class _ConfigPayload:
+    """The versioned plaintext contract shared by OS-protected stores."""
 
-    def load(self) -> StoredDesktopLlmConfig | None:
+    @classmethod
+    def _decode(cls, raw: bytes) -> StoredDesktopLlmConfig:
         try:
-            raw = self.path.read_bytes()
-        except FileNotFoundError:
-            return None
-        except OSError as exc:
-            raise DesktopLlmConfigStoreError(
-                code="desktop_llm_config_read_failed",
-                message=f"Unable to read the desktop LLM configuration at {self.path}.",
-            ) from exc
-
-        try:
-            envelope = json.loads(raw)
-            if not isinstance(envelope, dict):
-                raise ValueError("envelope must be an object")
-            if envelope.get("version") != DESKTOP_LLM_CONFIG_SCHEMA_VERSION:
-                raise ValueError("unsupported envelope version")
-            encoded = envelope.get("ciphertext")
-            if not isinstance(encoded, str) or not encoded:
-                raise ValueError("ciphertext is missing")
-            ciphertext = base64.b64decode(encoded, validate=True)
-            payload = json.loads(self._protector.unprotect(ciphertext))
+            payload = json.loads(raw)
             if not isinstance(payload, dict):
                 raise ValueError("payload must be an object")
             if payload.get("version") != DESKTOP_LLM_CONFIG_SCHEMA_VERSION:
                 raise ValueError("unsupported payload version")
-            config = self._normalize_config(
+            return cls._normalize_config(
                 StoredDesktopLlmConfig(
                     base_url=str(payload.get("base_url") or ""),
                     api_key=cast(str, payload.get("api_key")),
@@ -198,8 +195,6 @@ class DesktopLlmConfigStore:
                 code="desktop_llm_config_unreadable",
                 message="The saved desktop LLM configuration is invalid or unreadable.",
             ) from exc
-
-        return config
 
     @staticmethod
     def _normalize_config(config: StoredDesktopLlmConfig) -> StoredDesktopLlmConfig:
@@ -236,9 +231,10 @@ class DesktopLlmConfigStore:
             model=model,
         )
 
-    def save(self, config: StoredDesktopLlmConfig) -> None:
-        normalized = self._normalize_config(config)
-        payload = json.dumps(
+    @classmethod
+    def _encode(cls, config: StoredDesktopLlmConfig) -> bytes:
+        normalized = cls._normalize_config(config)
+        return json.dumps(
             {
                 "version": DESKTOP_LLM_CONFIG_SCHEMA_VERSION,
                 "base_url": normalized.base_url,
@@ -248,7 +244,47 @@ class DesktopLlmConfigStore:
             ensure_ascii=True,
             separators=(",", ":"),
         ).encode("utf-8")
-        ciphertext = self._protector.protect(payload)
+
+
+class DesktopLlmConfigStore(_ConfigPayload):
+    """Version-1 encrypted file store; Windows DPAPI format stays unchanged."""
+
+    def __init__(self, path: Path, *, protector: DataProtector):
+        self.path = Path(path)
+        self._protector = protector
+
+    def load(self) -> StoredDesktopLlmConfig | None:
+        try:
+            raw = self.path.read_bytes()
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise DesktopLlmConfigStoreError(
+                code="desktop_llm_config_read_failed",
+                message=f"Unable to read the desktop LLM configuration at {self.path}.",
+            ) from exc
+
+        try:
+            envelope = json.loads(raw)
+            if not isinstance(envelope, dict):
+                raise ValueError("envelope must be an object")
+            if envelope.get("version") != DESKTOP_LLM_CONFIG_SCHEMA_VERSION:
+                raise ValueError("unsupported envelope version")
+            encoded = envelope.get("ciphertext")
+            if not isinstance(encoded, str) or not encoded:
+                raise ValueError("ciphertext is missing")
+            ciphertext = base64.b64decode(encoded, validate=True)
+            return self._decode(self._protector.unprotect(ciphertext))
+        except DesktopLlmConfigStoreError:
+            raise
+        except Exception as exc:
+            raise DesktopLlmConfigStoreError(
+                code="desktop_llm_config_unreadable",
+                message="The saved desktop LLM configuration is invalid or unreadable.",
+            ) from exc
+
+    def save(self, config: StoredDesktopLlmConfig) -> None:
+        ciphertext = self._protector.protect(self._encode(config))
         serialized = (
             json.dumps(
                 {
@@ -294,3 +330,48 @@ class DesktopLlmConfigStore:
                 code="desktop_llm_config_delete_failed",
                 message=f"Unable to delete the desktop LLM configuration at {self.path}.",
             ) from exc
+
+
+class MacKeychainLlmConfigStore(_ConfigPayload):
+    """One atomic Keychain item per absolute desktop configuration path.
+
+    The path is a stable profile identifier; no configuration file is written.
+    Saving, replacing and deleting operate on the whole protected payload, so
+    a failed write cannot leave credentials and ordinary-file metadata split.
+    """
+
+    def __init__(self, path: Path, *, keychain: KeychainStorage | None = None):
+        self.path = Path(path).expanduser()
+        if not self.path.is_absolute():
+            raise DesktopLlmConfigStoreError(
+                code="desktop_llm_config_path_invalid",
+                message="Desktop LLM configuration path must be absolute.",
+            )
+        canonical_path = str(self.path.resolve())
+        self.account = "config-v1:" + hashlib.sha256(os.fsencode(canonical_path)).hexdigest()
+        if keychain is None:
+            from app.core.macos_keychain import MacKeychain
+
+            keychain = MacKeychain()
+        self._keychain = keychain
+
+    def load(self) -> StoredDesktopLlmConfig | None:
+        payload = self._keychain.read(self.account)
+        return None if payload is None else self._decode(payload)
+
+    def save(self, config: StoredDesktopLlmConfig) -> None:
+        self._keychain.write(self.account, self._encode(config))
+
+    def delete(self) -> None:
+        """Remove only this profile's item; never enumerate other credentials."""
+        self._keychain.delete(self.account)
+
+
+def create_desktop_llm_config_store(
+    path: Path, *, protector: DataProtector | None = None,
+) -> DesktopLlmConfigStorage:
+    if protector is not None:
+        return DesktopLlmConfigStore(path, protector=protector)
+    if sys.platform == "darwin":
+        return MacKeychainLlmConfigStore(path)
+    return DesktopLlmConfigStore(path, protector=WindowsDataProtector())

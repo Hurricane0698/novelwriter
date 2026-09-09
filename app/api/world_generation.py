@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.world_support import run_world_operation_async
 from app.core.auth import get_current_user_or_default
@@ -27,12 +27,17 @@ async def generate_world_from_text(
     current_user: User = Depends(get_current_user_or_default),
     llm_config: ResolvedLlmConfig = Depends(get_llm_config),
 ):
+    # The route owns the dependency session. Snapshot authentication, then end
+    # its read transaction before handing off to independently owned sessions.
+    user_id = int(current_user.id)
+    session_factory = sessionmaker(bind=db.get_bind(), autoflush=False)
+    db.rollback()
     return await run_world_operation_async(
         generate_world_from_text_use_case,
         novel_id,
         text=body.text,
-        db=db,
-        current_user=current_user,
+        session_factory=session_factory,
+        user_id=user_id,
         llm_config=llm_config,
         request_id=getattr(getattr(request, "state", None), "request_id", None),
     )

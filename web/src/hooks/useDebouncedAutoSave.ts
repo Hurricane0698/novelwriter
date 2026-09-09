@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { registerDesktopSave } from '@/lib/desktopExit'
 
 export type AutoSaveStatus = 'idle' | 'unsaved' | 'saved'
 
@@ -15,7 +16,8 @@ export function useDebouncedAutoSave<T>({
   }, [save])
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingRef = useRef<T | null>(null)
+  const pendingRef = useRef<{ value: T; save: (value: T) => Promise<void>; generation: number } | null>(null)
+  const inFlightRef = useRef<Promise<void> | null>(null)
   const [status, setStatus] = useState<AutoSaveStatus>('idle')
 
   const saveSeqRef = useRef(0)
@@ -26,22 +28,6 @@ export function useDebouncedAutoSave<T>({
     timerRef.current = null
   }, [])
 
-  const runSave = useCallback(async (value: T) => {
-    const seq = ++saveSeqRef.current
-    try {
-      await saveRef.current(value)
-      // Only mark as saved if nothing newer is pending.
-      if (seq === saveSeqRef.current && pendingRef.current == null) {
-        setStatus('saved')
-      }
-    } catch (err) {
-      if (seq === saveSeqRef.current) {
-        setStatus('unsaved')
-      }
-      throw err
-    }
-  }, [])
-
   const cancel = useCallback(() => {
     clearTimer()
     pendingRef.current = null
@@ -50,16 +36,36 @@ export function useDebouncedAutoSave<T>({
     setStatus('idle')
   }, [clearTimer])
 
-  const flush = useCallback(async () => {
+  const flush = useCallback((): Promise<void> => {
     clearTimer()
-    const pending = pendingRef.current
-    if (pending == null) return
-    pendingRef.current = null
-    await runSave(pending)
-  }, [clearTimer, runSave])
+    if (inFlightRef.current) return inFlightRef.current
+    // One writer per editor: an older slow response must never overwrite newer
+    // text. Every flush joins the same drain, including saves already in flight.
+    const drain = async () => {
+      while (pendingRef.current !== null) {
+        const pending = pendingRef.current
+        pendingRef.current = null
+        try {
+          await pending.save(pending.value)
+        } catch (error) {
+          if (pending.generation === saveSeqRef.current) {
+            pendingRef.current ??= pending // Keep failed text available for retry.
+            setStatus('unsaved')
+          }
+          throw error
+        }
+        if (pending.generation === saveSeqRef.current && pendingRef.current === null) {
+          setStatus('saved')
+        }
+      }
+    }
+    const promise = drain().finally(() => { inFlightRef.current = null })
+    inFlightRef.current = promise
+    return promise
+  }, [clearTimer])
 
   const schedule = useCallback((value: T) => {
-    pendingRef.current = value
+    pendingRef.current = { value, save: saveRef.current, generation: saveSeqRef.current }
     setStatus('unsaved')
     clearTimer()
     timerRef.current = setTimeout(() => {
@@ -70,11 +76,12 @@ export function useDebouncedAutoSave<T>({
   }, [clearTimer, delayMs, flush])
 
   const saveNow = useCallback(async (value: T) => {
-    clearTimer()
-    pendingRef.current = null
-    await runSave(value)
-  }, [clearTimer, runSave])
+    pendingRef.current = { value, save: saveRef.current, generation: saveSeqRef.current }
+    setStatus('unsaved')
+    await flush()
+  }, [flush])
 
+  useEffect(() => registerDesktopSave(flush), [flush])
   useEffect(() => () => clearTimer(), [clearTimer])
 
   return { status, schedule, flush, saveNow, cancel }

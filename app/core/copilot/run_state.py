@@ -16,6 +16,7 @@ from app.core.ai_client import AIClient
 from app.core.llm_config import ResolvedLlmConfig
 from app.core.auth import settle_quota_reservation
 from app.core.copilot.messages import CopilotTextKey, get_copilot_text
+from app.core.copilot.sync_runtime import check_sync_cancelled
 from app.core.job_runtime import (
     is_stale_running_job,
     resolve_lease_expiry,
@@ -212,24 +213,27 @@ def claim_run_for_execution(
 ) -> CopilotRun | None:
     """Claim a queued run for one worker and move it to running."""
     run = db.query(CopilotRun).filter(CopilotRun.run_id == run_id).first()
+    check_sync_cancelled()
     if run is None:
         return None
     if run.status != "queued":
         return None
+    interaction_locale = resolve_run_interaction_locale(run)
+    check_sync_cancelled()
     if is_stale_run(run):
         interrupt_run(
             run,
-            message=copilot_run_interrupted_message(
-                resolve_run_interaction_locale(run)
-            ),
+            message=copilot_run_interrupted_message(interaction_locale),
             now=utcnow_naive(),
         )
         settle_run_quota(db, run)
+        check_sync_cancelled()
         db.commit()
         return None
 
     settings = run_settings()
     now = utcnow_naive()
+    check_sync_cancelled()
     claimed = (
         db.query(CopilotRun)
         .filter(CopilotRun.run_id == run_id, CopilotRun.status == "queued")
@@ -248,9 +252,7 @@ def claim_run_for_execution(
                         "step_id": "session_start",
                         "kind": "tool_mode",
                         "status": "running",
-                        "summary": running_trace_summary(
-                            resolve_run_interaction_locale(run)
-                        ),
+                        "summary": running_trace_summary(interaction_locale),
                     }
                 ],
                 CopilotRun.updated_at: now,
@@ -261,6 +263,10 @@ def claim_run_for_execution(
     if claimed != 1:
         db.rollback()
         return None
+    # UPDATE may have waited on a database lock. Cancellation before commit
+    # leaves it in this Session's transaction so the caller can roll it back.
+    # Once commit starts, the channel drains it; committed work is not undone.
+    check_sync_cancelled()
     db.commit()
     run = db.query(CopilotRun).filter(CopilotRun.run_id == run_id).first()
     if run is None:
@@ -294,8 +300,10 @@ def fail_run(
     if worker_id is not None and run.lease_owner != worker_id:
         logger.warning("Skipping fail_run for %s after lease loss", run.run_id)
         return
+    check_sync_cancelled()
     mark_run_error(run, message=message, now=utcnow_naive())
     settle_run_quota(db, run)
+    check_sync_cancelled()
     db.commit()
 
 

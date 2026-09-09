@@ -9,6 +9,9 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import './index.css'
+import { installDesktopExit } from './lib/desktopExit'
+
+installDesktopExit()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>

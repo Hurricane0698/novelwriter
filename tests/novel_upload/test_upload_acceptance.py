@@ -374,7 +374,7 @@ def test_get_novel_exposes_window_index_lifecycle_contract(
     }
     assert len(queries["novels"]) == 1
     assert "window_index as novels_window_index" not in queries["novels"][0]
-    assert "window_index is not null" in queries["novels"][0]
+    assert "length(novels.window_index)" in queries["novels"][0]
 
 
 def test_get_novel_exposes_window_index_job_metrics_after_success(
@@ -488,7 +488,7 @@ def test_list_novels_batches_window_index_job_reads(
     assert query_counts["derived_asset_jobs"] == 1
     assert len(query_counts["novels"]) == 1
     assert "window_index as novels_window_index" not in query_counts["novels"][0]
-    assert "window_index is not null" in query_counts["novels"][0]
+    assert "length(novels.window_index)" in query_counts["novels"][0]
     assert all(item["is_seeded_demo"] is False for item in payload)
     assert {item["window_index"]["job"]["status"] for item in payload} == {"queued"}
 

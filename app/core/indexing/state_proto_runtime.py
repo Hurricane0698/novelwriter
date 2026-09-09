@@ -191,6 +191,21 @@ class StateProtoIndex:
         else:
             payload = json.loads(data.decode("utf-8"))
 
+        return cls.from_payload(
+            payload,
+            chapter_texts=chapter_texts,
+            chapter_text_resolver=chapter_text_resolver,
+        )
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: Mapping[str, Any],
+        *,
+        chapter_texts: Mapping[int, str] | None = None,
+        chapter_text_resolver: Callable[[int], str] | None = None,
+    ) -> "StateProtoIndex":
+        """Build from a decoded payload, including legacy and chapter-sharded formats."""
         targets = {
             str(row[0]): TargetSpec(
                 id=str(row[0]),

@@ -90,7 +90,8 @@ if [[ "$INSTALL_DEV" == false ]]; then
   sync_cmd+=(--no-dev)
 fi
 
-for group in "${SYNC_GROUPS[@]}"; do
+# Bash 3.2 (the macOS system shell) treats an empty array as unset under -u.
+for group in ${SYNC_GROUPS[@]+"${SYNC_GROUPS[@]}"}; do
   sync_cmd+=(--group "$group")
 done
 

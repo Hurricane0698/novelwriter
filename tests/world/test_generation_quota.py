@@ -403,8 +403,8 @@ async def test_generate_world_records_setting_import_project_start_and_success_e
     result = await generation_app.generate_world_from_text(
         novel.id,
         text="这是一段足够长的世界观设定文本。",
-        db=db,
-        current_user=hosted_user,
+        session_factory=TestingSessionLocal,
+        user_id=hosted_user.id,
         llm_config=ResolvedLlmConfig(
             base_url="https://hosted.example/v1",
             api_key="hosted-key",
@@ -427,9 +427,12 @@ async def test_generate_world_records_setting_import_project_start_and_success_e
     )
 
     assert result.entities_created == 2
+    event_db = ensured[0]["args"][0]
+    assert event_db is not db
+    assert recorded[0]["db"] is event_db
     assert ensured == [
         {
-            "args": (db,),
+            "args": (event_db,),
             "kwargs": {
                 "user_id": hosted_user.id,
                 "novel_id": novel.id,
@@ -440,7 +443,7 @@ async def test_generate_world_records_setting_import_project_start_and_success_e
     ]
     assert recorded == [
         {
-            "db": db,
+            "db": event_db,
             "user_id": hosted_user.id,
             "event": "world_generate",
             "novel_id": novel.id,

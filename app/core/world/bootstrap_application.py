@@ -67,6 +67,12 @@ class BootstrapWorkerCandidate:
     mode: str
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedBootstrapJob:
+    candidate: BootstrapWorkerCandidate
+    llm_config: ResolvedLlmConfig | None
+
+
 def _matches_worker_source(
     job: BootstrapJob, *, queued_source_filter: str | None
 ) -> bool:
@@ -303,12 +309,11 @@ def _list_bootstrap_worker_candidates(
         db.close()
 
 
-def run_next_bootstrap_job(
+def prepare_next_bootstrap_job(
     *,
     session_factory: Callable[[], Session],
     settings: Settings | None = None,
-    background_job_runner: Callable[..., Awaitable[None]] | None = None,
-) -> bool:
+) -> PreparedBootstrapJob | None:
     resolved_settings = settings or get_settings()
     queued_source_filter = (
         BOOTSTRAP_RESULT_QUEUED_SOURCE_INGEST_AUTO
@@ -322,7 +327,7 @@ def run_next_bootstrap_job(
         queued_source_filter=queued_source_filter,
     )
     if not candidates:
-        return False
+        return None
 
     selected_candidate: BootstrapWorkerCandidate | None = None
     llm_config: ResolvedLlmConfig | None = None
@@ -348,7 +353,7 @@ def run_next_bootstrap_job(
         break
 
     if selected_candidate is None:
-        return False
+        return None
 
     logger.info(
         "bootstrap[%d]: background worker picked queued job novel=%d mode=%s source=%s",
@@ -357,14 +362,40 @@ def run_next_bootstrap_job(
         selected_candidate.mode,
         queued_source_filter or "any",
     )
+    return PreparedBootstrapJob(candidate=selected_candidate, llm_config=llm_config)
+
+
+def execute_bootstrap_worker_job(
+    prepared: PreparedBootstrapJob,
+    *,
+    session_factory: Callable[[], Session],
+    background_job_runner: Callable[..., Awaitable[None]] | None = None,
+) -> None:
+    """Execute a value-only selection; the runner owns its database sessions."""
     runner = background_job_runner or run_bootstrap_background_job
     asyncio.run(
         runner(
-            selected_candidate.job_id,
+            prepared.candidate.job_id,
             session_factory=session_factory,
-            user_id=selected_candidate.user_id,
-            llm_config=llm_config,
+            user_id=prepared.candidate.user_id,
+            llm_config=prepared.llm_config,
         )
+    )
+
+
+def run_next_bootstrap_job(
+    *,
+    session_factory: Callable[[], Session],
+    settings: Settings | None = None,
+    background_job_runner: Callable[..., Awaitable[None]] | None = None,
+) -> bool:
+    prepared = prepare_next_bootstrap_job(session_factory=session_factory, settings=settings)
+    if prepared is None:
+        return False
+    execute_bootstrap_worker_job(
+        prepared,
+        session_factory=session_factory,
+        background_job_runner=background_job_runner,
     )
     return True
 

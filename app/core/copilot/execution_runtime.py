@@ -15,7 +15,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.core.ai_client import ToolCallUnsupportedError
 from app.core.llm_config import ResolvedLlmConfig
@@ -41,9 +41,11 @@ from app.core.copilot.run_store import (
 )
 from app.core.copilot.scope import EvidenceItem, ScopeSnapshot
 from app.core.copilot.session_runtime import canonicalize_session_context
+from app.core.copilot.sync_runtime import check_sync_cancelled, run_sync
 from app.core.copilot.workspace import (
     Workspace,
     build_follow_up_workspace_seed,
+    load_run_workspace,
 )
 from app.models import CopilotRun, Novel
 
@@ -55,9 +57,9 @@ class OneShotDeps:
     acquire_llm_slot: Callable[[], Awaitable[Any]]
     release_llm_slot: Callable[[], None]
     renew_run_lease: Callable[..., bool]
-    call_copilot_llm: Callable[
-        [str, str, ResolvedLlmConfig, int], Awaitable[str]
-    ] = call_copilot_llm
+    call_copilot_llm: Callable[[str, str, ResolvedLlmConfig, int], Awaitable[str]] = (
+        call_copilot_llm
+    )
     parse_llm_response: Callable[[str], dict[str, Any]] = parse_llm_response
     build_system_prompt: Callable[
         [ScopeSnapshot, list[EvidenceItem], str, str, dict[str, Any], str], PromptBuild
@@ -101,6 +103,7 @@ def _build_follow_up_inputs(
 
     prior_completed_runs = (
         db.query(CopilotRun)
+        .options(load_only(CopilotRun.status, CopilotRun.prompt, CopilotRun.answer))
         .filter(
             CopilotRun.copilot_session_id == run.copilot_session_id,
             CopilotRun.id != run.id,
@@ -114,7 +117,12 @@ def _build_follow_up_inputs(
 
     return (
         build_follow_up_conversation_messages(prior_completed_runs),
-        build_follow_up_workspace_seed(prior_completed_runs[-1].workspace_json),
+        # Only the latest research memory is inherited; older workspaces may
+        # each contain a full conversation/tool journal and need not be decoded.
+        build_follow_up_workspace_seed(
+            prior_completed_runs[-1].workspace_json,
+            history_runs=prior_completed_runs,
+        ),
     )
 
 
@@ -134,7 +142,8 @@ async def run_one_shot(
     db_factory: Callable[[], Session] | None = None,
 ) -> tuple[dict[str, Any], list[EvidenceItem]]:
     """Single LLM call with all evidence pre-loaded in the prompt."""
-    prompt_build = deps.build_system_prompt(
+    prompt_build = await run_sync(
+        deps.build_system_prompt,
         snapshot,
         evidence,
         scenario,
@@ -143,7 +152,9 @@ async def run_one_shot(
         turn_intent,
     )
 
-    ensure_run_lease(deps, db_factory, run_id=run_id, worker_id=worker_id)
+    await run_sync(
+        ensure_run_lease, deps, db_factory, run_id=run_id, worker_id=worker_id
+    )
 
     await deps.acquire_llm_slot()
     try:
@@ -153,7 +164,9 @@ async def run_one_shot(
     finally:
         deps.release_llm_slot()
 
-    ensure_run_lease(deps, db_factory, run_id=run_id, worker_id=worker_id)
+    await run_sync(
+        ensure_run_lease, deps, db_factory, run_id=run_id, worker_id=worker_id
+    )
 
     return deps.parse_llm_response(response_text), evidence
 
@@ -250,19 +263,29 @@ async def _run_with_degradation(
         raise
 
 
-async def execute_copilot_run(
-    *,
+@dataclass(frozen=True)
+class PreparedRun:
+    snapshot: ScopeSnapshot
+    evidence: list[EvidenceItem]
+    scenario: str
+    session_data: dict[str, Any]
+    turn_intent: str
+    prompt: str
+    inherited_workspace: dict[str, Any] | None
+    prior_messages: list[dict[str, str]]
+    workspace_seed: dict[str, Any] | None
+
+
+def _prepare_run(
     hooks: ExecutionHooks,
+    db_factory: Callable[[], Session],
+    *,
     run_id: str,
     novel_id: int,
-    user_id: int,
-    llm_config: ResolvedLlmConfig,
-) -> None:
-    """Execute one copilot run while keeping the root module as facade."""
-    from app.database import SessionLocal
-
-    worker_id = uuid.uuid4().hex
-    db = SessionLocal()
+    worker_id: str,
+) -> PreparedRun | None:
+    check_sync_cancelled()
+    db = db_factory()
     try:
         run = claim_run_for_execution(db, run_id=run_id, worker_id=worker_id)
         if not run:
@@ -278,9 +301,7 @@ async def execute_copilot_run(
 
         novel = db.get(Novel, novel_id)
         if not novel:
-            fail_run(
-                db, run, "novel_not_found", "Novel not found", worker_id=worker_id
-            )
+            fail_run(db, run, "novel_not_found", "Novel not found", worker_id=worker_id)
             return
 
         run_context = canonicalize_session_context(
@@ -308,8 +329,6 @@ async def execute_copilot_run(
             if should_preload_world_context(turn_intent)
             else []
         )
-        persist_preloaded_evidence(db, run, evidence)
-
         session_data = {
             "mode": session.mode,
             "scope": session.scope,
@@ -318,97 +337,175 @@ async def execute_copilot_run(
             "display_title": session.display_title,
             "novel_id": novel_id,
         }
-        inherited_workspace = run.workspace_json
+        inherited_workspace = load_run_workspace(db, run)
         follow_up_messages, follow_up_workspace_seed = _build_follow_up_inputs(
             db,
             build_follow_up_conversation_messages=hooks.build_follow_up_conversation_messages,
             run=run,
             inherited_workspace=inherited_workspace,
         )
+        check_sync_cancelled()
+        persist_preloaded_evidence(db, run, evidence)
+        return PreparedRun(
+            snapshot=snapshot,
+            evidence=evidence,
+            scenario=scenario,
+            session_data=session_data,
+            turn_intent=turn_intent,
+            prompt=effective_prompt,
+            inherited_workspace=inherited_workspace,
+            prior_messages=follow_up_messages,
+            workspace_seed=follow_up_workspace_seed,
+        )
+    finally:
+        db.close()
 
-        def db_factory() -> Session:
-            return SessionLocal()
 
-        parsed, final_evidence, workspace, execution_mode, degraded_reason = (
-            await _run_with_degradation(
-                hooks,
-                snapshot=snapshot,
-                evidence=evidence,
-                scenario=scenario,
-                session_data=session_data,
-                turn_intent=turn_intent,
-                prompt=effective_prompt,
-                llm_config=llm_config,
-                user_id=user_id,
-                run_id=run_id,
-                worker_id=worker_id,
-                db_factory=db_factory,
-                inherited_workspace=inherited_workspace,
-                prior_messages=follow_up_messages,
-                workspace_seed=follow_up_workspace_seed,
-            )
+def _complete_run(
+    hooks: ExecutionHooks,
+    db_factory: Callable[[], Session],
+    prepared: PreparedRun,
+    *,
+    run_id: str,
+    novel_id: int,
+    worker_id: str,
+    parsed: dict[str, Any],
+    evidence: list[EvidenceItem],
+    workspace: Workspace | None,
+    execution_mode: str,
+    degraded_reason: str | None,
+) -> None:
+    check_sync_cancelled()
+    db = db_factory()
+    try:
+        fresh_novel = db.get(Novel, novel_id)
+        fresh_snapshot = hooks.load_scope_snapshot(
+            db,
+            fresh_novel or prepared.snapshot.novel,
+            prepared.session_data["mode"],
+            prepared.session_data["scope"],
+            prepared.session_data["context_json"],
+        )
+        compiled = hooks.compile_suggestions(
+            parsed.get("suggestions", [])
+            if should_preload_world_context(prepared.turn_intent)
+            else [],
+            evidence,
+            fresh_snapshot,
+            prepared.session_data["mode"],
+            prepared.scenario,
+            interaction_locale=prepared.session_data["interaction_locale"],
+        )
+    finally:
+        db.close()
+
+    check_sync_cancelled()
+    if not persist_completed_run(
+        db_factory,
+        run_id=run_id,
+        worker_id=worker_id,
+        answer=parsed.get("answer", ""),
+        evidence=evidence,
+        compiled_suggestions=compiled,
+        workspace=workspace,
+        execution_mode=execution_mode,
+        degraded_reason=degraded_reason,
+    ):
+        logger.warning(
+            "Skipping result persistence for run %s after lease loss", run_id
         )
 
-        db_compile = db_factory()
-        try:
-            fresh_novel = db_compile.get(Novel, novel_id)
-            fresh_snapshot = hooks.load_scope_snapshot(
-                db_compile,
-                fresh_novel or novel,
-                session_data["mode"],
-                session_data["scope"],
-                session_data["context_json"],
-            )
-            compiled = hooks.compile_suggestions(
-                parsed.get("suggestions", [])
-                if should_preload_world_context(turn_intent)
-                else [],
-                final_evidence,
-                fresh_snapshot,
-                session_data["mode"],
-                scenario,
-                interaction_locale=session_data["interaction_locale"],
-            )
-        finally:
-            db_compile.close()
 
-        if not persist_completed_run(
-            db_factory,
+def _persist_execution_failure(
+    db_factory: Callable[[], Session], *, run_id: str, worker_id: str
+) -> None:
+    check_sync_cancelled()
+    db = db_factory()
+    try:
+        run = db.query(CopilotRun).filter(CopilotRun.run_id == run_id).first()
+        if run:
+            check_sync_cancelled()
+            fail_run(
+                db,
+                run,
+                "run_execution_error",
+                copilot_run_failed_message(resolve_run_interaction_locale(run)),
+                worker_id=worker_id,
+            )
+    finally:
+        db.close()
+
+
+async def execute_copilot_run(
+    *,
+    hooks: ExecutionHooks,
+    run_id: str,
+    novel_id: int,
+    user_id: int,
+    llm_config: ResolvedLlmConfig,
+) -> None:
+    """Execute with thread-owned sessions and serial, cancellable work batches."""
+    from app.database import SessionLocal
+
+    worker_id = uuid.uuid4().hex
+    try:
+        prepared = await run_sync(
+            _prepare_run,
+            hooks,
+            SessionLocal,
+            run_id=run_id,
+            novel_id=novel_id,
+            worker_id=worker_id,
+        )
+        if prepared is None:
+            return
+        (
+            parsed,
+            final_evidence,
+            workspace,
+            execution_mode,
+            degraded_reason,
+        ) = await _run_with_degradation(
+            hooks,
+            snapshot=prepared.snapshot,
+            evidence=prepared.evidence,
+            scenario=prepared.scenario,
+            session_data=prepared.session_data,
+            turn_intent=prepared.turn_intent,
+            prompt=prepared.prompt,
+            llm_config=llm_config,
+            user_id=user_id,
             run_id=run_id,
             worker_id=worker_id,
-            answer=parsed.get("answer", ""),
+            db_factory=SessionLocal,
+            inherited_workspace=prepared.inherited_workspace,
+            prior_messages=prepared.prior_messages,
+            workspace_seed=prepared.workspace_seed,
+        )
+        await run_sync(
+            _complete_run,
+            hooks,
+            SessionLocal,
+            prepared,
+            run_id=run_id,
+            novel_id=novel_id,
+            worker_id=worker_id,
+            parsed=parsed,
             evidence=final_evidence,
-            compiled_suggestions=compiled,
             workspace=workspace,
             execution_mode=execution_mode,
             degraded_reason=degraded_reason,
-        ):
-            logger.warning(
-                "Skipping result persistence for run %s after lease loss", run_id
-            )
+        )
     except hooks.lease_lost_error_type:
         return
     except Exception:
         logger.exception("Copilot run %s failed", run_id)
         try:
-            err_db = SessionLocal()
-            try:
-                err_run = (
-                    err_db.query(CopilotRun).filter(CopilotRun.run_id == run_id).first()
-                )
-                if err_run:
-                    fail_run(
-                        err_db,
-                        err_run,
-                        "run_execution_error",
-                        copilot_run_failed_message(
-                            resolve_run_interaction_locale(err_run)
-                        ),
-                        worker_id=worker_id,
-                    )
-            finally:
-                err_db.close()
+            await run_sync(
+                _persist_execution_failure,
+                SessionLocal,
+                run_id=run_id,
+                worker_id=worker_id,
+            )
         except Exception:
             logger.exception("Failed to mark run %s as errored", run_id)
-    finally:
-        db.close()

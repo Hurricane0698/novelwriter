@@ -21,8 +21,9 @@ from app.core.copilot.suggestions import (
     CompiledSuggestion,
     serialize_compiled_suggestions,
 )
+from app.core.copilot.sync_runtime import check_sync_cancelled
 from app.core.copilot.tracing import build_completed_trace, build_running_trace
-from app.core.copilot.workspace import Workspace
+from app.core.copilot.workspace import Workspace, workspace_to_storage
 from app.models import CopilotRun
 
 logger = logging.getLogger(__name__)
@@ -40,10 +41,12 @@ def renew_run_lease(
         run = db.query(CopilotRun).filter(CopilotRun.run_id == run_id).first()
         if run is None or run.status != "running" or run.lease_owner != worker_id:
             return False
+        check_sync_cancelled()
         run.lease_expires_at = resolve_running_lease_expiry(
             utcnow_naive(),
             run_settings().copilot_run_lease_seconds,
         )
+        check_sync_cancelled()
         db.commit()
         return True
     finally:
@@ -56,11 +59,13 @@ def persist_preloaded_evidence(
     evidence: list[EvidenceItem],
 ) -> None:
     """Persist preloaded evidence and renew the running lease heartbeat."""
+    check_sync_cancelled()
     run.evidence_json = [serialize_evidence(item) for item in evidence]
     run.lease_expires_at = resolve_running_lease_expiry(
         utcnow_naive(),
         run_settings().copilot_run_lease_seconds,
     )
+    check_sync_cancelled()
     db.commit()
 
 
@@ -86,13 +91,15 @@ def persist_running_workspace(
             return False
         interaction_locale = getattr(getattr(ws_run, "session", None), "interaction_locale", "zh")
 
-        ws_run.workspace_json = workspace.to_dict()
+        check_sync_cancelled()
+        ws_run.workspace_json = workspace_to_storage(workspace)
         ws_run.trace_json = build_running_trace(workspace, interaction_locale=interaction_locale)
         if worker_id:
             ws_run.lease_expires_at = resolve_running_lease_expiry(
                 utcnow_naive(),
                 run_settings().copilot_run_lease_seconds,
             )
+        check_sync_cancelled()
         db.commit()
         return True
     except Exception:
@@ -126,6 +133,7 @@ def persist_completed_run(
             return False
         interaction_locale = getattr(getattr(store_run, "session", None), "interaction_locale", "zh")
 
+        check_sync_cancelled()
         store_run.status = "completed"
         store_run.answer = answer
         store_run.evidence_json = [serialize_evidence(item) for item in evidence]
@@ -143,8 +151,9 @@ def persist_completed_run(
         store_run.lease_expires_at = None
         store_run.finished_at = utcnow_naive()
         if workspace:
-            store_run.workspace_json = workspace.to_dict()
+            store_run.workspace_json = workspace_to_storage(workspace)
         settle_run_quota(db, store_run, charge_count=1)
+        check_sync_cancelled()
         db.commit()
         return True
     finally:

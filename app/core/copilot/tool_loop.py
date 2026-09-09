@@ -17,6 +17,7 @@ from app.core.llm_config import ResolvedLlmConfig
 from app.core.copilot.prompt_contract import PromptBuild
 from app.core.copilot.run_state import ensure_run_lease as _ensure_run_lease
 from app.core.copilot.scope import EvidenceItem, ScopeSnapshot
+from app.core.copilot.sync_runtime import check_sync_cancelled, run_sync
 from app.core.copilot.tool_call_recovery import recover_tool_calls_from_text
 from app.core.copilot.tool_contract import ResearchToolCatalog
 from app.core.copilot.tool_runtime import (
@@ -60,8 +61,6 @@ class ToolLoopDeps:
     client_factory: Callable[[], AIClient] = AIClient
 
 
-
-
 def _execute_pending_tool_calls(
     *,
     deps: ToolLoopDeps,
@@ -77,6 +76,7 @@ def _execute_pending_tool_calls(
     worker_id: str = "",
 ) -> ScopeSnapshot:
     while workspace.pending_tool_calls:
+        check_sync_cancelled()
         _ensure_run_lease(deps, db_factory, run_id=run_id, worker_id=worker_id)
 
         tool_call = deserialize_tool_call(workspace.pending_tool_calls[0])
@@ -115,13 +115,11 @@ def _execute_pending_tool_calls(
                     workspace,
                     session_data["interaction_locale"],
                 )
-        finally:
-            tool_db.close()
-
-        messages.append(
-            {"role": "tool", "tool_call_id": tool_call.id, "content": tool_result}
-        )
-        workspace.tool_journal.append(
+            check_sync_cancelled()
+            messages.append(
+                {"role": "tool", "tool_call_id": tool_call.id, "content": tool_result}
+            )
+            workspace.tool_journal.append(
                 build_tool_journal_entry(
                     tool_name=tool_call.name,
                     tool_args=tool_args,
@@ -130,62 +128,47 @@ def _execute_pending_tool_calls(
                     call_index=workspace.tool_call_count,
                     interaction_locale=session_data["interaction_locale"],
                     tool_metadata=(
-                        tool_spec.runtime.to_debug_dict() if tool_spec is not None else None
+                        tool_spec.runtime.to_debug_dict()
+                        if tool_spec is not None
+                        else None
                     ),
                 )
-        )
-        workspace.pending_tool_calls.pop(0)
-        workspace.messages = list(messages)
-        execute_auto_open_for_progressive_disclosure(
-            dispatch_tool=deps.dispatch_tool,
-            build_tool_journal_entry=build_tool_journal_entry,
-            tool_db=tool_db,
-            novel_id=novel_id,
-            session_data=session_data,
-            snapshot=snapshot,
-            workspace=workspace,
-            messages=messages,
-            round_number=round_number,
-            trigger_tool_spec=tool_spec,
-            trigger_tool_result=tool_result,
-        )
+            )
+            workspace.pending_tool_calls.pop(0)
+            workspace.messages = list(messages)
+            execute_auto_open_for_progressive_disclosure(
+                dispatch_tool=deps.dispatch_tool,
+                build_tool_journal_entry=build_tool_journal_entry,
+                tool_db=tool_db,
+                novel_id=novel_id,
+                session_data=session_data,
+                snapshot=snapshot,
+                workspace=workspace,
+                messages=messages,
+                round_number=round_number,
+                trigger_tool_spec=tool_spec,
+                trigger_tool_result=tool_result,
+            )
+        finally:
+            tool_db.close()
 
-        if run_id and not deps.persist_workspace(
-            db_factory, run_id, workspace, worker_id=worker_id
-        ):
-            raise deps.lease_lost_error_factory(run_id)
+        _persist_workspace(deps, db_factory, run_id, workspace, worker_id=worker_id)
 
     return snapshot
 
 
-async def run_tool_loop(
-    *,
+def _prepare_tool_loop(
     deps: ToolLoopDeps,
-    db_factory: Callable[[], Session],
-    novel_id: int,
-    session_data: dict[str, Any],
-    prompt: str,
-    llm_config: ResolvedLlmConfig,
-    user_id: int,
     snapshot: ScopeSnapshot,
     scenario: str,
-    evidence: list[EvidenceItem],
+    session_data: dict[str, Any],
     turn_intent: str,
-    run_id: str = "",
-    worker_id: str = "",
-    inherited_workspace: dict[str, Any] | None = None,
-    prior_messages: list[dict[str, str]] | None = None,
-    workspace_seed: dict[str, Any] | None = None,
-    build_tool_journal_entry: Callable[..., dict[str, Any]],
-) -> tuple[dict[str, Any], list[EvidenceItem], Workspace]:
-    """Run the tool-loop agent. Returns (parsed_answer, evidence, workspace)."""
-    from app.config import get_settings
-
-    settings = get_settings()
-    max_rounds = settings.copilot_max_tool_rounds
-    client = deps.client_factory()
-    valid_tool_names = {spec.name for spec in deps.tool_catalog.specs}
-
+    prompt: str,
+    inherited_workspace: dict[str, Any] | None,
+    prior_messages: list[dict[str, str]] | None,
+    workspace_seed: dict[str, Any] | None,
+) -> tuple[Workspace, list[dict[str, Any]], int]:
+    check_sync_cancelled()
     if inherited_workspace and inherited_workspace.get("messages"):
         workspace = Workspace.from_dict(inherited_workspace)
         messages = list(workspace.messages)
@@ -245,6 +228,65 @@ async def run_tool_loop(
         messages.append({"role": "user", "content": user_content})
         workspace.messages = list(messages)
 
+    return workspace, messages, rounds_used
+
+
+def _persist_workspace(
+    deps: ToolLoopDeps,
+    db_factory: Callable[[], Session],
+    run_id: str,
+    workspace: Workspace,
+    *,
+    worker_id: str,
+) -> None:
+    check_sync_cancelled()
+    if run_id and not deps.persist_workspace(
+        db_factory, run_id, workspace, worker_id=worker_id
+    ):
+        raise deps.lease_lost_error_factory(run_id)
+
+
+async def run_tool_loop(
+    *,
+    deps: ToolLoopDeps,
+    db_factory: Callable[[], Session],
+    novel_id: int,
+    session_data: dict[str, Any],
+    prompt: str,
+    llm_config: ResolvedLlmConfig,
+    user_id: int,
+    snapshot: ScopeSnapshot,
+    scenario: str,
+    evidence: list[EvidenceItem],
+    turn_intent: str,
+    run_id: str = "",
+    worker_id: str = "",
+    inherited_workspace: dict[str, Any] | None = None,
+    prior_messages: list[dict[str, str]] | None = None,
+    workspace_seed: dict[str, Any] | None = None,
+    build_tool_journal_entry: Callable[..., dict[str, Any]],
+) -> tuple[dict[str, Any], list[EvidenceItem], Workspace]:
+    """Run the tool-loop agent. Returns (parsed_answer, evidence, workspace)."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    max_rounds = settings.copilot_max_tool_rounds
+    client = deps.client_factory()
+    valid_tool_names = {spec.name for spec in deps.tool_catalog.specs}
+
+    workspace, messages, rounds_used = await run_sync(
+        _prepare_tool_loop,
+        deps,
+        snapshot,
+        scenario,
+        session_data,
+        turn_intent,
+        prompt,
+        inherited_workspace,
+        prior_messages,
+        workspace_seed,
+    )
+
     remaining_rounds = max(0, max_rounds - rounds_used)
 
     if workspace.pending_tool_calls:
@@ -252,7 +294,8 @@ async def run_tool_loop(
             "Resuming pending tool batch with %d remaining call(s)",
             len(workspace.pending_tool_calls),
         )
-        snapshot = _execute_pending_tool_calls(
+        snapshot = await run_sync(
+            _execute_pending_tool_calls,
             deps=deps,
             build_tool_journal_entry=build_tool_journal_entry,
             db_factory=db_factory,
@@ -268,7 +311,9 @@ async def run_tool_loop(
 
     for round_idx in range(remaining_rounds):
         workspace.round_count = rounds_used + round_idx + 1
-        _ensure_run_lease(deps, db_factory, run_id=run_id, worker_id=worker_id)
+        await run_sync(
+            _ensure_run_lease, deps, db_factory, run_id=run_id, worker_id=worker_id
+        )
 
         await deps.acquire_llm_slot()
         try:
@@ -284,14 +329,14 @@ async def run_tool_loop(
         finally:
             deps.release_llm_slot()
 
-        _ensure_run_lease(deps, db_factory, run_id=run_id, worker_id=worker_id)
+        await run_sync(
+            _ensure_run_lease, deps, db_factory, run_id=run_id, worker_id=worker_id
+        )
 
         tool_calls = response.tool_calls
         recovered_from_text = False
         if not tool_calls:
-            recovered = recover_tool_calls_from_text(
-                response.content, valid_tool_names
-            )
+            recovered = recover_tool_calls_from_text(response.content, valid_tool_names)
             if recovered:
                 logger.warning(
                     "Tool loop recovered %d text-form tool call(s) at round %d; "
@@ -330,12 +375,12 @@ async def run_tool_loop(
         ]
         workspace.messages = list(messages)
 
-        if run_id and not deps.persist_workspace(
-            db_factory, run_id, workspace, worker_id=worker_id
-        ):
-            raise deps.lease_lost_error_factory(run_id)
+        await run_sync(
+            _persist_workspace, deps, db_factory, run_id, workspace, worker_id=worker_id
+        )
 
-        snapshot = _execute_pending_tool_calls(
+        snapshot = await run_sync(
+            _execute_pending_tool_calls,
             deps=deps,
             build_tool_journal_entry=build_tool_journal_entry,
             db_factory=db_factory,
@@ -349,7 +394,9 @@ async def run_tool_loop(
             worker_id=worker_id,
         )
 
-    _ensure_run_lease(deps, db_factory, run_id=run_id, worker_id=worker_id)
+    await run_sync(
+        _ensure_run_lease, deps, db_factory, run_id=run_id, worker_id=worker_id
+    )
     await deps.acquire_llm_slot()
     try:
         response = await client.generate_with_tools(
@@ -365,7 +412,9 @@ async def run_tool_loop(
     finally:
         deps.release_llm_slot()
 
-    _ensure_run_lease(deps, db_factory, run_id=run_id, worker_id=worker_id)
+    await run_sync(
+        _ensure_run_lease, deps, db_factory, run_id=run_id, worker_id=worker_id
+    )
 
     parsed = deps.parse_llm_response(response.content or "")
     workspace.final_answer_draft = response.content

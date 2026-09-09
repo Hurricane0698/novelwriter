@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import heapq
 import logging
 import re
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from app.core.copilot.tool_contract import (
 from app.core.indexing import WINDOW_INDEX_STATUS_FRESH
 from app.core.copilot.messages import CopilotTextKey, get_copilot_text
 from app.core.copilot.scope import ScopeSnapshot
+from app.core.copilot.scope_shared import NovelScopeValue
+from app.core.copilot.sync_runtime import check_sync_cancelled
 from app.core.copilot.workspace import EvidencePack, Workspace, make_pack_id
 from app.language_policy import get_language_policy
 from app.models import Chapter, Novel, WorldEntity, WorldRelationship, WorldSystem
@@ -384,7 +387,7 @@ def _tool_find(
     scope_filter: str,
     db: Session,
     _novel_id: int,
-    novel: Novel,
+    novel: Novel | NovelScopeValue,
     snapshot: ScopeSnapshot,
     workspace: Workspace,
     interaction_locale: str = "zh",
@@ -403,6 +406,7 @@ def _tool_find(
     if len(packs) < 3 and scope_filter in ("story_text", "all"):
         packs += _find_from_chapters(query, db, novel)
 
+    check_sync_cancelled()
     deduped = _deduplicate_packs(packs)[:MAX_EVIDENCE_PACKS]
     for pack in deduped:
         workspace.evidence_packs[pack.pack_id] = pack
@@ -515,7 +519,7 @@ def _find_from_window_index(
     query: str,
     db: Session,
     _novel_id: int,
-    novel: Novel,
+    novel: Novel | NovelScopeValue,
     snapshot: ScopeSnapshot,
 ) -> list[EvidencePack]:
     from app.core.indexing.window_index import NovelIndex
@@ -672,26 +676,33 @@ def _find_from_draft_auditors(
     return packs
 
 
-def _find_from_chapters(query: str, db: Session, novel: Novel) -> list[EvidencePack]:
+def _find_from_chapters(query: str, db: Session, novel: Novel | NovelScopeValue) -> list[EvidencePack]:
     query_terms = _extract_query_terms(query, novel.language)
     if not query_terms:
         return []
 
     scored: list[tuple[int, int, int, EvidencePack]] = []
     chapters = (
-        db.query(Chapter)
+        db.query(Chapter.id, Chapter.chapter_number, Chapter.content)
         .filter(Chapter.novel_id == novel.id)
         .order_by(Chapter.chapter_number.asc())
-        .all()
+        .yield_per(1)
     )
     for chapter in chapters:
+        check_sync_cancelled()
         if not chapter.content:
             continue
-        matches = _find_term_matches(chapter.content, query_terms, language=novel.language)
-        if not matches:
+        count, matched_terms, first_matches = _scan_chapter_matches(
+            chapter.content, query_terms, language=novel.language
+        )
+        if not count:
             continue
-        matched_terms = _summarize_matched_terms(matches)
-        start, end = _resolve_excerpt_window(chapter.content, matches)
+        # The smallest heap item is the worst retained chapter. Chapter numbers
+        # are unique per novel, so ties never compare EvidencePack instances.
+        rank = (len(matched_terms), count, -chapter.chapter_number)
+        if len(scored) == MAX_EVIDENCE_PACKS and rank <= scored[0][:3]:
+            continue
+        start, end = _resolve_excerpt_window(chapter.content, first_matches)
         text = chapter.content[start:end]
         pack = EvidencePack(
             pack_id=make_pack_id(f"pk_ch_{chapter.id}_{start}_{end}", text[:100]),
@@ -707,10 +718,60 @@ def _find_from_chapters(query: str, db: Session, novel: Novel) -> list[EvidenceP
             support_count=len(matched_terms),
             related_targets=[{"type": "chapter", "chapter_id": chapter.id}],
         )
-        scored.append((len(matched_terms), len(matches), chapter.chapter_number, pack))
+        item = (*rank, pack)
+        if len(scored) < MAX_EVIDENCE_PACKS:
+            heapq.heappush(scored, item)
+        else:
+            heapq.heapreplace(scored, item)
 
-    scored.sort(key=lambda item: (-item[0], -item[1], item[2]))
-    return [item[3] for item in scored[:MAX_EVIDENCE_PACKS]]
+    scored.sort(key=lambda item: item[:3], reverse=True)
+    return [item[3] for item in scored]
+
+
+SCAN_CANCEL_INTERVAL = 1024
+
+
+def _scan_chapter_matches(
+    text: str,
+    query_terms: list[QueryTerm],
+    *,
+    language: str | None,
+) -> tuple[int, list[str], list[tuple[int, int, QueryTerm]]]:
+    """Retain counts, term order and the four positions used by the excerpt.
+
+    Scanning still covers every chapter and every non-overlapping occurrence.
+    At most four positions per query term are kept, independent of frequency.
+    Stable sorting preserves the old query-term order when positions tie.
+    """
+    policy = get_language_policy(language, sample_text=text)
+    normalized_text = policy.normalize_for_matching(text)
+    count = 0
+    attempts = 0
+    first_matches: list[tuple[int, int, QueryTerm]] = []
+    first_per_term: list[tuple[int, int, QueryTerm]] = []
+    for term in query_terms:
+        check_sync_cancelled()
+        search_from = 0
+        term_count = 0
+        while search_from < len(normalized_text):
+            pos = normalized_text.find(term.normalized, search_from)
+            if pos == -1:
+                break
+            end = pos + len(term.normalized)
+            if policy.match_has_word_boundaries(normalized_text, pos, end):
+                if term_count < 4:
+                    first_matches.append((pos, end, term))
+                if not term_count:
+                    first_per_term.append((pos, end, term))
+                term_count += 1
+                count += 1
+            search_from = max(pos + 1, end)
+            attempts += 1
+            if attempts % SCAN_CANCEL_INTERVAL == 0:
+                check_sync_cancelled()
+    first_matches.sort(key=lambda item: item[0])
+    first_per_term.sort(key=lambda item: item[0])
+    return count, _summarize_matched_terms(first_per_term), first_matches[:4]
 
 
 def _deduplicate_packs(packs: list[EvidencePack]) -> list[EvidencePack]:
@@ -728,7 +789,7 @@ def _tool_open(
     pack_id: str,
     expand_chars: int,
     db: Session,
-    _novel: Novel,
+    _novel: Novel | NovelScopeValue,
     workspace: Workspace,
     interaction_locale: str = "zh",
 ) -> str:
@@ -749,7 +810,7 @@ def _tool_open_many(
     pack_ids: list[Any],
     expand_chars: int,
     db: Session,
-    _novel: Novel,
+    _novel: Novel | NovelScopeValue,
     workspace: Workspace,
     interaction_locale: str = "zh",
 ) -> str:
@@ -917,9 +978,11 @@ def _expand_pack_result(
     if expanded_text and (
         pack.expanded_text is None or len(expanded_text) > len(pack.expanded_text)
     ):
+        check_sync_cancelled()
         pack.expanded_text = expanded_text
 
     if pack_id not in workspace.opened_pack_ids:
+        check_sync_cancelled()
         workspace.opened_pack_ids.append(pack_id)
 
     return (

@@ -6,10 +6,10 @@ from typing import Literal
 
 from app.config import Settings, get_settings
 from app.core.desktop_llm_config import (
-    DesktopLlmConfigStore,
+    DesktopLlmConfigStorage,
     DesktopLlmConfigStoreError,
     StoredDesktopLlmConfig,
-    WindowsDataProtector,
+    create_desktop_llm_config_store,
 )
 from app.core.llm_api_key import (
     LLM_API_KEY_INVALID_CODE as LLM_CONFIG_API_KEY_INVALID_CODE,
@@ -135,7 +135,7 @@ def get_desktop_llm_config_store(
     settings: Settings | None = None,
     *,
     protector=None,
-) -> DesktopLlmConfigStore:
+) -> DesktopLlmConfigStorage:
     resolved_settings = settings or get_settings()
     configured_path = str(resolved_settings.novwr_desktop_llm_config_path or "").strip()
     if not configured_path:
@@ -151,13 +151,13 @@ def get_desktop_llm_config_store(
             message="Desktop LLM configuration path must be absolute.",
             status_code=500,
         )
-    return DesktopLlmConfigStore(path, protector=protector or WindowsDataProtector())
+    return create_desktop_llm_config_store(path, protector=protector)
 
 
 def _desktop_config(
     settings: Settings,
     *,
-    desktop_store: DesktopLlmConfigStore | None,
+    desktop_store: DesktopLlmConfigStorage | None,
 ) -> ResolvedLlmConfig:
     try:
         stored = (desktop_store or get_desktop_llm_config_store(settings)).load()
@@ -183,7 +183,7 @@ def resolve_llm_config(
     *,
     settings: Settings | None = None,
     request_override: LlmConfigValues | None = None,
-    desktop_store: DesktopLlmConfigStore | None = None,
+    desktop_store: DesktopLlmConfigStorage | None = None,
 ) -> ResolvedLlmConfig:
     resolved_settings = settings or get_settings()
     override = request_override or LlmConfigValues()
@@ -236,7 +236,7 @@ def resolve_llm_config(
 
 
 def save_desktop_llm_config(
-    store: DesktopLlmConfigStore,
+    store: DesktopLlmConfigStorage,
     *,
     base_url: str,
     api_key: str,
@@ -261,7 +261,7 @@ def save_desktop_llm_config(
 
 
 def load_desktop_llm_config(
-    store: DesktopLlmConfigStore,
+    store: DesktopLlmConfigStorage,
 ) -> StoredDesktopLlmConfig | None:
     try:
         return store.load()
@@ -269,7 +269,7 @@ def load_desktop_llm_config(
         raise LlmConfigError(code=exc.code, message=str(exc), status_code=500) from exc
 
 
-def delete_desktop_llm_config(store: DesktopLlmConfigStore) -> None:
+def delete_desktop_llm_config(store: DesktopLlmConfigStorage) -> None:
     try:
         store.delete()
     except DesktopLlmConfigStoreError as exc:

@@ -1,8 +1,10 @@
-import { Children, type ReactNode } from 'react'
+import { Children, memo, useMemo, type ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { AnnotatedText, type TextAnnotation } from '@/components/ui/annotated-text'
 import { cn } from '@/lib/utils'
+
+const EMPTY_ANNOTATIONS: TextAnnotation[] = []
 
 function annotatedChildren(children: ReactNode, annotations: TextAnnotation[]) {
   return Children.map(children, (child) => (
@@ -58,12 +60,22 @@ function markdownComponents(annotations: TextAnnotation[]): Components {
   }
 }
 
+// Keep parsing behind stable content/annotation props. Locale, loading labels
+// and wrapper styles can update without running the Markdown processor again.
+const MarkdownBody = memo(function MarkdownBody({ content, annotations }: {
+  content: string
+  annotations: TextAnnotation[]
+}) {
+  const components = useMemo(() => markdownComponents(annotations), [annotations])
+  return <ReactMarkdown components={components} skipHtml>{content}</ReactMarkdown>
+})
+
 export function MarkdownContent({
   isLoading,
   content,
   loadingLabel,
   emptyLabel,
-  annotations = [],
+  annotations = EMPTY_ANNOTATIONS,
   maxWidth = false,
   className,
 }: {
@@ -85,9 +97,7 @@ export function MarkdownContent({
 
   return (
     <div className={cn(maxWidth && 'mx-auto max-w-3xl', className)} data-testid="markdown-content">
-      <ReactMarkdown components={markdownComponents(annotations)} skipHtml>
-        {content ?? ''}
-      </ReactMarkdown>
+      <MarkdownBody content={content ?? ''} annotations={annotations} />
     </div>
   )
 }

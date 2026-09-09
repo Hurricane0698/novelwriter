@@ -52,6 +52,9 @@ function ConfigInput({
             <input
                 id={id}
                 type={type}
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
                 value={value}
                 onChange={onChange}
                 onBlur={onBlur}

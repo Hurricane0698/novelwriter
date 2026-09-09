@@ -38,6 +38,51 @@ def _selfhost_settings(**overrides) -> Settings:
     )
 
 
+@pytest.mark.asyncio
+async def test_failed_later_chunk_preserves_previous_drafts(db, novel, monkeypatch):
+    from app.core.world import gen
+
+    old = WorldEntity(novel_id=novel.id, name="Old draft", entity_type="Concept", origin="worldgen", status="draft")
+    db.add(old)
+    db.commit()
+    old_id = old.id
+    monkeypatch.setattr(gen, "get_settings", lambda: _selfhost_settings(world_generation_chunk_chars=12, world_generation_chunk_overlap_chars=0))
+    generate = AsyncMock(side_effect=[gen.WorldGenLLMOutput(entities=[gen.WorldGenEntity(name="New draft", entity_type="Concept")]), RuntimeError("second chunk failed")])
+    monkeypatch.setattr(gen.ai_client, "generate_structured", generate)
+    with pytest.raises(RuntimeError, match="second chunk failed"):
+        await gen.generate_world_drafts(
+            session_factory=TestingSessionLocal,
+            novel_id=novel.id,
+            text="x" * 24,
+            llm_config=ResolvedLlmConfig(
+                base_url="https://example.com/v1", api_key="key", model="model",
+                billing_source_hint="selfhost", source="selfhost_settings",
+            ),
+        )
+    assert generate.await_count == 2
+    assert [(row.id, row.name) for row in db.query(WorldEntity).all()] == [(old_id, "Old draft")]
+
+
+def test_failed_persistence_rolls_back_draft_replacement(db, novel, monkeypatch):
+    from app.core.world import generation_persistence as persistence
+    from app.core.world.gen import WorldGenLLMOutput, WorldGenEntity
+
+    db.add(WorldEntity(novel_id=novel.id, name="Old draft", entity_type="Concept", origin="worldgen", status="draft"))
+    db.add(WorldSystem(novel_id=novel.id, name="Old system", display_type="list", origin="worldgen", status="draft", data={}))
+    db.commit()
+
+    def fail_systems(**kwargs):
+        # Entity insertion has already been flushed before this failure.
+        assert kwargs["db"].query(WorldEntity).filter_by(name="New draft").count() == 1
+        raise RuntimeError("controlled persistence failure")
+
+    monkeypatch.setattr(persistence, "_stage_systems", fail_systems)
+    with pytest.raises(RuntimeError, match="controlled persistence failure"):
+        persistence.persist_world_drafts(db=db, novel_id=novel.id, extracted=WorldGenLLMOutput(entities=[WorldGenEntity(name="New draft", entity_type="Concept")]), warnings=[])
+    assert [row.name for row in db.query(WorldEntity).all()] == ["Old draft"]
+    assert [row.name for row in db.query(WorldSystem).all()] == ["Old system"]
+
+
 @pytest.fixture(scope="function")
 def db():
     Base.metadata.create_all(bind=engine)
@@ -181,7 +226,7 @@ async def test_generate_world_drafts_uses_novel_language_for_prompt_locale(db, n
     )
 
     result = await world_gen_mod.generate_world_drafts(
-        db=db,
+        session_factory=TestingSessionLocal,
         novel_id=novel.id,
         text="This world setting text is intentionally long enough to trigger the generation path.",
         llm_config=ResolvedLlmConfig(

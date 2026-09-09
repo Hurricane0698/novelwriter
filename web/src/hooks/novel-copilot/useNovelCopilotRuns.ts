@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   type CopilotContextData,
   type CopilotRun,
@@ -20,28 +20,13 @@ import { getLlmApiErrorMessage } from '@/lib/llmErrorMessages'
 interface NovelCopilotRunsState {
   runsBySessionId: Record<string, CopilotRun[]>
   setRunsBySessionId: React.Dispatch<React.SetStateAction<Record<string, CopilotRun[]>>>
-  timeoutIdsRef: React.MutableRefObject<Record<string, ReturnType<typeof setTimeout>>>
 }
 
 export function useNovelCopilotRunsState(sessions: NovelCopilotSession[]): NovelCopilotRunsState {
   const [runsBySessionId, setRunsBySessionId] = useState<Record<string, CopilotRun[]>>({})
-  const timeoutIdsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
-
-  useEffect(() => {
-    const timeoutIds = timeoutIdsRef.current
-    return () => {
-      Object.values(timeoutIds).forEach((timeoutId) => clearTimeout(timeoutId))
-    }
-  }, [])
 
   useEffect(() => {
     const activeSessionIds = new Set(sessions.map((session) => session.sessionId))
-
-    Object.entries(timeoutIdsRef.current).forEach(([sessionId, timeoutId]) => {
-      if (activeSessionIds.has(sessionId)) return
-      clearTimeout(timeoutId)
-      delete timeoutIdsRef.current[sessionId]
-    })
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRunsBySessionId((prev) => {
@@ -54,7 +39,6 @@ export function useNovelCopilotRunsState(sessions: NovelCopilotSession[]): Novel
   return useMemo(() => ({
     runsBySessionId,
     setRunsBySessionId,
-    timeoutIdsRef,
   }), [runsBySessionId])
 }
 
@@ -67,8 +51,13 @@ interface UseNovelCopilotRunsParams {
   focusedSessionId: string | null
   runsBySessionId: Record<string, CopilotRun[]>
   setRunsBySessionId: React.Dispatch<React.SetStateAction<Record<string, CopilotRun[]>>>
-  timeoutIdsRef: React.MutableRefObject<Record<string, ReturnType<typeof setTimeout>>>
   resolveBackendSessionId: (sessionId: string) => Promise<string>
+}
+
+interface CopilotPoll {
+  novelId: number
+  backendSessionId: string
+  cancel: () => void
 }
 
 export interface NovelCopilotRunControllerState {
@@ -223,7 +212,6 @@ export function useNovelCopilotRuns({
   focusedSessionId,
   runsBySessionId,
   setRunsBySessionId,
-  timeoutIdsRef,
   resolveBackendSessionId,
 }: UseNovelCopilotRunsParams): NovelCopilotRunControllerState {
   const { t } = useUiLocale()
@@ -232,22 +220,27 @@ export function useNovelCopilotRuns({
     [sessions],
   )
   const sessionsByIdRef = useRef(sessionsById)
-  const hydratingSessionIdsRef = useRef<Set<string>>(new Set())
-  const pollFailureCountsRef = useRef<Record<string, number>>({})
+  const pollsRef = useRef(new Map<string, CopilotPoll>())
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     sessionsByIdRef.current = sessionsById
+    pollsRef.current.forEach((poll, sessionId) => {
+      const session = sessionsById.get(sessionId)
+      if (session?.novelId !== poll.novelId || session.backendSessionId !== poll.backendSessionId) {
+        poll.cancel()
+      }
+    })
   }, [sessionsById])
 
-  useEffect(() => {
-    const activeSessionIds = new Set(sessions.map((session) => session.sessionId))
-    Object.keys(pollFailureCountsRef.current).forEach((sessionId) => {
-      if (activeSessionIds.has(sessionId)) return
-      delete pollFailureCountsRef.current[sessionId]
-    })
-  }, [sessions])
+  useLayoutEffect(() => {
+    const polls = pollsRef.current
+    return () => {
+      sessionsByIdRef.current = new Map()
+      polls.forEach((poll) => poll.cancel())
+    }
+  }, [])
 
   const focusedSession = focusedSessionId ? sessionsById.get(focusedSessionId) ?? null : null
   const activeRuns = focusedSessionId ? runsBySessionId[focusedSessionId] ?? [] : []
@@ -322,31 +315,53 @@ export function useNovelCopilotRuns({
     backendSessionId: string,
     runId: string,
   ) => {
-    const prev = timeoutIdsRef.current[localSessionId]
-    if (prev) clearTimeout(prev)
-    pollFailureCountsRef.current[localSessionId] = 0
+    if (!sessionsByIdRef.current.has(localSessionId)) return
+    pollsRef.current.get(localSessionId)?.cancel()
+    const controller = new AbortController()
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    let consecutiveFailures = 0
+    const poll: CopilotPoll = {
+      novelId: sessionNovelId,
+      backendSessionId,
+      cancel: () => {
+        controller.abort()
+        clearTimeout(timeoutId)
+        if (pollsRef.current.get(localSessionId) === poll) {
+          pollsRef.current.delete(localSessionId)
+        }
+      },
+    }
+    pollsRef.current.set(localSessionId, poll)
 
-    const clearPolling = () => {
-      const timeoutId = timeoutIdsRef.current[localSessionId]
-      if (timeoutId) clearTimeout(timeoutId)
-      delete timeoutIdsRef.current[localSessionId]
-      delete pollFailureCountsRef.current[localSessionId]
+    const isCurrentSession = () => {
+      const session = sessionsByIdRef.current.get(localSessionId)
+      return !controller.signal.aborted
+        && session?.novelId === sessionNovelId
+        && session.backendSessionId === backendSessionId
+    }
+    const isCurrentPoll = () => pollsRef.current.get(localSessionId) === poll && isCurrentSession()
+    // Finishing a request keeps its queued state update valid. Cancellation also
+    // aborts transport and invalidates late responses, including mocked transports.
+    const finishPolling = () => {
+      if (pollsRef.current.get(localSessionId) === poll) {
+        pollsRef.current.delete(localSessionId)
+      }
     }
 
     const schedulePoll = (delayMs: number) => {
-      timeoutIdsRef.current[localSessionId] = setTimeout(async () => {
+      timeoutId = setTimeout(async () => {
+        timeoutId = undefined
+        if (!isCurrentPoll()) {
+          poll.cancel()
+          return
+        }
         try {
-          const session = sessionsByIdRef.current.get(localSessionId)
-          if (!session || session.backendSessionId !== backendSessionId) {
-            clearPolling()
-            return
-          }
-
-          const resp = await copilotApi.pollRun(sessionNovelId, backendSessionId, runId)
-          pollFailureCountsRef.current[localSessionId] = 0
+          const resp = await copilotApi.pollRun(sessionNovelId, backendSessionId, runId, controller.signal)
+          if (!isCurrentPoll()) return
+          consecutiveFailures = 0
 
           setRunsBySessionId((prev) => {
-            if (!sessionsByIdRef.current.has(localSessionId)) return prev
+            if (!isCurrentSession()) return prev
             const sessionRuns = prev[localSessionId] ?? []
             if (!sessionRuns.some((run) => run.run_id === runId)) return prev
             return updateSessionRunById(prev, localSessionId, runId, () => resp)
@@ -355,29 +370,23 @@ export function useNovelCopilotRuns({
           if (resp.status === 'queued' || resp.status === 'running') {
             schedulePoll(POLL_INTERVAL_MS)
           } else {
-            clearPolling()
+            finishPolling()
           }
         } catch (error) {
-          const session = sessionsByIdRef.current.get(localSessionId)
-          if (!session || session.backendSessionId !== backendSessionId) {
-            clearPolling()
-            return
-          }
-
-          const nextFailureCount = (pollFailureCountsRef.current[localSessionId] ?? 0) + 1
-          pollFailureCountsRef.current[localSessionId] = nextFailureCount
+          if (!isCurrentPoll()) return
+          consecutiveFailures += 1
 
           if (
             !isTerminalPollError(error)
-            && nextFailureCount < POLL_MAX_CONSECUTIVE_FAILURES
+            && consecutiveFailures < POLL_MAX_CONSECUTIVE_FAILURES
           ) {
-            schedulePoll(getNextPollDelayMs(nextFailureCount))
+            schedulePoll(getNextPollDelayMs(consecutiveFailures))
             return
           }
 
           const errorMessage = getPollFailureMessage(error, (key) => t(key as never))
           setRunsBySessionId((prev) => {
-            if (!sessionsByIdRef.current.has(localSessionId)) return prev
+            if (!isCurrentSession()) return prev
             const sessionRuns = prev[localSessionId] ?? []
             const currentRun = sessionRuns.find((run) => run.run_id === runId)
             if (!currentRun) return prev
@@ -387,26 +396,24 @@ export function useNovelCopilotRuns({
               error: errorMessage,
             }))
           })
-          clearPolling()
+          finishPolling()
         }
       }, delayMs)
     }
 
     schedulePoll(POLL_INTERVAL_MS)
-  }, [setRunsBySessionId, t, timeoutIdsRef])
+  }, [setRunsBySessionId, t])
 
   useEffect(() => {
     const session = focusedSession
     if (!session || activeRuns.length > 0 || !session.backendSessionId) return
-    if (hydratingSessionIdsRef.current.has(session.sessionId)) return
     const hydratedBackendSessionId = session.backendSessionId
 
-    let cancelled = false
-    hydratingSessionIdsRef.current.add(session.sessionId)
+    const controller = new AbortController()
 
-    void copilotApi.listRuns(session.novelId, hydratedBackendSessionId)
+    void copilotApi.listRuns(session.novelId, hydratedBackendSessionId, controller.signal)
       .then((resp) => {
-        if (cancelled) return
+        if (controller.signal.aborted) return
 
         const currentSession = sessionsByIdRef.current.get(session.sessionId)
         if (!currentSession) return
@@ -427,17 +434,14 @@ export function useNovelCopilotRuns({
         }
       })
       .catch((error: unknown) => {
-        if (cancelled) return
+        if (controller.signal.aborted) return
         if (error instanceof ApiError && error.status === 404 && error.code === 'run_not_found') {
           return
         }
       })
-      .finally(() => {
-        hydratingSessionIdsRef.current.delete(session.sessionId)
-      })
 
     return () => {
-      cancelled = true
+      controller.abort()
     }
   }, [activeRuns.length, focusedSession, setRunsBySessionId, startPolling])
 

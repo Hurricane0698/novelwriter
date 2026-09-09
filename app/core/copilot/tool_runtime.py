@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.ai_client import ToolCall
 from app.core.copilot.scope import ScopeSnapshot
+from app.core.copilot.sync_runtime import check_sync_cancelled
 from app.core.copilot.tool_contract import ResearchToolSpec
 from app.core.copilot.research_tools import get_research_tool_spec
 from app.core.copilot.workspace import Workspace
@@ -109,6 +110,7 @@ def execute_auto_open_for_progressive_disclosure(
     if not pack_id:
         return
 
+    check_sync_cancelled()
     workspace.tool_call_count += 1
     auto_tool_call = ToolCall(
         id=f"auto_open_{workspace.tool_call_count}",
@@ -133,6 +135,7 @@ def execute_auto_open_for_progressive_disclosure(
         workspace,
         session_data["interaction_locale"],
     )
+    check_sync_cancelled()
     messages.append(
         {
             "role": "tool",

@@ -4,19 +4,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use anyhow::{Context, Result as AnyResult};
+#[cfg(target_os = "macos")]
+use tauri::menu::{HELP_SUBMENU_ID, MenuItemKind};
 use tauri::menu::{Menu, MenuItem};
+#[cfg(target_os = "windows")]
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::webview::PageLoadPayload;
 use tauri::{App, AppHandle, Manager, RunEvent, Url, WebviewWindow, WindowEvent};
 use tracing::{error, info, warn};
 
+use crate::exit_protocol::ExitProtocol;
 use crate::logging::{self, DesktopLogGuard};
-use crate::paths::AppPaths;
+use crate::paths::{AppPaths, DATA_ROOT_OVERRIDE_ENV};
 use crate::platform;
+use crate::platform::open_directory;
+use crate::platform::single_instance::{Acquisition, acquire};
 use crate::runtime::{self, APP_URL, RuntimeSupervisor};
 use crate::secret;
-use crate::windows::open_directory;
-use crate::windows::single_instance::{Acquisition, acquire};
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_OPEN_ID: &str = "open";
@@ -35,9 +39,12 @@ struct DesktopState {
     // can never turn `about:blank` into an inert white page.
     local_shell_url: Mutex<Option<Url>>,
     supervisor: Mutex<Option<RuntimeSupervisor>>,
+    #[cfg(target_os = "windows")]
     tray: Mutex<Option<TrayIcon>>,
     log_guard: Mutex<Option<DesktopLogGuard>>,
     exit_requested: AtomicBool,
+    pending_exit: Mutex<ExitProtocol>,
+    shutdown_complete: AtomicBool,
     // Startup failures are stored here so the local shell page can pull them via
     // the `startup_status` command; navigation with a `?failure=` query alone can
     // race a webview that has not finished loading yet and end up blank.
@@ -50,9 +57,12 @@ impl DesktopState {
             paths,
             local_shell_url: Mutex::new(None),
             supervisor: Mutex::new(None),
+            #[cfg(target_os = "windows")]
             tray: Mutex::new(None),
             log_guard: Mutex::new(None),
             exit_requested: AtomicBool::new(false),
+            pending_exit: Mutex::new(ExitProtocol::default()),
+            shutdown_complete: AtomicBool::new(false),
             startup_failure: Mutex::new(None),
         }
     }
@@ -73,7 +83,17 @@ fn close_disposition(exit_requested: bool) -> CloseDisposition {
 }
 
 pub fn run() {
+    #[cfg(not(target_os = "macos"))]
     let context = tauri::generate_context!();
+    #[cfg(target_os = "macos")]
+    let context = {
+        let mut context = tauri::generate_context!();
+        isolate_override_webviews(
+            context.config_mut(),
+            std::env::var_os(DATA_ROOT_OVERRIDE_ENV).is_some(),
+        );
+        context
+    };
     let mut primary = match acquire(&context.config().identifier)
         .expect("acquire NovWr desktop single-instance gate")
     {
@@ -81,10 +101,18 @@ pub fn run() {
         Acquisition::Secondary => return,
     };
 
-    let app = tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![open_logs, quit, startup_status])
+    let builder = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            open_logs,
+            quit,
+            startup_status,
+            complete_exit
+        ])
         .on_page_load(handle_page_load)
-        .setup(|app| setup(app).map_err(Into::into))
+        .setup(|app| setup(app).map_err(Into::into));
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(build_macos_menu);
+    let app = builder
         .build(context)
         .expect("build NovWr desktop application");
 
@@ -109,7 +137,18 @@ pub fn run() {
         .expect("stop NovWr duplicate-launch activation listener");
     primary
         .release()
-        .expect("release NovWr desktop single-instance mutex");
+        .expect("release NovWr desktop single-instance gate");
+}
+
+#[cfg(target_os = "macos")]
+fn isolate_override_webviews(config: &mut tauri::Config, has_data_root_override: bool) {
+    if has_data_root_override {
+        // WKWebView cannot redirect data_directory to this profile. A non-persistent
+        // store keeps isolated runtime validation out of the user's normal WebKit data.
+        for window in &mut config.app.windows {
+            window.incognito = true;
+        }
+    }
 }
 
 fn setup(app: &mut App) -> AnyResult<()> {
@@ -118,15 +157,49 @@ fn setup(app: &mut App) -> AnyResult<()> {
     let local_data_root = app
         .path()
         .local_data_dir()
-        .context("resolve Windows LocalAppData")?;
-    let paths = AppPaths::from_local_data_root(local_data_root);
+        .context("resolve local application data directory")?;
+    #[cfg(target_os = "windows")]
+    let defaults = AppPaths::from_local_data_root(local_data_root);
+    #[cfg(target_os = "macos")]
+    let defaults = AppPaths::from_macos_roots(
+        local_data_root,
+        app.path()
+            .home_dir()
+            .context("resolve user home directory")?
+            .join("Library/Logs"),
+    );
+    let override_value = std::env::var_os(DATA_ROOT_OVERRIDE_ENV);
+    let (paths, invalid_override) = match defaults.with_root_override(override_value.as_deref()) {
+        Ok(paths) => (paths, false),
+        Err(error) => {
+            eprintln!("NovWr desktop path configuration: {error}");
+            (defaults, true)
+        }
+    };
     app.manage(DesktopState::new(paths));
+    #[cfg(target_os = "macos")]
+    {
+        let handle = app.handle().clone();
+        crate::macos::quit::install(move || request_exit(&handle))
+            .context("install macOS save-before-quit delegate")?;
+    }
 
-    let tray = build_tray(app).context("create NovWr tray icon")?;
-    *app.state::<DesktopState>()
-        .tray
-        .lock()
-        .expect("desktop tray mutex poisoned") = Some(tray);
+    #[cfg(target_os = "windows")]
+    {
+        let tray = build_tray(app).context("create NovWr tray icon")?;
+        *app.state::<DesktopState>()
+            .tray
+            .lock()
+            .expect("desktop tray mutex poisoned") = Some(tray);
+    }
+
+    if invalid_override {
+        show_failure_window(
+            app.handle(),
+            "桌面数据目录设置无效：NOVWR_DESKTOP_DATA_ROOT 必须是绝对路径。",
+        );
+        return Ok(());
+    }
 
     let handle = app.handle().clone();
     thread::spawn(move || start_runtime(handle));
@@ -167,6 +240,7 @@ fn normalized_local_shell_url(url: &Url) -> Option<Url> {
     Some(normalized)
 }
 
+#[cfg(target_os = "windows")]
 fn build_tray(app: &App) -> tauri::Result<TrayIcon> {
     let open = MenuItem::with_id(app, TRAY_OPEN_ID, "打开 NovWr", true, None::<&str>)?;
     let data = MenuItem::with_id(app, TRAY_DATA_ID, "打开数据目录", true, None::<&str>)?;
@@ -183,11 +257,26 @@ fn build_tray(app: &App) -> tauri::Result<TrayIcon> {
         .tooltip("NovWr")
         .menu(&menu)
         .show_menu_on_left_click(true)
-        .on_menu_event(handle_tray_menu)
+        .on_menu_event(handle_shell_menu)
         .build(app)
 }
 
-fn handle_tray_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
+#[cfg(target_os = "macos")]
+fn build_macos_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    // Tauri's native menu provides About/Hide/Quit, standard Cmd editing actions,
+    // fullscreen and window commands, including the Cocoa responder chain.
+    let menu = Menu::default(app)?;
+    if let Some(MenuItemKind::Submenu(help)) = menu.get(HELP_SUBMENU_ID) {
+        help.append_items(&[
+            &MenuItem::with_id(app, TRAY_OPEN_ID, "打开 NovWr", true, None::<&str>)?,
+            &MenuItem::with_id(app, TRAY_DATA_ID, "打开数据目录", true, None::<&str>)?,
+            &MenuItem::with_id(app, TRAY_LOGS_ID, "打开日志", true, None::<&str>)?,
+        ])?;
+    }
+    Ok(menu)
+}
+
+fn handle_shell_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
     match event.id().as_ref() {
         TRAY_OPEN_ID => show_main_window(app),
         TRAY_DATA_ID => open_owned_directory(app, DirectoryKind::Data),
@@ -219,7 +308,7 @@ fn start_runtime_inner(app: &AppHandle) -> Result<(), StartupError> {
     info!("starting NovWr desktop shell");
 
     // Logging is initialized first so unsupported platforms still leave a trace.
-    platform::require_supported_windows_x64().map_err(StartupError::Platform)?;
+    platform::require_supported().map_err(StartupError::Platform)?;
 
     let jwt_secret = secret::load_or_create_secret(&state.paths.secret)
         .map_err(StartupError::PersistentSecret)?;
@@ -345,9 +434,7 @@ fn show_failure_window(app: &AppHandle, summary: &'static str) {
             }
             // Show the window even if navigation failed: the shell's status
             // polling still turns an already-loaded page into a useful error.
-            let _ = window.unminimize();
-            let _ = window.show();
-            let _ = window.set_focus();
+            reveal_window(app, &window);
         }
         Err(error) => {
             error!(error = %error, "show desktop failure window");
@@ -358,12 +445,22 @@ fn show_failure_window(app: &AppHandle, summary: &'static str) {
 fn show_main_window(app: &AppHandle) {
     match main_window(app) {
         Ok(window) => {
-            let _ = window.unminimize();
-            let _ = window.show();
-            let _ = window.set_focus();
+            reveal_window(app, &window);
         }
         Err(error) => warn!(error = %error, "show main window"),
     }
+}
+
+fn reveal_window(app: &AppHandle, window: &WebviewWindow) {
+    // Cmd+H hides the application as well as the window. Dock/secondary-launch
+    // activation must unhide that layer before focusing the existing webview.
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
+    #[cfg(target_os = "windows")]
+    let _ = app;
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_focus();
 }
 
 fn main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
@@ -389,8 +486,21 @@ fn handle_run_event(app: &AppHandle, event: RunEvent) {
                 }
             }
         }
-        RunEvent::ExitRequested { .. } => {
-            shutdown_runtime(app);
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => show_main_window(app),
+        #[cfg(target_os = "macos")]
+        RunEvent::MenuEvent(event) => handle_shell_menu(app, event),
+        RunEvent::ExitRequested { api, .. } => {
+            // Keep the event loop responsive during process shutdown, and prevent
+            // repeated Cmd+Q/OS quit requests from bypassing the same cleanup.
+            if !app
+                .state::<DesktopState>()
+                .shutdown_complete
+                .load(Ordering::Acquire)
+            {
+                api.prevent_exit();
+                request_exit(app);
+            }
         }
         RunEvent::Exit => {
             shutdown_runtime(app);
@@ -400,6 +510,110 @@ fn handle_run_event(app: &AppHandle, event: RunEvent) {
 }
 
 fn request_exit(app: &AppHandle) {
+    let state = app.state::<DesktopState>();
+    if state.exit_requested.load(Ordering::Acquire) {
+        return;
+    }
+    let Ok(window) = main_window(app) else {
+        begin_shutdown(app);
+        return;
+    };
+    let app_origin = Url::parse(APP_URL).expect("fixed app URL").origin();
+    let window_url = window.url();
+    info!("desktop quit requested");
+    if !window_url.is_ok_and(|url| url.origin() == app_origin) {
+        // Bundled startup/failure pages contain no editor or unsaved document.
+        begin_shutdown(app);
+        return;
+    }
+    let Some(request_id) = state
+        .pending_exit
+        .lock()
+        .expect("exit protocol mutex poisoned")
+        .request()
+    else {
+        return;
+    };
+    show_main_window(app);
+    info!(request_id, "waiting for frontend save confirmation");
+    if let Err(error) = window.eval(&format!(
+        "window.dispatchEvent(new CustomEvent('novwr:prepare-exit', {{detail: {{requestId: {request_id}}}}}))"
+    )) {
+        warn!(%error, "request frontend save before exit");
+        cancel_exit_request(app, request_id);
+        return;
+    }
+    let handle = app.clone();
+    thread::spawn(move || {
+        thread::sleep(std::time::Duration::from_secs(60));
+        // A lost bridge or stalled request must never be interpreted as saved.
+        cancel_exit_request(&handle, request_id);
+    });
+}
+
+fn cancel_exit_request(app: &AppHandle, request_id: u64) {
+    let state = app.state::<DesktopState>();
+    if state
+        .pending_exit
+        .lock()
+        .expect("exit protocol mutex poisoned")
+        .complete(request_id)
+    {
+        warn!(
+            request_id,
+            "frontend save confirmation timed out; application kept open"
+        );
+        if let Ok(window) = main_window(app) {
+            let _ = window.eval(&format!(
+                "window.dispatchEvent(new CustomEvent('novwr:cancel-exit', {{detail: {{requestId: {request_id}}}}}))"
+            ));
+            let _ = window
+                .set_title("NovWr — 未能确认保存，已取消退出 / Save not confirmed; quit cancelled");
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ExitDecision {
+    Saved,
+    Cancel,
+    Discard,
+}
+
+#[tauri::command]
+fn complete_exit(
+    app: AppHandle,
+    window: WebviewWindow,
+    request_id: u64,
+    decision: ExitDecision,
+) -> bool {
+    let app_origin = Url::parse(APP_URL).expect("fixed app URL").origin();
+    if window.label() != MAIN_WINDOW_LABEL
+        || !window.url().is_ok_and(|url| url.origin() == app_origin)
+    {
+        return false;
+    }
+    let state = app.state::<DesktopState>();
+    info!(request_id, ?decision, "received frontend exit decision");
+    if !state
+        .pending_exit
+        .lock()
+        .expect("exit protocol mutex poisoned")
+        .complete(request_id)
+    {
+        return false;
+    }
+    match decision {
+        ExitDecision::Cancel => {
+            let _ = window.set_title("NovWr");
+        }
+        ExitDecision::Saved | ExitDecision::Discard => begin_shutdown(&app),
+    }
+    true
+}
+
+fn begin_shutdown(app: &AppHandle) {
     let state = app.state::<DesktopState>();
     if state.exit_requested.swap(true, Ordering::AcqRel) {
         return;
@@ -417,6 +631,7 @@ fn shutdown_runtime(app: &AppHandle) {
     if let Err(error) = shutdown_supervisor(&state.supervisor) {
         error!(error = %error, "desktop runtime shutdown failed");
     }
+    state.shutdown_complete.store(true, Ordering::Release);
 }
 
 fn shutdown_supervisor(
@@ -471,7 +686,7 @@ fn startup_status(app: AppHandle) -> Option<&'static str> {
 #[derive(Debug, thiserror::Error)]
 enum StartupError {
     #[error(transparent)]
-    Platform(#[from] platform::UnsupportedWindowsPlatform),
+    Platform(#[from] platform::UnsupportedPlatform),
     #[error("create NovWr data and log directories: {0}")]
     CreateDirectories(#[source] std::io::Error),
     #[error("initialize desktop logging: {0}")]
@@ -489,7 +704,7 @@ enum StartupError {
 impl StartupError {
     fn user_summary(&self) -> &'static str {
         match self {
-            Self::Platform(_) => "NovWr 需要 Windows 10（2004 及以上）或 Windows 11 的 x64 版本。",
+            Self::Platform(error) => error.user_summary(),
             Self::CreateDirectories(_) => "无法创建 NovWr 数据目录。",
             Self::Logging(_) => "无法创建 NovWr 日志。",
             Self::PersistentSecret(_) => "桌面安全配置无效。",
@@ -509,6 +724,20 @@ mod tests {
     fn normal_close_hides_but_explicit_exit_closes() {
         assert_eq!(close_disposition(false), CloseDisposition::Hide);
         assert_eq!(close_disposition(true), CloseDisposition::Exit);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn isolated_data_roots_do_not_use_the_normal_webkit_store() {
+        let mut config = tauri::Config::default();
+        config
+            .app
+            .windows
+            .push(tauri::utils::config::WindowConfig::default());
+        isolate_override_webviews(&mut config, false);
+        assert!(config.app.windows.iter().all(|window| !window.incognito));
+        isolate_override_webviews(&mut config, true);
+        assert!(config.app.windows.iter().all(|window| window.incognito));
     }
 
     #[test]

@@ -286,6 +286,7 @@ def select_next_novel_ingest_job_novel_id(
     *,
     session_factory: Callable[[], Session],
     settings: Settings | None = None,
+    excluded_novel_ids: Iterable[int] = (),
 ) -> int | None:
     resolved_settings = settings or get_settings()
     db = session_factory()
@@ -300,6 +301,9 @@ def select_next_novel_ingest_job_novel_id(
                 ),
             )
         )
+        excluded = tuple(excluded_novel_ids)
+        if excluded:
+            query = query.filter(NovelIngestJob.novel_id.notin_(excluded))
         row = query.order_by(NovelIngestJob.created_at.asc(), NovelIngestJob.id.asc()).first()
         if row is None:
             return None

@@ -378,7 +378,7 @@ export function NovelStudioPage() {
   const continuationState = useContinuationSetupState(novelId, latestChapterNum)
 
   const updateChapter = useUpdateChapter(novelId, activeChapterNum ?? 0)
-  const createChapter = useCreateChapter(novelId)
+  const { mutate: createChapter, isPending: isCreatingChapter } = useCreateChapter(novelId)
   const deleteChapter = useDeleteChapter(novelId)
   const { data: chapter, isLoading: chapterLoading } = useQuery({
     queryKey: novelKeys.chapter(novelId, activeChapterNum ?? 0),
@@ -401,7 +401,10 @@ export function NovelStudioPage() {
     chapterContent: chapter?.content ?? '', saveChapter: updateChapter.mutateAsync,
   })
 
-  const currentMeta = chaptersMeta.find(c => c.chapter_number === activeChapterNum)
+  const currentMeta = useMemo(
+    () => chaptersMeta.find(c => c.chapter_number === activeChapterNum),
+    [activeChapterNum, chaptersMeta],
+  )
 
   // ── Postcheck drift annotations (carried over from generation results) ──
   const [driftWhitelist, setDriftWhitelist] = useState<string[]>(() => getWhitelist(novelId))
@@ -412,14 +415,14 @@ export function NovelStudioPage() {
   }, [novelId])
 
   // Active warnings for this chapter (used in both read and edit mode)
-  const activeChapterWarnings = (() => {
+  const activeChapterWarnings = useMemo(() => {
     if (activeChapterNum === null) return []
     return getActiveWarnings(novelId, activeChapterNum, currentMeta?.created_at)
       .filter(w => !driftWhitelist.includes(w.term))
-  })()
+  }, [activeChapterNum, currentMeta?.created_at, driftWhitelist, novelId])
 
   // Read-mode: full annotations with popovers
-  const chapterDriftAnnotations: TextAnnotation[] = (() => {
+  const chapterDriftAnnotations = useMemo<TextAnnotation[]>(() => {
     if (activeChapterWarnings.length === 0) return []
     return activeChapterWarnings.map(w => ({
       id: `drift-${w.code}-${w.term}`,
@@ -436,17 +439,22 @@ export function NovelStudioPage() {
         />
       ),
     }))
-  })()
+  }, [activeChapterWarnings, handleDismissDriftTerm])
 
   // Edit-mode: compact term list for the editor banner
   const editorWarningTerms = editMode && activeChapterWarnings.length > 0
     ? activeChapterWarnings.map(w => ({ code: w.code, term: w.term }))
     : undefined
 
-  const filteredChapters = (() => {
-    if (!searchQuery.trim()) return chaptersMeta
-    return chaptersMeta.filter((chapterMeta) => matchesChapterSearch(chapterMeta, searchQuery))
-  })()
+  const chapterListItems = useMemo(() => {
+    const filteredChapters = searchQuery.trim()
+      ? chaptersMeta.filter((chapterMeta) => matchesChapterSearch(chapterMeta, searchQuery))
+      : chaptersMeta
+    return filteredChapters.map(chapter => ({
+      chapterNumber: chapter.chapter_number,
+      label: formatChapterLabel(chapter),
+    }))
+  }, [chaptersMeta, searchQuery])
 
   const handleExportAll = async () => {
     const exportingNovelId = novelId
@@ -496,41 +504,6 @@ export function NovelStudioPage() {
       setNativeExportError({ novelId, locationKey: location.key, exportGeneration })
     }
   }
-  const handleCreateChapter = () => {
-    const targetNovelId = novelId
-    const targetLocationKey = location.key
-    const createGeneration = chapterCreateGenerationRef.current + 1
-    chapterCreateGenerationRef.current = createGeneration
-    setChapterCreateError(null)
-    createChapter.mutate({ title: '', content: '' }, {
-      onSuccess: (nc) => {
-        if (
-          chapterCreateNovelContextRef.current.novelId !== targetNovelId
-          || chapterCreateNovelContextRef.current.locationKey !== targetLocationKey
-          || chapterCreateGenerationRef.current !== createGeneration
-        ) {
-          return
-        }
-        resetEditor('', true)
-        setEditingTitle(false)
-        setShowMoreActions(false)
-        navigateToChapterStage(nc.chapter_number)
-      },
-      onError: () => {
-        if (
-          chapterCreateNovelContextRef.current.novelId === targetNovelId
-          && chapterCreateNovelContextRef.current.locationKey === targetLocationKey
-          && chapterCreateGenerationRef.current === createGeneration
-        ) {
-          setChapterCreateError({
-            novelId: targetNovelId,
-            locationKey: targetLocationKey,
-            createGeneration,
-          })
-        }
-      },
-    })
-  }
   const handleTitleSave = () => {
     setEditingTitle(false)
     if (activeChapterNum === null || !currentMeta) return
@@ -539,35 +512,14 @@ export function NovelStudioPage() {
     updateChapter.mutate({ title: newTitle })
   }
 
-  const handleDeleteChapter = async () => {
-    if (activeChapterNum === null) return
-    const confirmed = await confirmDialog({
-      title: t('studio.chapter.delete'),
-      description: t('studio.chapter.deleteConfirm', { chapter: activeChapterReference ?? `Ch. ${activeChapterNum}` }),
-      confirmText: t('studio.chapter.delete'),
-      tone: 'destructive',
-    })
-    if (!confirmed) return
-    deleteChapter.mutate(activeChapterNum, {
-      onSuccess: () => {
-        resetEditor()
-        // Clean up persisted drift warnings for the deleted chapter
-        setActiveWarnings(novelId, activeChapterNum, [])
-        const idx = chaptersMeta.findIndex(c => c.chapter_number === activeChapterNum)
-        const next = chaptersMeta[idx + 1] ?? chaptersMeta[idx - 1]
-        setEditingTitle(false)
-        setShowMoreActions(false)
-        navigateToChapterStage(next?.chapter_number ?? null)
-      },
-    })
-  }
-
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [cursorInfo, setCursorInfo] = useState({ para: 1, col: 1 })
   const handleSelectionChange = () => {
     const ta = textareaRef.current; if (!ta) return
     const before = ta.value.slice(0, ta.selectionStart); const lines = before.split('\n')
-    setCursorInfo({ para: lines.length, col: lines[lines.length - 1].length + 1 })
+    const para = lines.length
+    const col = lines[lines.length - 1].length + 1
+    setCursorInfo(current => current.para === para && current.col === col ? current : { para, col })
   }
   const handleUndo = () => { textareaRef.current?.focus(); document.execCommand('undo') }
   const handleRedo = () => { textareaRef.current?.focus(); document.execCommand('redo') }
@@ -635,6 +587,69 @@ export function NovelStudioPage() {
     editor: { editMode, setEditMode, saveCurrentEditorNow },
     applyWorldEntryRouteSearchParams, warmAtlasAssist,
   })
+  const handleSelectChapter = useCallback((chapterNumber: number) => {
+    resetEditor()
+    setEditingTitle(false)
+    setShowMoreActions(false)
+    navigateToChapterStage(chapterNumber)
+  }, [navigateToChapterStage, resetEditor])
+  const handleCreateChapter = useCallback(() => {
+    const targetNovelId = novelId
+    const targetLocationKey = location.key
+    const createGeneration = chapterCreateGenerationRef.current + 1
+    chapterCreateGenerationRef.current = createGeneration
+    setChapterCreateError(null)
+    createChapter({ title: '', content: '' }, {
+      onSuccess: (nc) => {
+        if (
+          chapterCreateNovelContextRef.current.novelId !== targetNovelId
+          || chapterCreateNovelContextRef.current.locationKey !== targetLocationKey
+          || chapterCreateGenerationRef.current !== createGeneration
+        ) {
+          return
+        }
+        resetEditor('', true)
+        setEditingTitle(false)
+        setShowMoreActions(false)
+        navigateToChapterStage(nc.chapter_number)
+      },
+      onError: () => {
+        if (
+          chapterCreateNovelContextRef.current.novelId === targetNovelId
+          && chapterCreateNovelContextRef.current.locationKey === targetLocationKey
+          && chapterCreateGenerationRef.current === createGeneration
+        ) {
+          setChapterCreateError({
+            novelId: targetNovelId,
+            locationKey: targetLocationKey,
+            createGeneration,
+          })
+        }
+      },
+    })
+  }, [createChapter, location.key, navigateToChapterStage, novelId, resetEditor])
+  const handleDeleteChapter = async () => {
+    if (activeChapterNum === null) return
+    const confirmed = await confirmDialog({
+      title: t('studio.chapter.delete'),
+      description: t('studio.chapter.deleteConfirm', { chapter: activeChapterReference ?? `Ch. ${activeChapterNum}` }),
+      confirmText: t('studio.chapter.delete'),
+      tone: 'destructive',
+    })
+    if (!confirmed) return
+    deleteChapter.mutate(activeChapterNum, {
+      onSuccess: () => {
+        resetEditor()
+        // Clean up persisted drift warnings for the deleted chapter
+        setActiveWarnings(novelId, activeChapterNum, [])
+        const idx = chaptersMeta.findIndex(c => c.chapter_number === activeChapterNum)
+        const next = chaptersMeta[idx + 1] ?? chaptersMeta[idx - 1]
+        setEditingTitle(false)
+        setShowMoreActions(false)
+        navigateToChapterStage(next?.chapter_number ?? null)
+      },
+    })
+  }
   const handleReturnToArtifact = () => {
     if (hasResultsContext) {
       navigateToResultsStage()
@@ -854,20 +869,12 @@ export function NovelStudioPage() {
                 novelTitle={novel.title}
                 searchQuery={searchQuery}
                 onSearchQueryChange={setSearchQuery}
-                chapters={filteredChapters.map(c => ({
-                  chapterNumber: c.chapter_number,
-                  label: formatChapterLabel(c),
-                }))}
+                chapters={chapterListItems}
                 selectedChapterNumber={activeChapterNum}
-                onSelectChapter={(chapterNumber) => {
-                  resetEditor()
-                  setEditingTitle(false)
-                  setShowMoreActions(false)
-                  navigateToChapterStage(chapterNumber)
-                }}
+                onSelectChapter={handleSelectChapter}
                 chapterCount={chaptersMeta.length}
                 onCreateChapter={handleCreateChapter}
-                isCreating={createChapter.isPending}
+                isCreating={isCreatingChapter}
                 latestChapterReference={latestChapterReference}
                 onContinuation={() => {
                   // Save-first: if editing, flush autosave before switching stage
@@ -1038,6 +1045,7 @@ export function NovelStudioPage() {
                 <StudioChapterToolbar
                   currentMeta={currentMeta}
                   currentChapterIdentity={currentChapterIdentity}
+                  updatedAt={chapter?.updated_at ?? chapter?.created_at ?? currentMeta?.created_at}
                   content={editMode ? editorContent : (chapter?.content ?? '')}
                   canEdit={activeChapterNum !== null}
                   canDelete={activeChapterNum !== null && chaptersMeta.length > 1}
