@@ -1,6 +1,6 @@
 [package]
 name = "novwr-desktop"
-version = "0.5.1"
+version = "0.5.2"
 description = "NovWr desktop shell for Windows and macOS"
 authors = ["NovWr contributors"]
 edition = "2024"
