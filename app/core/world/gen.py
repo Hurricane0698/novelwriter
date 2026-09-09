@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.core.ai_client import ai_client
@@ -13,10 +14,10 @@ from app.core.llm_config import ResolvedLlmConfig
 from app.core.text import PromptKey, get_prompt
 from app.core.text.snippets import SnippetKey, get_snippet
 from app.language import resolve_prompt_locale
-from app.models import Novel
 from app.schemas import WorldGenerateResponse, WorldGenerateWarning
 from .generation_normalization import _merge_worldgen_outputs
 from .generation_persistence import persist_world_drafts
+from .generation_snapshot import generation_snapshot, check_generation_snapshot
 
 # Keep the existing extraction-schema import path available to callers.
 from .generation_schema import (
@@ -81,7 +82,7 @@ def _build_world_generation_prompt(
 
 async def generate_world_drafts(
     *,
-    db: Session,
+    session_factory: Callable[[], Session],
     novel_id: int,
     text: str,
     llm_config: ResolvedLlmConfig,
@@ -97,9 +98,10 @@ async def generate_world_drafts(
     warnings: list[WorldGenerateWarning] = []
 
     settings = get_settings()
-    novel = db.query(Novel.language).filter(Novel.id == novel_id).first()
+    with session_factory() as db:
+        snapshot = generation_snapshot(db, novel_id, user_id)
     prompt_locale = resolve_prompt_locale(
-        novel_language=getattr(novel, "language", None)
+        novel_language=snapshot.language
     )
     chunks = _chunk_world_generation_text(text)
     chunk_count = len(chunks)
@@ -132,6 +134,8 @@ async def generate_world_drafts(
     else:
         extracted = _merge_worldgen_outputs(extracted_parts, warnings=warnings)
 
-    return persist_world_drafts(
-        db=db, novel_id=novel_id, extracted=extracted, warnings=warnings
-    )
+    with session_factory() as db:
+        check_generation_snapshot(db, novel_id, user_id, snapshot)
+        return persist_world_drafts(
+            db=db, novel_id=novel_id, extracted=extracted, warnings=warnings
+        )

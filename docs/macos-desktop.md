@@ -29,10 +29,12 @@ bash scripts/build_macos_desktop.sh desktop/runtime-dist/macos/novwr-runtime
 | 日志 | `~/Library/Logs/NovWr` |
 | 模型配置与 API Key | 当前用户 Keychain，按数据目录区分条目 |
 | 关闭窗口 / `⌘W` | 隐藏现有窗口；Dock 或再次启动恢复 |
-| `⌘Q` | 服务停止接收请求，后台 worker 完成当前工作，然后退出 |
+| `⌘Q` | 暂停编辑并等待正文保存成功，再关闭后端和应用；失败可重试、继续编辑或明确放弃保存 |
 | 异常终止应用壳 | 进程守护逻辑回收对应后台进程组，释放本地端口 |
 
 本地服务固定监听 `127.0.0.1:8000`。端口被其他程序占用时，应用显示启动错误；不会接管或停止其他服务。Windows 继续使用原有 Job Object、DPAPI 和 NSIS 构建，平台选择集中在适配层。
+
+`MAX_CONCURRENT_LLM_CALLS` 和 `MAX_BACKGROUND_CONCURRENT_LLM_CALLS` 都是**每个 Python 进程**的容量限制。桌面应用的 server、worker 使用各自的许可池；总量设为 1 时，前台和后台仍可能各进行 1 个请求。它们不承诺应用级或供应商账号级硬上限；费用或供应商并发约束需要在共享 API 网关或供应商侧实施。详见 [并发配置](concurrency.md)。
 
 ## 验证
 
@@ -50,6 +52,8 @@ desktop/build/macos-venv/bin/python scripts/smoke_macos_desktop.py \
 API 烟测不替代原生窗口检查。发布前仍需在目标 macOS 的真实应用窗口内确认首屏、导入、中文编辑与 `⌘` 快捷键、设置页、窗口关闭后 Dock 恢复，以及重启后的内容。CI 在 PR 和 main 推送时调用 `.github/workflows/build-macos-desktop.yml`，构建并烟测 arm64 安装包；PR 构建明确检出 PR 的 head commit。通过后从 Actions 的 `novwr-macos-desktop-arm64` artifact 下载 DMG、校验文件和构建信息，保存 7 天。该流程也支持手动调用；本地验证不代表远端 CI 已执行。
 
 ## 签名与分发
+
+发布门禁还包括旧版本覆盖安装：在独立数据目录中先用旧包保存正文、配置和 Keychain 条目，再替换为新包，验证数据迁移、重启、设置读取和模型连接。沿用稳定签名身份；如系统要求 Keychain 授权，由用户处理，不放宽条目访问控制。新安装烟测不替代此升级路径。
 
 当前配置使用 ad-hoc 签名，可构建并在本机运行，不代表通过 Developer ID 身份认证或 Apple 公证。对外正式分发需要为 Tauri 应用和内嵌 Python 可执行文件使用稳定的 Developer ID 签名，并对最终应用进行公证与 stapling。不能仅给外层应用重新签名而忽略内嵌运行时。
 

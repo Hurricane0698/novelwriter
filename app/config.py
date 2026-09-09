@@ -150,9 +150,9 @@ class Settings(BaseSettings):
     hosted_llm_api_key: str = ""
     hosted_llm_model: str = ""
 
-    # Concurrency: interactive LLM calls share a global fail-fast gate.
-    # Background jobs additionally flow through a narrower blocking lane so
-    # bootstrap/refinement traffic cannot crowd out foreground continuation.
+    # Per Python process (shared across its threads/event loops), not per app,
+    # provider account or deployment. Server and worker have independent pools.
+    # Background calls also take the narrower blocking lane in their process.
     max_concurrent_llm_calls: int = 50
     max_background_concurrent_llm_calls: int = 1
     generation_run_stale_timeout_seconds: int = 900

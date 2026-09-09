@@ -51,7 +51,7 @@ async def test_failed_later_chunk_preserves_previous_drafts(db, novel, monkeypat
     monkeypatch.setattr(gen.ai_client, "generate_structured", generate)
     with pytest.raises(RuntimeError, match="second chunk failed"):
         await gen.generate_world_drafts(
-            db=db,
+            session_factory=TestingSessionLocal,
             novel_id=novel.id,
             text="x" * 24,
             llm_config=ResolvedLlmConfig(
@@ -226,7 +226,7 @@ async def test_generate_world_drafts_uses_novel_language_for_prompt_locale(db, n
     )
 
     result = await world_gen_mod.generate_world_drafts(
-        db=db,
+        session_factory=TestingSessionLocal,
         novel_id=novel.id,
         text="This world setting text is intentionally long enough to trigger the generation path.",
         llm_config=ResolvedLlmConfig(

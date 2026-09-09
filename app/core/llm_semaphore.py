@@ -53,7 +53,7 @@ def _get_background_lane_semaphore() -> ProcessCapacity:
 
 
 async def acquire_llm_slot() -> None:
-    """Try to acquire an LLM concurrency slot. Raises 503 if full."""
+    """Try a process-local LLM slot; raise 503 when this process is full."""
     sem = _get_global_semaphore()
     if not sem.try_acquire():
         raise HTTPException(
@@ -71,9 +71,8 @@ def release_llm_slot() -> None:
 async def acquire_background_llm_slot_blocking() -> float:
     """Acquire a background LLM slot after passing the background lane.
 
-    Background jobs must not consume unlimited provider concurrency while a
-    user is actively waiting on continuation. The background lane caps how many
-    worker-owned LLM calls may contend for the shared global semaphore.
+    The background lane caps calls contending for this process's total pool.
+    A separately deployed worker does not share the API server's permits.
     """
 
     started = perf_counter()

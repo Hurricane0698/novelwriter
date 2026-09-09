@@ -24,10 +24,12 @@ from app.core.world.generation_runs import (
     fail_world_generation_run,
 )
 from app.core.world.use_case_errors import WorldUseCaseError, detail_error_from_http_exception
-from app.core.auth import QuotaScope, ensure_ai_available
+from app.core.auth import (
+    ensure_ai_available, open_quota_reservation, charge_quota_reservation,
+    finalize_quota_reservation,
+)
 from app.core.llm_semaphore import acquire_llm_slot, release_llm_slot
 from app.core.llm_config import ResolvedLlmConfig
-from app.models import User
 from app.schemas import WorldGenerateResponse
 
 logger = logging.getLogger(__name__)
@@ -67,7 +69,9 @@ def _world_generation_failure(
         )
         return detail_error_from_http_exception(exc)
 
-    if isinstance(exc, StructuredOutputParseError):
+    if isinstance(exc, WorldUseCaseError):
+        code, message, status_code = exc.code, exc.message, exc.status_code
+    elif isinstance(exc, StructuredOutputParseError):
         logger.warning("world.generate invalid LLM output", exc_info=True, extra=extra)
         code, message, status_code = "world_generate_llm_schema_invalid", "LLM schema invalid", 502
     elif isinstance(exc, LLMUnavailableError):
@@ -93,8 +97,8 @@ async def generate_world_from_text(
     novel_id: int,
     *,
     text: str,
-    db: Session,
-    current_user: User,
+    session_factory: Callable[[], Session],
+    user_id: int,
     llm_config: ResolvedLlmConfig,
     request_id: str | None = None,
     generate_world_drafts_fn: Callable[..., Awaitable[WorldGenerateResponse]] | None = None,
@@ -107,109 +111,76 @@ async def generate_world_from_text(
     release_slot = release_llm_slot_fn or release_llm_slot
     record_generate_event = record_event_fn or record_event
 
-    load_novel(novel_id, db)
     claim_token = secrets.token_hex(16)
-    run_claim = claim_world_generation_run(
-        db,
-        user_id=current_user.id,
-        novel_id=novel_id,
-        claim_token=claim_token,
-    )
-    if not run_claim.owner:
-        raise WorldUseCaseError(
-            code="world_generate_duplicate_request",
-            message="World generation already running for this novel",
-            status_code=409,
+    with session_factory() as db:
+        load_novel(novel_id, db)
+        run_claim = claim_world_generation_run(
+            db, user_id=user_id, novel_id=novel_id, claim_token=claim_token,
         )
-
-    try:
-        ensure_ai_available(
-            db,
-            billing_source=llm_config.billing_source_hint,
-        )
-    except HTTPException as exc:
-        raise _world_generation_failure(
-            exc,
-            db=db,
-            run_id=run_claim.run_id,
-            claim_token=claim_token,
-        ) from exc
-
-    lock = await _get_world_generate_lock(novel_id)
-    async with lock:
-        extra = {
-            "request_id": request_id,
-            "novel_id": novel_id,
-            "user_id": current_user.id,
-        }
-
-        slot_acquired = False
+        if not run_claim.owner:
+            raise WorldUseCaseError(
+                code="world_generate_duplicate_request",
+                message="World generation already running for this novel", status_code=409,
+            )
         try:
-            await acquire_slot()
-            slot_acquired = True
+            ensure_ai_available(db, billing_source=llm_config.billing_source_hint)
         except HTTPException as exc:
             raise _world_generation_failure(
-                exc,
-                db=db,
-                run_id=run_claim.run_id,
-                claim_token=claim_token,
-                extra=extra,
+                exc, db=db, run_id=run_claim.run_id, claim_token=claim_token,
             ) from exc
 
-        # Durable reserve-then-refund: a crash between reserve and refund leaves
-        # an open reservation row that reconciliation refunds, instead of
-        # permanently losing user quota the way a bare decrement would.
-        quota_scope = QuotaScope(db, current_user.id, count=1)
-        try:
-            try:
-                quota_scope.reserve()
-                result = await generation_runner(
-                    db=db,
-                    novel_id=novel_id,
-                    text=text,
-                    llm_config=llm_config,
-                    user_id=current_user.id,
+    # Only values and the factory cross waits; no auth, quota or generation
+    # session retains a checked-out connection while a model/lock is pending.
+    extra = {"request_id": request_id, "novel_id": novel_id, "user_id": user_id}
+    slot_acquired = False
+    reservation_id = None
+    try:
+        lock = await _get_world_generate_lock(novel_id)
+        async with lock:
+            await acquire_slot()
+            slot_acquired = True
+            with session_factory() as db:
+                reservation_id = open_quota_reservation(db, user_id, count=1)
+            result = await generation_runner(
+                session_factory=session_factory, novel_id=novel_id, text=text,
+                llm_config=llm_config, user_id=user_id,
+            )
+            with session_factory() as db:
+                charge_quota_reservation(db, reservation_id, n=1)
+                complete_world_generation_run(db, run_id=run_claim.run_id, claim_token=claim_token)
+                ensure_project_start_event(
+                    db, user_id=user_id, novel_id=novel_id, start_mode="setting_import",
+                    meta={"entry_action": "world_generate"},
                 )
-                quota_scope.charge(1)
-            except Exception as exc:
-                raise _world_generation_failure(
-                    exc,
-                    db=db,
-                    run_id=run_claim.run_id,
-                    claim_token=claim_token,
-                    extra=extra,
-                ) from exc
-            finally:
-                quota_scope.finalize()
+                record_generate_event(
+                    db, user_id, "world_generate", novel_id=novel_id,
+                    meta={
+                        "entities_created": result.entities_created,
+                        "relationships_created": result.relationships_created,
+                        "systems_created": result.systems_created,
+                        "warnings_count": len(result.warnings),
+                    },
+                )
+            return result
+    except asyncio.CancelledError:
+        with session_factory() as db:
+            fail_world_generation_run(
+                db, run_id=run_claim.run_id, claim_token=claim_token,
+                error_code="world_generate_cancelled", error_message="World generation cancelled",
+            )
+        raise
+    except Exception as exc:
+        with session_factory() as db:
+            raise _world_generation_failure(
+                exc, db=db, run_id=run_claim.run_id, claim_token=claim_token, extra=extra,
+            ) from exc
+    finally:
+        try:
+            with session_factory() as db:
+                finalize_quota_reservation(db, reservation_id)
         finally:
             if slot_acquired:
                 release_slot()
-
-        complete_world_generation_run(
-            db,
-            run_id=run_claim.run_id,
-            claim_token=claim_token,
-        )
-        ensure_project_start_event(
-            db,
-            user_id=current_user.id,
-            novel_id=novel_id,
-            start_mode="setting_import",
-            meta={"entry_action": "world_generate"},
-        )
-        record_generate_event(
-            db,
-            current_user.id,
-            "world_generate",
-            novel_id=novel_id,
-            meta={
-                "entities_created": result.entities_created,
-                "relationships_created": result.relationships_created,
-                "systems_created": result.systems_created,
-                "warnings_count": len(result.warnings),
-            },
-        )
-        return result
 
 
 async def _get_world_generate_lock(novel_id: int) -> asyncio.Lock:
