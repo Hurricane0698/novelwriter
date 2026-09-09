@@ -8,15 +8,15 @@
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3-blue?style=flat-square" alt="License" /></a>
-  <a href="#快速开始"><img src="https://img.shields.io/badge/install-one%20click-0ea5e9?style=flat-square&logo=gnubash&logoColor=white" alt="One Click Install" /></a>
-  <a href="#快速开始"><img src="https://img.shields.io/badge/image-GHCR-2496ED?style=flat-square&logo=docker&logoColor=white" alt="GHCR Image" /></a>
+  <a href="https://github.com/Hurricane0698/novelwriter/releases/download/v0.5.2/NovWr_0.5.2_x64-setup.exe"><img src="https://img.shields.io/badge/download-Windows-0078D4?style=flat-square" alt="下载 Windows 桌面版" /></a>
+  <a href="https://github.com/Hurricane0698/novelwriter/releases/download/v0.5.2/NovWr_0.5.2_aarch64.dmg"><img src="https://img.shields.io/badge/download-macOS%20Apple%20Silicon-222222?style=flat-square&logo=apple&logoColor=white" alt="下载 macOS 桌面版" /></a>
   <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" /></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/frontend-React%2019-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19" /></a>
 </p>
 
 </div>
 
-NovelWriter（NovWr）是一个面向长篇小说创作与续写的自部署工具。它不做"一键生成百万字"，而是解决长篇创作里真正难的问题：**几十万字之后，设定还立得住**。
+NovelWriter（NovWr）是一个面向长篇小说创作与续写的本地写作工具，提供 Windows、macOS 桌面版和 Docker 自部署方式。它不做"一键生成百万字"，而是解决长篇创作里真正难的问题：**几十万字之后，设定还立得住**。
 
 做法是把设定从散落的备忘录变成一个结构化的世界模型——实体、关系、体系——每次续写时只把当前章节真正需要的设定注入给模型。写什么、采不采纳，始终由作者决定。
 
@@ -28,19 +28,26 @@ NovelWriter（NovWr）是一个面向长篇小说创作与续写的自部署工�
 <br /><br />
 </div>
 
-## 核心概念
-
-**世界模型（World Model）** — 实体、关系、体系的结构化知识库。可以从已有正文或设定集自动提取（提取结果以草稿形式等待你审核），也可以手工维护。续写时按当前章节的相关性精准注入，而不是把全书硬塞进上下文。
-
-**Studio 与 Atlas** — 两个工作台，同一部小说。Studio 是日常写作现场：读写章节、发起多版本续写、对比与采纳草稿。Atlas 是设定治理中心：审阅实体关系、维护体系规则、处理提取草稿。
-
-**Novel Copilot（只读）** — 基于全书检索的研究助手，遵循 Find → Open → Read 的只读流程：翻阅、归纳、给出建议卡片。它不能直接修改任何数据；所有变更都经过你的确认。
-
-其余值得知道的设计决策：续写候选、提取结果都是草稿，不确认不落库；检索基于自建的窗口索引（无向量数据库依赖）；BYOK——接入任何 OpenAI 兼容接口的模型。
-
 ## 快速开始
 
-### 一键安装（推荐）
+### 桌面版（推荐）
+
+下载后直接安装，无需命令行、Python、Rust 或 Docker。
+
+| 系统 | 下载 v0.5.2 | 安装方式 |
+| --- | --- | --- |
+| Windows 10（2004+）/ 11，x64 | [下载 Windows 安装包](https://github.com/Hurricane0698/novelwriter/releases/download/v0.5.2/NovWr_0.5.2_x64-setup.exe) | 双击安装，当前用户安装无需管理员权限 |
+| macOS 14+，Apple Silicon（M 系列） | [下载 macOS DMG](https://github.com/Hurricane0698/novelwriter/releases/download/v0.5.2/NovWr_0.5.2_aarch64.dmg) | 打开 DMG，将 NovWr 拖入「应用程序」 |
+
+打开 NovWr，即可导入或编辑小说；使用 AI 功能前，在「设置 → AI 模型配置」填写 OpenAI 兼容接口并测试连接。
+
+当前安装包尚未完成 Windows 代码签名 / Apple 公证，首次运行可能出现系统安全提示。提示处理、数据位置和覆盖升级步骤见 [桌面版安装指南](docs/desktop-install.md)。全部安装包和更新说明见 [Releases](https://github.com/Hurricane0698/novelwriter/releases/latest)。
+
+### Docker 自部署
+
+适合 Linux、服务器或希望自行管理服务的用户。
+
+**一键安装**
 
 需要本机已安装 Docker；不需要 Git。
 
@@ -50,25 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/Hurricane0698/novelwriter/main/inst
 
 脚本会安装 `uv` 与 `novwr` CLI，初始化 `~/.novwr`，并拉起官方镜像。常用命令：`novwr init` / `run` / `doctor` / `upgrade` / `uninstall`。
 
-### Windows 桌面版
-
-不需要 Docker，也不需要命令行。支持 Windows 10（2004 及以上）与 Windows 11 x64。
-
-1. 从 [Releases](https://github.com/Hurricane0698/novelwriter/releases/latest) 下载 `NovWr_x.y.z_x64-setup.exe`
-2. 双击安装（当前用户安装，无需管理员权限）
-3. 启动后在「设置 → AI 模型配置」填入你的 LLM API 信息
-
-数据保存在本机 `%LOCALAPPDATA%\NovWr`，覆盖安装不丢数据；API Key 用 Windows DPAPI 加密存储。安装包暂未做代码签名，SmartScreen 提示时选「更多信息 → 仍要运行」。
-
-### macOS 桌面版（Apple Silicon）
-
-面向 macOS 14 及以上的 Apple Silicon Mac，内含后端和 Rust 索引引擎，使用时无需安装 Python、Rust 或 Docker。
-
-在 Mac 上运行 `bash scripts/build_macos_desktop.sh` 可生成 `desktop/desktop-dist/macos/NovWr.app` 和 DMG。打开 DMG 后将 NovWr 拖到「应用程序」，首次启动在设置页填写模型连接信息。构建依赖、验证步骤与签名说明见 [macOS 桌面构建](docs/macos-desktop.md)。
-
-正文数据保存在 `~/Library/Application Support/NovWr`，日志在 `~/Library/Logs/NovWr`；模型配置保存在当前用户的 macOS 钥匙串。关闭窗口后可从 Dock 恢复，`⌘Q` 会退出并清理后台进程。当前构建使用本地临时签名，尚未做 Apple 公证。
-
-### Docker Compose（手动）
+**Docker Compose（手动）**
 
 ```bash
 git clone https://github.com/Hurricane0698/novelwriter.git
@@ -77,13 +66,6 @@ cp .env.example .env   # 填入 LLM API 配置
 docker compose up -d   # 访问 http://localhost:8000
 ```
 
-### 如何选
-
-- 大多数用户：一键安装
-- Windows 用户想最省事：桌面版
-- 想手动控制目录与 compose：Docker Compose
-- 要二次开发：见下面的「本地开发」
-
 ### Selfhost 说明
 
 - 默认 `selfhost` 模式，前后端集成，仅监听 `127.0.0.1:8000`
@@ -91,6 +73,16 @@ docker compose up -d   # 访问 http://localhost:8000
 - 首次启动自动创建管理员账号，并内置《西游记》示例项目
 - 需要一个 OpenAI 接口兼容的 LLM API Key；设置页有「测试连接」做连通性与 JSON Mode 预检
 - 官方镜像：`ghcr.io/hurricane0698/novelwriter:latest`
+
+## 核心概念
+
+**世界模型（World Model）** — 实体、关系、体系的结构化知识库。可以从已有正文或设定集自动提取（提取结果以草稿形式等待你审核），也可以手工维护。续写时按当前章节的相关性精准注入，而不是把全书硬塞进上下文。
+
+**Studio 与 Atlas** — 两个工作台，同一部小说。Studio 是日常写作现场：读写章节、发起多版本续写、对比与采纳草稿。Atlas 是设定治理中心：审阅实体关系、维护体系规则、处理提取草稿。
+
+**Novel Copilot（只读）** — 基于全书检索的研究助手，遵循 Find → Open → Read 的只读流程：翻阅、归纳、给出建议卡片。它不能直接修改任何数据；所有变更都经过你的确认。
+
+其余值得知道的设计决策：续写候选、提取结果都是草稿，不确认不落库；检索基于自建的窗口索引（无向量数据库依赖）；BYOK——接入任何 OpenAI 兼容接口的模型。
 
 ## 配置
 
@@ -128,6 +120,8 @@ npm run dev
 ```
 
 技术栈：FastAPI · SQLAlchemy · SQLite/PostgreSQL · React 19 · TypeScript · Tailwind · Docker。
+
+桌面端开发与打包见 [macOS 桌面构建](docs/macos-desktop.md)；Windows 构建入口为 `scripts/build_windows_desktop.ps1`。发布标签会同时构建并验证两端安装包，通过后附到同一份 Release 草稿，确认安装包后再发布。
 
 ## 反馈与协作
 

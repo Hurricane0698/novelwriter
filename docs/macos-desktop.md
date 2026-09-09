@@ -2,6 +2,8 @@
 
 首版目标为 Apple Silicon、macOS 14 及以上。Tauri 使用系统 WKWebView 加载同源的本地前端，Python 3.13 后端和 Rust 索引扩展随应用分发。最低系统版本同时受 WebKit 和原生库约束；仅构建成功不能证明所有旧系统都已实测。
 
+直接使用应用请从 [Releases](https://github.com/Hurricane0698/novelwriter/releases/latest) 下载 DMG，并参考 [桌面版安装指南](desktop-install.md)。下文面向需要自行构建或维护桌面端的贡献者。
+
 ## 从源码构建
 
 构建机需要原生 arm64 环境、Xcode Command Line Tools、Node.js 20.19.5、Rust 1.85.0 和 `.uv-version` 指定的 uv 0.10.4。各工具须在当前 shell 的 `PATH` 中；不要在 Rosetta 终端构建。脚本通过 uv 选择或下载受管理的独立 Python 3.13.12，保证本地与 CI 使用同一种发行版；不使用系统 Python.framework。依赖版本来自现有 npm、uv、Cargo 锁文件。
@@ -55,6 +57,6 @@ API 烟测不替代原生窗口检查。发布前仍需在目标 macOS 的真实
 
 发布门禁还包括旧版本覆盖安装：在独立数据目录中先用旧包保存正文、配置和 Keychain 条目，再替换为新包，验证数据迁移、重启、设置读取和模型连接。沿用稳定签名身份；如系统要求 Keychain 授权，由用户处理，不放宽条目访问控制。新安装烟测不替代此升级路径。
 
-当前配置使用 ad-hoc 签名，可构建并在本机运行，不代表通过 Developer ID 身份认证或 Apple 公证。对外正式分发需要为 Tauri 应用和内嵌 Python 可执行文件使用稳定的 Developer ID 签名，并对最终应用进行公证与 stapling。不能仅给外层应用重新签名而忽略内嵌运行时。
+当前配置使用 ad-hoc 签名，不代表通过 Developer ID 身份认证或 Apple 公证；下载后首次打开可能需要用户在系统设置中确认。要以经过 Apple 验证的开发者身份分发，需要为 Tauri 应用和内嵌 Python 可执行文件使用稳定的 Developer ID 签名，并对最终应用进行公证与 stapling。不能仅给外层应用重新签名而忽略内嵌运行时。
 
 Keychain 使用系统默认访问控制。更换内嵌可执行文件签名后，系统可能要求用户重新授权读取原有条目；应用不会自动批准系统提示。测试时使用独立配置路径，避免开发构建访问已有真实密钥。详见 [Tauri macOS 签名文档](https://v2.tauri.app/distribute/sign/macos/) 和 [PyInstaller 6.16 macOS 签名说明](https://pyinstaller.org/en/v6.16.0/feature-notes.html#macos-binary-code-signing)。
