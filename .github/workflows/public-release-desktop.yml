@@ -1,0 +1,78 @@
+name: Build desktop release assets
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: desktop-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-windows-desktop.yml
+
+  macos:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-macos-desktop.yml
+
+  upload-desktop-packages:
+    name: Attach validated Windows and macOS packages
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the tagged source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download Windows desktop setup
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.windows.outputs.setup_artifact_name }}
+          path: ${{ runner.temp }}/windows-package
+
+      - name: Download macOS desktop package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.macos.outputs.package_artifact_name }}
+          path: ${{ runner.temp }}/macos-package
+
+      - name: Verify versions and prepare public assets
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          python3 scripts/prepare_desktop_release.py \
+            --tag "$TAG_NAME" --commit "$SOURCE_COMMIT" \
+            --windows-dir "$RUNNER_TEMP/windows-package" \
+            --macos-dir "$RUNNER_TEMP/macos-package" \
+            --output-dir "$RUNNER_TEMP/release-assets" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      - name: Attach packages to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          is_draft="$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+          if [ "$is_draft" != true ]; then
+            echo "Release assets must be verified in a draft before publication." >&2
+            exit 1
+          fi
+
+          gh release upload "$TAG_NAME" \
+            "$RUNNER_TEMP/release-assets/NovWr_${TAG_NAME#v}_x64-setup.exe" \
+            "$RUNNER_TEMP/release-assets/NovWr_${TAG_NAME#v}_aarch64.dmg" \
+            "$RUNNER_TEMP/release-assets/SHA256SUMS" \
+            "$RUNNER_TEMP/release-assets/BUILD_INFO.json" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

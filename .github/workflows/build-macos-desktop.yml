@@ -2,6 +2,10 @@ name: Build macOS desktop
 
 on:
   workflow_call:
+    outputs:
+      package_artifact_name:
+        description: Apple Silicon DMG, checksum and build metadata from the validated application.
+        value: ${{ jobs.desktop.outputs.package_artifact_name }}
   workflow_dispatch:
 
 permissions:
@@ -12,6 +16,8 @@ jobs:
     name: Build and smoke macOS desktop (Apple Silicon)
     runs-on: macos-15
     timeout-minutes: 60
+    outputs:
+      package_artifact_name: novwr-macos-desktop-arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
