@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-complete-exit"
+description = "Enables the complete_exit command without any pre-configured scope."
+commands.allow = ["complete_exit"]
+
+[[permission]]
+identifier = "deny-complete-exit"
+description = "Denies the complete_exit command without any pre-configured scope."
+commands.deny = ["complete_exit"]

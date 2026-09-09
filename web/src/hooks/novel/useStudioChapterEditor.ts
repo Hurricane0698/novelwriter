@@ -68,8 +68,7 @@ export function useStudioChapterEditor({
       const savingChapterNumber = activeChapterNum
       const savingLocationKey = locationKey
       if (savingChapterNumber === null) return
-      const saveGeneration = editorSaveGenerationRef.current + 1
-      editorSaveGenerationRef.current = saveGeneration
+      const saveGeneration = editorSaveGenerationRef.current
       setEditorSaveError(null)
       const isCurrentSave = () => (
         editorSaveGenerationRef.current === saveGeneration
@@ -101,11 +100,8 @@ export function useStudioChapterEditor({
     const targetChapterNumber = activeChapterNum
     const targetLocationKey = locationKey
     if (targetChapterNumber === null) return false
-    const savePromise = saveNowAutoSave(editorContent)
-    // useDebouncedAutoSave invokes the current save callback synchronously before
-    // yielding, so this is the generation reserved for this manual save.
     const saveGeneration = editorSaveGenerationRef.current
-    await savePromise
+    await saveNowAutoSave(editorContent)
     return (
       editorSaveGenerationRef.current === saveGeneration
       && editorSaveContextRef.current.novelId === targetNovelId

@@ -233,6 +233,12 @@ def _require_desktop_port_available() -> None:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
             if sys.platform == "win32" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
                 probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            elif sys.platform != "win32":
+                # Match uvicorn's Unix listener: a recently closed connection
+                # in TIME_WAIT must not prevent reopening the desktop app.
+                # SO_REUSEADDR still rejects another live listener (unlike
+                # SO_REUSEPORT); Windows keeps exclusive address ownership.
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind((_HOST, _PORT))
     except OSError as exc:
         raise DesktopRuntimeError(

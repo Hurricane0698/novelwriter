@@ -1,5 +1,6 @@
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 mod desktop_app;
+mod exit_protocol;
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 mod logging;
 mod paths;

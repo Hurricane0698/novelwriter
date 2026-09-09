@@ -13,6 +13,7 @@ use tauri::webview::PageLoadPayload;
 use tauri::{App, AppHandle, Manager, RunEvent, Url, WebviewWindow, WindowEvent};
 use tracing::{error, info, warn};
 
+use crate::exit_protocol::ExitProtocol;
 use crate::logging::{self, DesktopLogGuard};
 use crate::paths::{AppPaths, DATA_ROOT_OVERRIDE_ENV};
 use crate::platform;
@@ -42,6 +43,7 @@ struct DesktopState {
     tray: Mutex<Option<TrayIcon>>,
     log_guard: Mutex<Option<DesktopLogGuard>>,
     exit_requested: AtomicBool,
+    pending_exit: Mutex<ExitProtocol>,
     shutdown_complete: AtomicBool,
     // Startup failures are stored here so the local shell page can pull them via
     // the `startup_status` command; navigation with a `?failure=` query alone can
@@ -59,6 +61,7 @@ impl DesktopState {
             tray: Mutex::new(None),
             log_guard: Mutex::new(None),
             exit_requested: AtomicBool::new(false),
+            pending_exit: Mutex::new(ExitProtocol::default()),
             shutdown_complete: AtomicBool::new(false),
             startup_failure: Mutex::new(None),
         }
@@ -99,7 +102,12 @@ pub fn run() {
     };
 
     let builder = tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![open_logs, quit, startup_status])
+        .invoke_handler(tauri::generate_handler![
+            open_logs,
+            quit,
+            startup_status,
+            complete_exit
+        ])
         .on_page_load(handle_page_load)
         .setup(|app| setup(app).map_err(Into::into));
     #[cfg(target_os = "macos")]
@@ -169,6 +177,12 @@ fn setup(app: &mut App) -> AnyResult<()> {
         }
     };
     app.manage(DesktopState::new(paths));
+    #[cfg(target_os = "macos")]
+    {
+        let handle = app.handle().clone();
+        crate::macos::quit::install(move || request_exit(&handle))
+            .context("install macOS save-before-quit delegate")?;
+    }
 
     #[cfg(target_os = "windows")]
     {
@@ -496,6 +510,110 @@ fn handle_run_event(app: &AppHandle, event: RunEvent) {
 }
 
 fn request_exit(app: &AppHandle) {
+    let state = app.state::<DesktopState>();
+    if state.exit_requested.load(Ordering::Acquire) {
+        return;
+    }
+    let Ok(window) = main_window(app) else {
+        begin_shutdown(app);
+        return;
+    };
+    let app_origin = Url::parse(APP_URL).expect("fixed app URL").origin();
+    let window_url = window.url();
+    info!("desktop quit requested");
+    if !window_url.is_ok_and(|url| url.origin() == app_origin) {
+        // Bundled startup/failure pages contain no editor or unsaved document.
+        begin_shutdown(app);
+        return;
+    }
+    let Some(request_id) = state
+        .pending_exit
+        .lock()
+        .expect("exit protocol mutex poisoned")
+        .request()
+    else {
+        return;
+    };
+    show_main_window(app);
+    info!(request_id, "waiting for frontend save confirmation");
+    if let Err(error) = window.eval(&format!(
+        "window.dispatchEvent(new CustomEvent('novwr:prepare-exit', {{detail: {{requestId: {request_id}}}}}))"
+    )) {
+        warn!(%error, "request frontend save before exit");
+        cancel_exit_request(app, request_id);
+        return;
+    }
+    let handle = app.clone();
+    thread::spawn(move || {
+        thread::sleep(std::time::Duration::from_secs(60));
+        // A lost bridge or stalled request must never be interpreted as saved.
+        cancel_exit_request(&handle, request_id);
+    });
+}
+
+fn cancel_exit_request(app: &AppHandle, request_id: u64) {
+    let state = app.state::<DesktopState>();
+    if state
+        .pending_exit
+        .lock()
+        .expect("exit protocol mutex poisoned")
+        .complete(request_id)
+    {
+        warn!(
+            request_id,
+            "frontend save confirmation timed out; application kept open"
+        );
+        if let Ok(window) = main_window(app) {
+            let _ = window.eval(&format!(
+                "window.dispatchEvent(new CustomEvent('novwr:cancel-exit', {{detail: {{requestId: {request_id}}}}}))"
+            ));
+            let _ = window
+                .set_title("NovWr — 未能确认保存，已取消退出 / Save not confirmed; quit cancelled");
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ExitDecision {
+    Saved,
+    Cancel,
+    Discard,
+}
+
+#[tauri::command]
+fn complete_exit(
+    app: AppHandle,
+    window: WebviewWindow,
+    request_id: u64,
+    decision: ExitDecision,
+) -> bool {
+    let app_origin = Url::parse(APP_URL).expect("fixed app URL").origin();
+    if window.label() != MAIN_WINDOW_LABEL
+        || !window.url().is_ok_and(|url| url.origin() == app_origin)
+    {
+        return false;
+    }
+    let state = app.state::<DesktopState>();
+    info!(request_id, ?decision, "received frontend exit decision");
+    if !state
+        .pending_exit
+        .lock()
+        .expect("exit protocol mutex poisoned")
+        .complete(request_id)
+    {
+        return false;
+    }
+    match decision {
+        ExitDecision::Cancel => {
+            let _ = window.set_title("NovWr");
+        }
+        ExitDecision::Saved | ExitDecision::Discard => begin_shutdown(&app),
+    }
+    true
+}
+
+fn begin_shutdown(app: &AppHandle) {
     let state = app.state::<DesktopState>();
     if state.exit_requested.swap(true, Ordering::AcqRel) {
         return;

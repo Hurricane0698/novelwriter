@@ -9,6 +9,7 @@ import { PerformanceModeProvider } from '@/contexts/PerformanceModeContext'
 import { UiLocaleProvider } from '@/contexts/UiLocaleContext'
 import { PageShell } from '@/components/layout/PageShell'
 import { isHostedRuntime } from '@/lib/runtimeMode'
+import { DesktopExitGuard } from '@/components/DesktopExitGuard'
 
 const Home = lazy(() => import('@/pages/Home'))
 const Login = lazy(() => import('@/pages/Login'))
@@ -72,6 +73,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <UiLocaleProvider>
+        <DesktopExitGuard />
         <BrowserRouter>
           <PerformanceModeProvider>
             <AuthProvider>

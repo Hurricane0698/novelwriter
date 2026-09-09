@@ -419,6 +419,34 @@ def test_port_conflict_fails_before_uvicorn_import(monkeypatch: pytest.MonkeyPat
     assert bound_addresses == [("127.0.0.1", 8000)]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix TCP address reuse")
+def test_port_check_allows_restart_after_connection_enters_time_wait(monkeypatch):
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        address = listener.getsockname()
+        listener.listen()
+        with socket.create_connection(address, timeout=2) as client:
+            connection, _ = listener.accept()
+            with connection:
+                connection.settimeout(2)
+                connection.shutdown(socket.SHUT_WR)
+                assert client.recv(1) == b""
+                client.shutdown(socket.SHUT_WR)
+                assert connection.recv(1) == b""
+    monkeypatch.setattr(desktop_runtime, "_PORT", address[1])
+    desktop_runtime._require_desktop_port_available()
+
+
+def test_port_check_rejects_a_real_live_listener(monkeypatch):
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        monkeypatch.setattr(desktop_runtime, "_PORT", listener.getsockname()[1])
+        with pytest.raises(desktop_runtime.DesktopRuntimeError, match="unavailable"):
+            desktop_runtime._require_desktop_port_available()
+
+
 def test_worker_reuses_existing_worker_loop(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
