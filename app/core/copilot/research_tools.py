@@ -728,6 +728,9 @@ def _find_from_chapters(query: str, db: Session, novel: Novel | NovelScopeValue)
     return [item[3] for item in scored]
 
 
+SCAN_CANCEL_INTERVAL = 1024
+
+
 def _scan_chapter_matches(
     text: str,
     query_terms: list[QueryTerm],
@@ -743,6 +746,7 @@ def _scan_chapter_matches(
     policy = get_language_policy(language, sample_text=text)
     normalized_text = policy.normalize_for_matching(text)
     count = 0
+    attempts = 0
     first_matches: list[tuple[int, int, QueryTerm]] = []
     first_per_term: list[tuple[int, int, QueryTerm]] = []
     for term in query_terms:
@@ -762,7 +766,8 @@ def _scan_chapter_matches(
                 term_count += 1
                 count += 1
             search_from = max(pos + 1, end)
-            if not count % 1024:
+            attempts += 1
+            if attempts % SCAN_CANCEL_INTERVAL == 0:
                 check_sync_cancelled()
     first_matches.sort(key=lambda item: item[0])
     first_per_term.sort(key=lambda item: item[0])

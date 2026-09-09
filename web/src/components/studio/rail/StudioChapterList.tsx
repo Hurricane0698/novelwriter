@@ -5,6 +5,7 @@ import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { NwButton } from '@/components/ui/nw-button'
 import { cn } from '@/lib/utils'
 import type { NovelShellStage } from '@/components/novel-shell/NovelShellRouteState'
+import { chapterWindow, DEFAULT_VIEWPORT_HEIGHT, restoreChapterAnchor, ROW_HEIGHT, ROW_STRIDE, shouldRevealChapter } from './chapterWindow'
 
 export type StudioChapterListItem = {
   chapterNumber: number
@@ -12,10 +13,6 @@ export type StudioChapterListItem = {
 }
 
 const WINDOW_THRESHOLD = 100
-const ROW_HEIGHT = 38
-const ROW_STRIDE = ROW_HEIGHT + 4
-const OVERSCAN = 5
-const DEFAULT_VIEWPORT_HEIGHT = 420
 
 function ChapterButton({
   chapter,
@@ -57,6 +54,8 @@ function WindowedChapterRows({ chapters, selectedChapterNumber, isChapterStage, 
   const viewportRef = useRef<HTMLDivElement>(null)
   const buttonsRef = useRef(new Map<number, HTMLButtonElement>())
   const pendingFocusRef = useRef<number | null>(null)
+  const previousRef = useRef<{ selection: number | null; chapters: StudioChapterListItem[] } | null>(null)
+  const anchorRef = useRef({ index: 0, offset: 0 })
   const [focusedChapter, setFocusedChapter] = useState<number | null>(null)
   const [tabStop, setTabStop] = useState<{ selection: number | null; chapter: number } | null>(null)
   const chapterIndices = useMemo(() => new Map(chapters.map((chapter, index) => [chapter.chapterNumber, index])), [chapters])
@@ -65,12 +64,12 @@ function WindowedChapterRows({ chapters, selectedChapterNumber, isChapterStage, 
     ? chapterIndices.get(tabStop.chapter) ?? selectedIndex
     : selectedIndex
   const focusedIndex = chapterIndices.get(focusedChapter ?? -1)
-  const [window, setWindow] = useState({ start: 0, end: Math.ceil(DEFAULT_VIEWPORT_HEIGHT / ROW_STRIDE) + OVERSCAN })
+  const [window, setWindow] = useState(() => chapterWindow(chapters.length, 0, DEFAULT_VIEWPORT_HEIGHT))
 
   const syncWindow = useCallback((viewport: HTMLDivElement) => {
     const height = viewport.clientHeight || DEFAULT_VIEWPORT_HEIGHT
-    const start = Math.max(0, Math.floor(viewport.scrollTop / ROW_STRIDE) - OVERSCAN)
-    const end = Math.min(chapters.length, Math.ceil((viewport.scrollTop + height) / ROW_STRIDE) + OVERSCAN)
+    const { start, end } = chapterWindow(chapters.length, viewport.scrollTop, height)
+    anchorRef.current = { index: Math.floor(viewport.scrollTop / ROW_STRIDE), offset: viewport.scrollTop % ROW_STRIDE }
     setWindow(previous => previous.start === start && previous.end === end ? previous : { start, end })
   }, [chapters.length])
 
@@ -85,8 +84,20 @@ function WindowedChapterRows({ chapters, selectedChapterNumber, isChapterStage, 
   }, [syncWindow])
 
   useLayoutEffect(() => {
-    revealChapter(selectedIndex)
-  }, [chapters, revealChapter, selectedIndex])
+    const previous = previousRef.current
+    const viewport = viewportRef.current
+    if (shouldRevealChapter(previous, selectedChapterNumber)) {
+      revealChapter(selectedIndex)
+    } else if (viewport && previous) {
+      if (previous.chapters !== chapters) {
+        const top = restoreChapterAnchor(previous.chapters, chapterIndices, anchorRef.current)
+        const maxTop = Math.max(0, chapters.length * ROW_STRIDE - 4 - (viewport.clientHeight || DEFAULT_VIEWPORT_HEIGHT))
+        viewport.scrollTop = Math.min(top, maxTop)
+      }
+      syncWindow(viewport)
+    }
+    previousRef.current = { selection: selectedChapterNumber, chapters }
+  }, [chapterIndices, chapters, revealChapter, selectedChapterNumber, selectedIndex, syncWindow])
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current
@@ -139,6 +150,7 @@ function WindowedChapterRows({ chapters, selectedChapterNumber, isChapterStage, 
       ref={viewportRef}
       className="nw-scrollbar-thin min-h-0 flex-1 overflow-y-auto"
       data-testid="studio-chapter-viewport"
+      style={{ overflowAnchor: 'none' }}
       onScroll={event => syncWindow(event.currentTarget)}
     >
       <div role="list" className="relative" style={{ height: chapters.length * ROW_STRIDE - 4 }}>

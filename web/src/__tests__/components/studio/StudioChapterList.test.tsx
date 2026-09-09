@@ -53,6 +53,38 @@ describe('StudioChapterList', () => {
     expect(screen.getByRole('button', { name: 'Revised chapter' })).toBeInTheDocument()
   })
 
+  it('preserves the visible chapter and pixel offset across rename, append and deletion', () => {
+    const view = render(<StudioChapterList {...props} selectedChapterNumber={100} />, { wrapper })
+    const viewport = screen.getByTestId('studio-chapter-viewport')
+    const top = 799 * 42 + 17
+    fireEvent.scroll(viewport, { target: { scrollTop: top } })
+    const renamed = chapters.map(item => item.chapterNumber === 100 ? { ...item, label: 'Renamed' } : item)
+    view.rerender(<StudioChapterList {...props} chapters={renamed} selectedChapterNumber={100} />)
+    expect(viewport.scrollTop).toBe(top)
+    const appended = [...renamed, { chapterNumber: 1001, label: 'Chapter 1001' }]
+    view.rerender(<StudioChapterList {...props} chapters={appended} selectedChapterNumber={100} />)
+    expect(viewport.scrollTop).toBe(top)
+    const deleted = appended.filter(item => item.chapterNumber !== 20)
+    view.rerender(<StudioChapterList {...props} chapters={deleted} selectedChapterNumber={100} />)
+    expect(viewport.scrollTop).toBe(top - 42)
+    expect(chapter(800)).toBeInTheDocument()
+    // Selection deletion alone does not override the user's browsing position.
+    view.rerender(<StudioChapterList {...props} chapters={deleted.filter(item => item.chapterNumber !== 100)} selectedChapterNumber={100} />)
+    expect(viewport.scrollTop).toBe(top - 84)
+    view.rerender(<StudioChapterList {...props} chapters={deleted} selectedChapterNumber={200} />)
+    expect(viewport.scrollTop).toBeLessThan(200 * 42)
+  })
+
+  it('anchors to a surviving neighbour when filtering removes the visible chapter', () => {
+    const view = render(<StudioChapterList {...props} />, { wrapper })
+    const viewport = screen.getByTestId('studio-chapter-viewport')
+    fireEvent.scroll(viewport, { target: { scrollTop: 799 * 42 + 11 } })
+    const filtered = chapters.filter(item => item.chapterNumber % 2 === 1)
+    view.rerender(<StudioChapterList {...props} chapters={filtered} />)
+    expect(viewport.scrollTop).toBe(400 * 42 + 11) // Chapter 801 follows removed 800.
+    expect(chapter(801)).toBeInTheDocument()
+  })
+
   it('navigates across windows with arrows, page keys, Home/End and Tab, then activates normally', async () => {
     const user = userEvent.setup()
     render(<><button>Before list</button><StudioChapterList {...props} /><button>After list</button></>, { wrapper })

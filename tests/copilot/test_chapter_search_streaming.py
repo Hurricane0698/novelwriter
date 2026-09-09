@@ -1,6 +1,9 @@
 """Differential checks for recall, ranking and normalized excerpt offsets."""
 
 import random
+import asyncio
+import threading
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import event
@@ -8,6 +11,46 @@ from sqlalchemy import event
 from app.core.copilot import research_tools as tools
 from app.core.copilot.workspace import EvidencePack, make_pack_id
 from app.models import Chapter
+from app.core.copilot.sync_runtime import SyncExecutionChannel
+
+
+@pytest.mark.asyncio
+async def test_invalid_word_candidates_cancel_within_scan_budget_and_release_capacity(monkeypatch):
+    policy = tools.get_language_policy("en")
+    entered, resume = threading.Event(), threading.Event()
+    attempts = 0
+
+    def boundaries(text, start, end):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            entered.set()
+            assert resume.wait(5)
+        return policy.match_has_word_boundaries(text, start, end)
+
+    monkeypatch.setattr(tools, "get_language_policy", lambda *args, **kwargs: SimpleNamespace(
+        normalize_for_matching=policy.normalize_for_matching,
+        match_has_word_boundaries=boundaries,
+    ))
+    channel = SyncExecutionChannel(max_workers=1)
+    task = asyncio.create_task(channel.run(
+        tools._scan_chapter_matches, "cat " + "scatter " * 100_000,
+        [tools.QueryTerm(raw="cat", normalized="cat")], language="en",
+    ))
+    try:
+        async with asyncio.timeout(5):
+            while not entered.is_set():
+                await asyncio.sleep(0.001)
+        task.cancel()
+        await asyncio.sleep(0)  # Deliver cancellation to the channel before resuming.
+        resume.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=2)
+        assert attempts <= tools.SCAN_CANCEL_INTERVAL
+        assert await asyncio.wait_for(channel.run(lambda: "available"), timeout=2) == "available"
+    finally:
+        resume.set()
+        channel._executor.shutdown(wait=True)
 
 
 @pytest.mark.parametrize(
