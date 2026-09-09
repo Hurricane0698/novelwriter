@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { unified } from 'unified'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { UiLocaleProvider } from '@/contexts/UiLocaleContext'
 import { MarkdownContent } from '@/components/ui/markdown-content'
@@ -9,6 +10,26 @@ function renderWithProvider(element: ReactNode) {
 }
 
 describe('MarkdownContent', () => {
+  it('parses once across unrelated parent updates and reparses changed text or annotations', () => {
+    const parse = vi.spyOn(Object.getPrototypeOf(unified), 'parse')
+    try {
+      const content = Array.from({ length: 500 }, (_, index) => `Paragraph **${index}**`).join('\n\n')
+      const view = renderWithProvider(<MarkdownContent content={content} />)
+      expect(parse).toHaveBeenCalledTimes(1)
+      for (let tick = 0; tick < 30; tick += 1) {
+        view.rerender(<UiLocaleProvider><MarkdownContent content={content} className={`tick-${tick}`} /></UiLocaleProvider>)
+      }
+      expect(parse).toHaveBeenCalledTimes(1)
+      view.rerender(<UiLocaleProvider><MarkdownContent content={`${content}\n\nNew text`} /></UiLocaleProvider>)
+      expect(parse).toHaveBeenCalledTimes(2)
+      expect(screen.getByText('New text')).toBeInTheDocument()
+      view.rerender(<UiLocaleProvider><MarkdownContent content={`${content}\n\nNew text`} annotations={[{ id: 'new', term: 'New text', className: 'changed-annotation', renderPopover: () => 'Details' }]} /></UiLocaleProvider>)
+      expect(parse).toHaveBeenCalledTimes(3)
+      expect(view.container.querySelector('.changed-annotation')).toHaveTextContent('New text')
+    } finally {
+      parse.mockRestore()
+    }
+  })
   it('renders the CommonMark authoring baseline', () => {
     const { container } = renderWithProvider(
       <MarkdownContent
