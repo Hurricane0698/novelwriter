@@ -1,7 +1,7 @@
 {
   "name": "novwr-desktop",
   "private": true,
-  "version": "0.5.2",
+  "version": "0.6.0",
   "scripts": {
     "icons": "node scripts/generate-windows-icons.mjs",
     "tauri": "tauri",

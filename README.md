@@ -8,8 +8,8 @@
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3-blue?style=flat-square" alt="License" /></a>
-  <a href="https://github.com/Hurricane0698/novelwriter/releases/download/v0.5.2/NovWr_0.5.2_x64-setup.exe"><img src="https://img.shields.io/badge/download-Windows-0078D4?style=flat-square" alt="下载 Windows 桌面版" /></a>
-  <a href="https://github.com/Hurricane0698/novelwriter/releases/download/v0.5.2/NovWr_0.5.2_aarch64.dmg"><img src="https://img.shields.io/badge/download-macOS%20Apple%20Silicon-222222?style=flat-square&logo=apple&logoColor=white" alt="下载 macOS 桌面版" /></a>
+  <a href="https://github.com/Hurricane0698/novelwriter/releases/download/v0.6.0/NovWr_0.6.0_x64-setup.exe"><img src="https://img.shields.io/badge/download-Windows-0078D4?style=flat-square" alt="下载 Windows 桌面版" /></a>
+  <a href="https://github.com/Hurricane0698/novelwriter/releases/download/v0.6.0/NovWr_0.6.0_aarch64.dmg"><img src="https://img.shields.io/badge/download-macOS%20Apple%20Silicon-222222?style=flat-square&logo=apple&logoColor=white" alt="下载 macOS 桌面版" /></a>
   <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" /></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/frontend-React%2019-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19" /></a>
 </p>
@@ -41,10 +41,10 @@ NovelWriter（NovWr）是一个面向长篇小说创作与续写的本地写作�
 
 下载后直接安装，无需命令行、Python、Rust 或 Docker。
 
-| 系统 | 下载 v0.5.2 | 安装方式 |
+| 系统 | 下载 v0.6.0 | 安装方式 |
 | --- | --- | --- |
-| Windows 10（2004+）/ 11，x64 | [下载 Windows 安装包](https://github.com/Hurricane0698/novelwriter/releases/download/v0.5.2/NovWr_0.5.2_x64-setup.exe) | 双击安装，当前用户安装无需管理员权限 |
-| macOS 14+，Apple Silicon（M 系列） | [下载 macOS DMG](https://github.com/Hurricane0698/novelwriter/releases/download/v0.5.2/NovWr_0.5.2_aarch64.dmg) | 打开 DMG，将 NovWr 拖入「应用程序」 |
+| Windows 10（2004+）/ 11，x64 | [下载 Windows 安装包](https://github.com/Hurricane0698/novelwriter/releases/download/v0.6.0/NovWr_0.6.0_x64-setup.exe) | 双击安装，当前用户安装无需管理员权限 |
+| macOS 14+，Apple Silicon（M 系列） | [下载 macOS DMG](https://github.com/Hurricane0698/novelwriter/releases/download/v0.6.0/NovWr_0.6.0_aarch64.dmg) | 打开 DMG，将 NovWr 拖入「应用程序」 |
 
 打开 NovWr，即可导入或编辑小说；使用 AI 功能前，在「设置 → AI 模型配置」填写 OpenAI 兼容接口并测试连接。
 
