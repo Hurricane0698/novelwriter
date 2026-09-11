@@ -1,8 +1,7 @@
 import '@/lib/uiMessagePacks/novel'
-import { BookOpen } from 'lucide-react'
+import { BookOpen, X } from 'lucide-react'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { Input } from '@/components/ui/input'
-import { StudioModeRailSection } from './StudioModeRailSection'
 import {
   StudioChapterList,
   type StudioChapterListItem,
@@ -19,10 +18,7 @@ export function StudioNavigationRail({
   chapterCount,
   onCreateChapter,
   isCreating,
-  latestChapterReference,
-  onContinuation,
-  onOpenAtlas,
-  onWarmAtlas,
+  onClose,
   activeStage,
 }: {
   novelTitle: string
@@ -34,10 +30,7 @@ export function StudioNavigationRail({
   chapterCount: number
   onCreateChapter?: () => void
   isCreating?: boolean
-  latestChapterReference: string | null
-  onContinuation: () => void
-  onOpenAtlas: () => void
-  onWarmAtlas?: () => void
+  onClose: () => void
   activeStage: NovelShellStage | null
 }) {
   const { t } = useUiLocale()
@@ -45,15 +38,12 @@ export function StudioNavigationRail({
 
   return (
     <div className="flex h-full min-h-0 flex-col text-foreground/90" data-testid="studio-rail">
-      <div className="shrink-0 border-b border-[var(--nw-glass-border)] px-5 py-5">
+      <div className="shrink-0 border-b border-[var(--nw-glass-border)] px-4 py-4">
         <div className="mb-4 flex items-center gap-2" title={novelTitle}>
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent shadow-sm">
-            <BookOpen size={14} className="text-white" />
-          </div>
-          <div className="min-w-0">
-            <div className="truncate text-[15px] font-semibold text-foreground">{novelTitle}</div>
-            <div className="text-[11px] text-muted-foreground">Studio</div>
-          </div>
+          <BookOpen size={16} className="shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1 truncate text-sm font-medium">{novelTitle}</div>
+          <button type="button" onClick={onClose} aria-label={t('studio.layout.closeChapters')}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-foreground/5"><X size={15} /></button>
         </div>
 
         <Input
@@ -61,20 +51,12 @@ export function StudioNavigationRail({
           placeholder={t('studio.rail.searchChapters')}
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
-          className="h-8 rounded-lg border-none bg-background/40 text-[13px] shadow-sm transition-all placeholder:text-muted-foreground hover:bg-background/60 focus:bg-background focus-visible:ring-[1px] focus-visible:ring-accent focus-visible:ring-offset-0"
+          className="h-8 rounded-md border-border/60 bg-transparent text-[13px] placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-accent focus-visible:ring-offset-0"
           data-testid="studio-rail-search"
         />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 px-3 py-4">
-        <StudioModeRailSection
-          activeStage={activeStage}
-          latestChapterReference={latestChapterReference}
-          onContinuation={onContinuation}
-          onOpenAtlas={onOpenAtlas}
-          onWarmAtlas={onWarmAtlas}
-        />
-
+      <div className="flex min-h-0 flex-1 flex-col gap-3 px-2 py-3">
         {hasSearch ? (
           <div className="px-2 text-[11px] text-muted-foreground">
             {t('studio.rail.searchResults', { count: chapters.length })}

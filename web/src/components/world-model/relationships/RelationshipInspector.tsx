@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Link2, Trash2 } from 'lucide-react'
+import { Link2, Trash2, X } from 'lucide-react'
+import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { cn } from '@/lib/utils'
 import { InlineEdit } from '@/components/world-model/shared/InlineEdit'
 import { VisibilityDot } from '@/components/world-model/shared/VisibilityDot'
@@ -14,6 +15,7 @@ export function RelationshipInspector({
   onUpdate,
   onConfirm,
   onDelete,
+  onClose,
   allowDelete = true,
   layout = 'compact',
   className,
@@ -23,10 +25,12 @@ export function RelationshipInspector({
   onUpdate: (relId: number, data: UpdateRelationshipRequest) => void
   onConfirm: (relId: number) => void
   onDelete: (relId: number) => void
+  onClose?: () => void
   allowDelete?: boolean
   layout?: 'compact' | 'full'
   className?: string
 }) {
+  const { t } = useUiLocale()
   const [pendingDeleteRelId, setPendingDeleteRelId] = useState<number | null>(null)
   const entityMap = useMemo(() => new Map(entities.map((e) => [e.id, e])), [entities])
 
@@ -38,19 +42,20 @@ export function RelationshipInspector({
       <div
         className={cn(
           layout === 'full'
-            ? 'flex h-full min-h-0 items-start gap-6 overflow-y-auto px-8 py-6'
-            : 'h-[160px] shrink-0 flex items-start gap-6 px-8 py-5',
+            ? 'relative flex h-full min-h-0 flex-wrap items-start gap-5 overflow-y-auto px-6 py-5'
+            : 'relative max-h-[35%] min-h-[128px] shrink-0 flex flex-wrap items-start gap-5 overflow-y-auto px-6 py-4 pr-12',
           layout === 'full'
-            ? 'bg-[var(--nw-glass-bg)] backdrop-blur-2xl'
-            : 'border-t border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-2xl',
+            ? 'bg-background'
+            : 'border-t border-[var(--nw-glass-border)] bg-background',
           className,
         )}
         data-testid="relationship-inspector"
       >
-        <div className="w-[240px] shrink-0 space-y-2">
+        {onClose && <button type="button" onClick={onClose} aria-label={t('worldModel.graph.closeInspector')} className="absolute right-3 top-3 rounded p-1.5 text-muted-foreground hover:bg-foreground/5"><X size={14} /></button>}
+        <div className="min-w-0 basis-[200px] shrink-0 space-y-2">
           {rel ? (
             <>
-              <div className="text-sm font-mono text-foreground truncate">
+              <div className="text-sm font-medium text-foreground truncate">
                 {leftName} <span className="text-muted-foreground">→</span> {rightName}
               </div>
               <div className="flex items-center gap-2">
@@ -58,7 +63,7 @@ export function RelationshipInspector({
                   visibility={rel.visibility}
                   onChange={(v) => onUpdate(rel.id, { visibility: v })}
                 />
-                <div className="inline-flex items-center gap-1 rounded border border-[hsl(var(--color-accent)/0.28)] bg-[hsl(var(--color-accent)/0.10)] px-2 py-1 text-[11px] text-[hsl(var(--color-accent))]">
+                <div className="inline-flex items-center gap-1 py-1 text-xs text-accent">
                   <Link2 className="h-3 w-3" />
                   <InlineEdit
                     value={rel.label}
@@ -82,7 +87,7 @@ export function RelationshipInspector({
           )}
         </div>
 
-        <div className="flex-1 min-w-0 space-y-2">
+        <div className="min-w-[160px] flex-1 space-y-2">
           <div className="text-[11px] font-semibold tracking-wider text-muted-foreground">
             {LABELS.REL_DESCRIPTION}
           </div>

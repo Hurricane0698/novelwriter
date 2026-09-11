@@ -23,13 +23,13 @@ export function AttributeRow({ novelId, entityId, attribute, dragListeners }: {
   return (
     <div
       className={cn(
-        'group grid grid-cols-[16px_120px_1fr_1fr_44px_24px] items-start px-4 py-2 border-b border-[var(--nw-glass-border)]',
+        'group grid min-w-[520px] grid-cols-[16px_120px_1fr_1fr_44px_24px] items-stretch px-4 border-b border-[var(--nw-glass-border)]',
         isHidden && 'opacity-60',
       )}
       data-testid={`attribute-row-${attribute.id}`}
     >
       <div
-        className="pt-1 text-muted-foreground/70 cursor-grab select-none"
+        className="pt-3 text-muted-foreground/70 cursor-grab select-none"
         aria-label={t('worldModel.attribute.reorder')}
         title={t('worldModel.attribute.reorder')}
         {...dragListeners}
@@ -37,7 +37,7 @@ export function AttributeRow({ novelId, entityId, attribute, dragListeners }: {
         <GripVertical className="h-3.5 w-3.5" />
       </div>
 
-      <div className="pr-2 min-w-0">
+      <div className="pr-2 py-3 min-w-0">
         <InlineEdit
           value={attribute.key}
           onSave={(v) => updateAttr.mutate({ attrId: attribute.id, data: { key: v } })}
@@ -47,7 +47,7 @@ export function AttributeRow({ novelId, entityId, attribute, dragListeners }: {
         />
       </div>
 
-      <div className="min-w-0 rounded-md bg-[hsl(var(--color-vis-reference)/0.10)] px-2 py-1">
+      <div className="min-w-0 border-l border-border/40 bg-[hsl(var(--color-vis-reference)/0.035)] px-3 py-3">
         <InlineEdit
           value={attribute.surface}
           onSave={(v) => updateAttr.mutate({ attrId: attribute.id, data: { surface: v } })}
@@ -58,7 +58,7 @@ export function AttributeRow({ novelId, entityId, attribute, dragListeners }: {
         />
       </div>
 
-      <div className="min-w-0 rounded-md bg-[hsl(var(--color-mystery)/0.10)] px-2 py-1">
+      <div className="min-w-0 border-l border-border/40 bg-[hsl(var(--color-mystery)/0.035)] px-3 py-3">
         <InlineEdit
           value={attribute.truth ?? ''}
           onSave={(v) => updateAttr.mutate({ attrId: attribute.id, data: { truth: v.trim() ? v : null } })}
@@ -69,14 +69,14 @@ export function AttributeRow({ novelId, entityId, attribute, dragListeners }: {
         />
       </div>
 
-      <div className="flex justify-center pt-0.5">
+      <div className="flex justify-center pt-3">
         <VisibilityDot
           visibility={attribute.visibility}
           onChange={(v) => updateAttr.mutate({ attrId: attribute.id, data: { visibility: v } })}
         />
       </div>
 
-      <div className="flex justify-end pt-0.5">
+      <div className="flex justify-end pt-3">
         <button
           type="button"
           className={cn(

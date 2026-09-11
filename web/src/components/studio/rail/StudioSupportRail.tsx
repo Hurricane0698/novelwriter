@@ -3,7 +3,7 @@
 
 import { useCallback, useRef } from 'react'
 import '@/lib/uiMessagePacks/novel'
-import { NovelShellRail } from '@/components/novel-shell/NovelShellRail'
+import { X } from 'lucide-react'
 import {
   StudioResearchPanel,
   type StudioContextualCopilotAction,
@@ -24,6 +24,7 @@ import type {
 import type { CopilotReviewKind } from '@/types/copilot'
 
 interface StudioSupportRailProps {
+  onClose?: () => void
   novelId: number
   worldEntityCount: number
   worldSystemCount: number
@@ -40,6 +41,7 @@ interface StudioSupportRailProps {
 }
 
 export function StudioSupportRail({
+  onClose,
   novelId,
   worldEntityCount,
   worldSystemCount,
@@ -106,8 +108,12 @@ export function StudioSupportRail({
   const sectionDivider = <div className="mx-3 my-2 h-px bg-[var(--nw-glass-border)]" />
 
   return (
-    <NovelShellRail className="w-[360px] p-3">
-      <div className="flex h-full min-h-0 flex-col gap-3" data-testid="studio-assistant-rail" data-world-entry-stage={worldEntryStage}>
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/50 px-4">
+        <h2 className="text-sm font-medium">{t('studio.layout.assistant')}</h2>
+        <button type="button" onClick={onClose} aria-label={t('copilot.drawer.close')} className="rounded-md p-1.5 text-muted-foreground hover:bg-foreground/5"><X size={15} /></button>
+      </header>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-3" data-testid="studio-assistant-rail" data-world-entry-stage={worldEntryStage}>
         <div className="nw-scrollbar-thin min-h-0 flex-1 overflow-y-auto pr-1" data-testid="studio-support-rail-sections">
           <div className="space-y-1">
             {worldEntryStage === 'attention' && attentionTone ? (
@@ -158,6 +164,6 @@ export function StudioSupportRail({
           </div>
         </div>
       </div>
-    </NovelShellRail>
+    </div>
   )
 }

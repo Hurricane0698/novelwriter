@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { isHostedRuntime } from '@/lib/runtimeMode'
 import { cn } from '@/lib/utils'
@@ -10,6 +10,8 @@ type SiteFooterProps = {
 
 export function SiteFooter({ compact, className }: SiteFooterProps) {
   const { t } = useUiLocale()
+  const { pathname } = useLocation()
+  const isLanding = pathname === '/'
   // Legal pages cover the official hosted entry only; local runtimes keep a clean footer.
   const links = isHostedRuntime()
     ? [
@@ -22,8 +24,10 @@ export function SiteFooter({ compact, className }: SiteFooterProps) {
   return (
     <footer
       className={cn(
-        'border-t border-[var(--nw-glass-border)] bg-[hsl(var(--background)/0.45)] backdrop-blur-xl',
-        compact ? 'mt-8' : 'mt-20',
+        isLanding
+          ? 'border-t border-[hsl(var(--lp-ink)/0.12)] bg-[hsl(var(--lp-paper))]'
+          : 'border-t border-[var(--nw-glass-border)] bg-[hsl(var(--background)/0.45)] backdrop-blur-xl',
+        isLanding ? 'mt-0' : compact ? 'mt-8' : 'mt-20',
         className,
       )}
     >
@@ -34,19 +38,34 @@ export function SiteFooter({ compact, className }: SiteFooterProps) {
         )}
       >
         <div className="flex flex-col gap-1">
-          <div className="font-mono text-base font-bold text-foreground">NovWr</div>
-          <p className="max-w-[34rem] text-sm leading-6 text-muted-foreground">
+          <div className={cn('font-mono text-base font-bold', isLanding ? 'text-[hsl(var(--lp-ink))]' : 'text-foreground')}>
+            NovWr
+          </div>
+          <p
+            className={cn(
+              'max-w-[34rem] text-sm leading-6',
+              isLanding ? 'text-[hsl(var(--lp-ink)/0.6)]' : 'text-muted-foreground',
+            )}
+          >
             {t('footer.description')}
           </p>
         </div>
 
         {links.length > 0 ? (
-          <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
+          <nav
+            className={cn(
+              'flex flex-wrap items-center gap-x-5 gap-y-2 text-sm',
+              isLanding ? 'text-[hsl(var(--lp-ink)/0.6)]' : 'text-muted-foreground',
+            )}
+          >
             {links.map((link) => (
               <Link
                 key={link.to}
                 to={link.to}
-                className="transition-colors hover:text-foreground"
+                className={cn(
+                  'transition-colors',
+                  isLanding ? 'hover:text-[hsl(var(--lp-ink))]' : 'hover:text-foreground',
+                )}
               >
                 {link.label}
               </Link>

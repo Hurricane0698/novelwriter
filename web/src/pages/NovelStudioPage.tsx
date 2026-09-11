@@ -5,6 +5,9 @@ import { lazy, Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef, 
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import '@/lib/uiMessagePacks/novel'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { PanelResizeHandle } from '@/components/novel-shell/PanelResizeHandle'
+import { useElementWidth } from '@/hooks/useElementWidth'
+import { StudioWorkspaceToolbar } from '@/components/studio/StudioWorkspaceToolbar'
 import { StudioChapterToolbar } from '@/components/studio/StudioChapterToolbar'
 import { WorldGenerationDialog } from '@/components/world-model/shared/WorldGenerationDialog'
 import { ChapterContent } from '@/components/detail/ChapterContent'
@@ -42,7 +45,6 @@ import { getActiveWarnings, setActiveWarnings } from '@/lib/postcheckActiveWarni
 import { getWhitelist, addToWhitelist } from '@/lib/postcheckWhitelistStorage'
 import { DriftWarningPopover } from '@/components/generation/DriftWarningPopover'
 import { NovelShellLayout } from '@/components/novel-shell/NovelShellLayout'
-import { NovelShellRail } from '@/components/novel-shell/NovelShellRail'
 import { ArtifactStage } from '@/components/novel-shell/ArtifactStage'
 import { InjectionSummaryPanel } from '@/components/studio/panels/InjectionSummaryPanel'
 import { StudioNavigationRail } from '@/components/studio/rail/StudioNavigationRail'
@@ -142,8 +144,8 @@ export function NovelStudioPage() {
   const { locale, t } = useUiLocale()
   const { confirm: confirmDialog, dialogProps: confirmDialogProps } = useConfirmDialog()
   const { routeState, shellState } = useNovelShell()
-  const { drawerWidth } = shellState
-  const { isOpen: isWorkbenchOpen, focusedSessionId, openDrawer } = useNovelCopilot()
+  const { drawerWidth, setDrawerWidth } = shellState
+  const { isOpen: isWorkbenchOpen, focusedSessionId, openDrawer, closeDrawer, reopenDrawer } = useNovelCopilot()
   const activeStage = routeState.stage ?? 'chapter'
   const showWorkbenchRail = isWorkbenchOpen && focusedSessionId !== null
   const worldEntryHandoff = useMemo(
@@ -190,7 +192,18 @@ export function NovelStudioPage() {
     retryGeneration: number
   } | null>(null)
   const [showMoreActions, setShowMoreActions] = useState(false)
-  const [assistOpen, setAssistOpen] = useState(true)
+  const [assistOpen, setAssistOpen] = useState<boolean | null>(null)
+  const [chaptersOpen, setChaptersOpen] = useState(true)
+  const [chapterRailWidth, setChapterRailWidth] = useState(256)
+  const [continuationPanelWidth, setContinuationPanelWidth] = useState(320)
+  const { ref: workspaceRef, width: workspaceWidth } = useElementWidth()
+  const navigationOverlay = workspaceWidth < 760
+  const visibleChapterWidth = Math.min(chapterRailWidth, Math.max(200, workspaceWidth - 48))
+  const occupiedChapterWidth = chaptersOpen && !navigationOverlay ? visibleChapterWidth : 0
+  const minimumStageWidth = activeStage === 'write' ? 640 : 420
+  const maxAssistantWidth = Math.max(280, workspaceWidth - occupiedChapterWidth - minimumStageWidth)
+  const assistantOverlay = workspaceWidth - occupiedChapterWidth < minimumStageWidth + 280
+  const visibleDrawerWidth = Math.min(drawerWidth, assistantOverlay ? Math.max(280, workspaceWidth - 32) : maxAssistantWidth)
 
   const exportGenerationRef = useRef(0)
   const exportNovelContextRef = useRef({ novelId, locationKey: location.key })
@@ -790,19 +803,29 @@ export function NovelStudioPage() {
       }
     : preparationGate
 
-  const handleToggleAssist = useCallback(() => {
-    setAssistOpen(current => !current)
-  }, [])
-
-  const assistRailPinnedOpen = (
-    resolveStudioWorldEntryStage({
-      worldEntityCount: worldEntities.length,
-      worldSystemCount: worldSystems.length,
-      handoff: worldEntryHandoff,
-      pending: worldEntryPending,
-    }) !== 'routine'
-  )
-  const showAssistRail = assistOpen || assistRailPinnedOpen
+  const assistNeedsAttention = resolveStudioWorldEntryStage({
+    worldEntityCount: worldEntities.length,
+    worldSystemCount: worldSystems.length,
+    handoff: worldEntryHandoff,
+    pending: worldEntryPending,
+  }) !== 'routine'
+  const showAssistRail = assistOpen ?? assistNeedsAttention
+  const closeAssistant = () => { closeDrawer(); setAssistOpen(false) }
+  const handleToggleAssist = () => {
+    if (showWorkbenchRail || showAssistRail) closeAssistant()
+    else if (focusedSessionId) reopenDrawer()
+    else setAssistOpen(true)
+  }
+  const handleToggleWriting = () => {
+    if (activeStage === 'write') { navigateToChapterStage(activeChapterNum); return }
+    if (editMode) {
+      void saveCurrentEditorNow().then(isCurrentSave => {
+        if (!isCurrentSave) return
+        setEditMode(false)
+        navigateToWriteStage()
+      }).catch(() => { /* Keep the editor open when saving fails. */ })
+    } else navigateToWriteStage()
+  }
 
   if (novelLoading) {
     return (
@@ -844,7 +867,7 @@ export function NovelStudioPage() {
           onDismissWorldOnboarding={handleDismissWorldOnboarding}
         />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+        <div className="flex min-h-0 flex-1 flex-col">
           {chapterCreateErrorVisible ? (
             <div
               role="alert"
@@ -863,43 +886,38 @@ export function NovelStudioPage() {
               {t('studio.actions.exportFailed')}
             </div>
           ) : null}
-          <NovelShellLayout className="flex-1 min-h-0 gap-3 overflow-hidden p-0">
-            <NovelShellRail className="w-[280px]">
+          <StudioWorkspaceToolbar title={novel.title} chaptersOpen={chaptersOpen}
+            onToggleChapters={() => setChaptersOpen(current => !current)} writing={activeStage === 'write'}
+            onToggleWriting={handleToggleWriting} canContinue={latestChapterNum !== null}
+            assistantOpen={showWorkbenchRail || showAssistRail} onToggleAssistant={handleToggleAssist}
+            onOpenAtlas={() => { setShowMoreActions(false); navigateToAtlas() }} onWarmAtlas={warmAtlasAssist} />
+          <div ref={workspaceRef} className="relative flex min-h-0 flex-1 overflow-hidden">
+          {((navigationOverlay && chaptersOpen) || (assistantOverlay && (showWorkbenchRail || showAssistRail))) && (
+            <div aria-hidden="true" className="absolute inset-0 z-20 bg-background/80" onClick={() => {
+              if (navigationOverlay) setChaptersOpen(false)
+              if (assistantOverlay) closeAssistant()
+            }} />
+          )}
+          <NovelShellLayout className="flex-1 min-h-0 overflow-hidden bg-background">
+            <aside id="studio-chapters" hidden={!chaptersOpen} data-testid="studio-chapter-panel"
+              className={`relative shrink-0 border-r border-border/50 bg-background ${chaptersOpen ? 'flex flex-col' : 'hidden'} ${navigationOverlay ? '!absolute inset-y-0 left-0 z-30 shadow-xl' : ''}`}
+              style={{ width: visibleChapterWidth }}>
+              <PanelResizeHandle side="right" width={visibleChapterWidth} min={200} max={Math.min(400, Math.max(200, workspaceWidth - 48))}
+                onResize={setChapterRailWidth} label={t('studio.layout.resizeChapters')} />
               <StudioNavigationRail
                 novelTitle={novel.title}
                 searchQuery={searchQuery}
                 onSearchQueryChange={setSearchQuery}
                 chapters={chapterListItems}
                 selectedChapterNumber={activeChapterNum}
-                onSelectChapter={handleSelectChapter}
+                onSelectChapter={chapterNumber => { handleSelectChapter(chapterNumber); if (navigationOverlay) setChaptersOpen(false) }}
                 chapterCount={chaptersMeta.length}
                 onCreateChapter={handleCreateChapter}
                 isCreating={isCreatingChapter}
-                latestChapterReference={latestChapterReference}
-                onContinuation={() => {
-                  // Save-first: if editing, flush autosave before switching stage
-                  if (editMode) {
-                    saveCurrentEditorNow()
-                      .then((isCurrentSave) => {
-                        if (!isCurrentSave) return
-                        setEditMode(false)
-                        navigateToWriteStage()
-                      })
-                      .catch(() => {
-                        // Save failed — stay on chapter stage, user can retry
-                      })
-                  } else {
-                    navigateToWriteStage()
-                  }
-                }}
-                onOpenAtlas={() => {
-                  setShowMoreActions(false)
-                  navigateToAtlas()
-                }}
-                onWarmAtlas={warmAtlasAssist}
+                onClose={() => setChaptersOpen(false)}
                 activeStage={activeStage}
               />
-            </NovelShellRail>
+            </aside>
 
           {/* ── Content Area ── */}
           <ArtifactStage variant="glass">
@@ -915,7 +933,6 @@ export function NovelStudioPage() {
                 onToggleInjectionSummaryRail={toggleInjectionSummaryRail}
                   onDebugChange={handleResultsDebugChange}
                   assistOpen={showAssistRail}
-                  onToggleAssist={handleToggleAssist}
                 />
               </div>
             ) : null}
@@ -925,6 +942,9 @@ export function NovelStudioPage() {
               <ContinuationSetupStage
                 novelId={novelId}
                 contentFormat={novel.content_format}
+                panelWidth={continuationPanelWidth}
+                onPanelResize={setContinuationPanelWidth}
+                onClose={() => navigateToChapterStage(activeChapterNum)}
                 chapterNum={latestChapterNum}
                 chapterReference={latestChapterReference}
                 instruction={continuationState.instruction}
@@ -958,7 +978,6 @@ export function NovelStudioPage() {
                 onDeleteContextSummary={continuationState.handleDeleteContextSummary}
                 onGenerate={continuationState.handleGenerate}
                 assistOpen={showAssistRail}
-                onToggleAssist={handleToggleAssist}
               />
             ) : activeStage === 'entity' ? (
               <Suspense fallback={<StudioStagePanelFallback />}>
@@ -978,7 +997,6 @@ export function NovelStudioPage() {
                   }}
                   onWarmAtlas={warmAtlasAssist}
                   assistOpen={showAssistRail}
-                  onToggleAssist={handleToggleAssist}
                 />
               </Suspense>
             ) : activeStage === 'relationship' ? (
@@ -999,7 +1017,6 @@ export function NovelStudioPage() {
                 }}
                 onWarmAtlas={warmAtlasAssist}
                 assistOpen={showAssistRail}
-                onToggleAssist={handleToggleAssist}
               />
             ) : activeStage === 'review' ? (
               <Suspense fallback={<StudioStagePanelFallback />}>
@@ -1017,7 +1034,6 @@ export function NovelStudioPage() {
                   onWarmAtlas={warmAtlasAssist}
                   onReturnToArtifact={hasResultsContext ? handleReturnToArtifact : undefined}
                   assistOpen={showAssistRail}
-                  onToggleAssist={handleToggleAssist}
                 />
               </Suspense>
             ) : activeStage === 'system' ? (
@@ -1037,11 +1053,10 @@ export function NovelStudioPage() {
                 onWarmAtlas={warmAtlasAssist}
                 onReturnToArtifact={hasResultsContext ? handleReturnToArtifact : undefined}
                 assistOpen={showAssistRail}
-                onToggleAssist={handleToggleAssist}
               />
             ) : (
               /* ── Chapter Stage ── */
-              <div className="flex-1 min-w-0 flex flex-col gap-6 px-8 py-8 lg:px-16 overflow-hidden">
+              <div className="flex-1 min-h-0 min-w-0 flex flex-col gap-4 px-5 py-5 sm:px-8 overflow-hidden">
                 <StudioChapterToolbar
                   currentMeta={currentMeta}
                   currentChapterIdentity={currentChapterIdentity}
@@ -1055,7 +1070,6 @@ export function NovelStudioPage() {
                     exportChapter: handleExportChapter, exportAll: handleExportAll, deleteChapter: handleDeleteChapter,
                   }}
                   assistOpen={showAssistRail}
-                  onToggleAssist={handleToggleAssist}
                 />
 
                 {/* ── Editor / Reader Area ── */}
@@ -1089,23 +1103,25 @@ export function NovelStudioPage() {
           </ArtifactStage>
 
           {showWorkbenchRail ? (
-            <Suspense fallback={<NovelCopilotDrawerFallback width={drawerWidth} />}>
-              <NovelCopilotDrawer novelId={novelId} onLocateTarget={handleStudioLocateTarget} />
+            <Suspense fallback={<NovelCopilotDrawerFallback width={visibleDrawerWidth} />}>
+              <NovelCopilotDrawer novelId={novelId} width={visibleDrawerWidth}
+                presentation={assistantOverlay ? 'overlay' : 'rail'} onClose={closeAssistant}
+                onBack={() => { closeDrawer(); setAssistOpen(true) }}
+                onLocateTarget={handleStudioLocateTarget} />
             </Suspense>
-          ) : showInjectionSummaryRail && resultsDebug ? (
-            <NovelShellRail className="w-[360px]">
-              <InjectionSummaryPanel
-                debug={resultsDebug}
-                activeCategory={injectionSummaryPanelState?.injectionCategory ?? undefined}
-                onActiveCategoryChange={setInjectionSummaryCategory}
-                onClose={closeInjectionSummaryRail}
-                onOpenAtlas={handleOpenInjectionCategory}
-                onWarmAtlas={warmAtlasAssist}
-                onSelectItem={handleOpenInjectionItem}
-              />
-            </NovelShellRail>
-          ) : showAssistRail ? (
+          ) : (showInjectionSummaryRail && resultsDebug) || showAssistRail ? (
+            <aside className={`relative shrink-0 border-l border-border/50 bg-background ${assistantOverlay ? '!absolute inset-y-0 right-0 z-30 shadow-xl' : ''}`}
+              style={{ width: visibleDrawerWidth }} data-testid="studio-support-panel">
+              <PanelResizeHandle side="left" width={visibleDrawerWidth} min={280}
+                max={assistantOverlay ? Math.max(280, workspaceWidth - 32) : maxAssistantWidth}
+                onResize={setDrawerWidth} label={t('copilot.drawer.resize')} />
+              {showInjectionSummaryRail && resultsDebug ? (
+                <InjectionSummaryPanel debug={resultsDebug} activeCategory={injectionSummaryPanelState?.injectionCategory ?? undefined}
+                  onActiveCategoryChange={setInjectionSummaryCategory} onClose={closeInjectionSummaryRail}
+                  onOpenAtlas={handleOpenInjectionCategory} onWarmAtlas={warmAtlasAssist} onSelectItem={handleOpenInjectionItem} />
+              ) : (
             <StudioSupportRail
+              onClose={closeAssistant}
               novelId={novelId}
               worldEntityCount={worldEntities.length}
               worldSystemCount={worldSystems.length}
@@ -1129,8 +1145,11 @@ export function NovelStudioPage() {
               onWarmAtlas={warmAtlasAssist}
               contextualCopilotAction={contextualCopilotAction}
             />
+              )}
+            </aside>
           ) : null}
           </NovelShellLayout>
+          </div>
         </div>
       )}
       {/* Keep the mutation observer mounted when generated entities hide onboarding. */}

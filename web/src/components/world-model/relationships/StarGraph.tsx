@@ -1,4 +1,4 @@
-import { useMemo, useCallback, Fragment, type CSSProperties } from 'react'
+import { useMemo, useCallback, useEffect, useState, Fragment, type CSSProperties } from 'react'
 import {
   ReactFlow,
   BaseEdge,
@@ -8,6 +8,8 @@ import {
   Handle,
   Position,
   getBezierPath,
+  useReactFlow,
+  useStore,
   type Node,
   type Edge,
   type NodeProps,
@@ -15,6 +17,8 @@ import {
   type EdgeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { Maximize, Minus, Plus } from 'lucide-react'
+import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/hooks/useTheme'
 import { LABELS } from '@/constants/labels'
@@ -31,39 +35,21 @@ const HANDLES = [
 ] as const
 
 function StarNode({ data }: NodeProps<Node<StarNodeData>>) {
+  const zoom = useStore(state => state.transform[2])
   const typeText = data.isDraft ? `${data.entityTypeLabel} · ${LABELS.STATUS_DRAFT}` : data.entityTypeLabel
   return (
-    <div className={cn(
-      'px-4 py-2 rounded-xl border select-none backdrop-blur-3xl transition-all duration-300',
-      data.isCenter
-        ? 'border-accent border-2 font-semibold text-foreground bg-[hsl(var(--color-accent)/0.15)] shadow-[0_8px_32px_hsl(var(--color-accent)/0.20)] dark:bg-[hsl(var(--color-accent)/0.15)] dark:shadow-[0_0_28px_hsl(var(--color-accent)/0.25)]'
-        : 'border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] hover:border-[var(--nw-glass-border-hover)] hover:bg-[var(--nw-glass-bg-hover)] cursor-pointer text-foreground shadow-[0_8px_24px_rgba(0,0,0,0.08)] hover:shadow-[0_12px_32px_rgba(0,0,0,0.12)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.35)] dark:hover:shadow-[0_14px_40px_rgba(0,0,0,0.5)] hover:-translate-y-[1px]'
-    )}>
+    <div className="group relative flex w-[144px] select-none flex-col items-center pt-1" style={{ height: Math.max(64, 52 / zoom) }} title={data.label}>
       {HANDLES.map(({ id, pos }) => (
         <Fragment key={id}>
-          <Handle id={id} type="target" position={pos} className={HANDLE_CLS} />
-          <Handle id={`${id}-src`} type="source" position={pos} className={HANDLE_CLS} />
+          <Handle id={id} type="target" position={pos} className={HANDLE_CLS} style={{ left: '50%', top: 12 }} />
+          <Handle id={`${id}-src`} type="source" position={pos} className={HANDLE_CLS} style={{ left: '50%', top: 12 }} />
         </Fragment>
       ))}
-      <div className="flex flex-col items-center gap-0.5">
-        <div className={cn('font-mono leading-none drop-shadow-sm', data.isCenter ? 'text-[15px] font-semibold' : 'text-sm font-medium')}>
-          {data.label}
-        </div>
-        <div className="flex items-center">
-          <div
-            className={cn(
-              'rounded-full border px-2 py-0.5 text-[10px] leading-none backdrop-blur-xl',
-              data.isDraft
-                ? 'border-[hsl(var(--color-status-draft)/0.40)] bg-[hsl(var(--color-status-draft)/0.10)] text-[hsl(var(--color-status-draft))]'
-                : data.isCenter
-                  ? 'border-[hsl(var(--color-accent)/0.35)] bg-[hsl(var(--color-accent)/0.10)] text-[hsl(var(--color-accent))]'
-                  : 'border-[var(--nw-glass-border)] bg-[hsl(var(--foreground)/0.05)] text-muted-foreground',
-            )}
-          >
-            {typeText}
-          </div>
-        </div>
-      </div>
+      <span className={cn('mb-2 block shrink-0 rounded-full transition-shadow', data.isCenter
+        ? 'h-4 w-4 bg-accent ring-4 ring-accent/10'
+        : 'mt-1 h-2 w-2 bg-accent/60 ring-4 ring-background group-hover:ring-accent/15')} />
+      <span className={cn('max-w-full shrink-0 truncate bg-background/90 px-1 text-sm leading-5', data.isCenter ? 'font-semibold text-accent' : 'font-medium text-foreground')} style={{ fontSize: Math.max(14, 12 / zoom), lineHeight: `${Math.max(20, 18 / zoom)}px` }}>{data.label}</span>
+      <span className="shrink-0 bg-background/90 px-1 text-[10px] leading-4 text-muted-foreground" style={{ fontSize: Math.max(10, 10 / zoom), lineHeight: `${Math.max(16, 14 / zoom)}px` }}>{typeText}</span>
     </div>
   )
 }
@@ -72,6 +58,8 @@ const nodeTypes = { star: StarNode }
 
 function StarEdge({
   id,
+  source,
+  target,
   sourceX,
   sourceY,
   targetX,
@@ -83,10 +71,14 @@ function StarEdge({
   label,
   data,
 }: EdgeProps) {
+  const zoom = useStore(state => state.transform[2])
   const edgeIndex = typeof data?.edgeIndex === 'number' ? data.edgeIndex : 0
   const edgeCount = typeof data?.edgeCount === 'number' ? data.edgeCount : 1
   const shifted = getParallelEdgeShift(sourceX, sourceY, targetX, targetY, edgeIndex, edgeCount)
-  const [edgePath, labelX, labelY] = getBezierPath({
+  const loopRadius = 60 + edgeIndex * 18
+  const [edgePath, labelX, labelY] = source === target
+    ? [`M ${sourceX},${sourceY} C ${sourceX - loopRadius},${sourceY - loopRadius * 1.6} ${sourceX + loopRadius},${sourceY - loopRadius * 1.6} ${sourceX},${sourceY}`, sourceX, sourceY - loopRadius] as const
+    : getBezierPath({
     sourceX: shifted.sourceX,
     sourceY: shifted.sourceY,
     targetX: shifted.targetX,
@@ -96,24 +88,18 @@ function StarEdge({
   })
 
   const selected = Boolean(data?.selected)
-  const isDraft = data?.status === 'draft'
 
   return (
     <>
       <BaseEdge id={id} path={edgePath} style={style} markerEnd={markerEnd} />
-      {label ? (
+      {label && (selected || data?.hovered) ? (
         <EdgeLabelRenderer>
           <div
             // Follow XYFlow label positioning pattern.
-            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, fontSize: Math.max(12, 11 / zoom) }}
             className={cn(
-              'pointer-events-none absolute max-w-[220px] truncate',
-              'rounded-md px-2 py-0.5 text-[10px] backdrop-blur-xl border',
-              selected
-                ? 'border-accent bg-[hsl(var(--color-accent)/0.12)] text-foreground'
-                : isDraft
-                  ? 'border-[hsl(var(--color-status-draft)/0.45)] bg-[hsl(var(--color-status-draft)/0.10)] text-[hsl(var(--color-status-draft))]'
-                  : 'border-[var(--nw-glass-border)] bg-[hsl(var(--foreground)/0.06)] text-[hsl(var(--foreground)/0.82)]',
+              'pointer-events-none absolute max-w-[220px] truncate bg-background/95 px-2 py-1 text-xs',
+              selected ? 'font-medium text-accent' : 'text-foreground',
             )}
           >
             {label}
@@ -126,6 +112,30 @@ function StarEdge({
 
 const edgeTypes = { star: StarEdge }
 
+function FitGraphToStage({ layoutKey }: { layoutKey: string }) {
+  // This read-only graph does not write measured dimensions back to its node props.
+  const initialized = useStore(state => state.nodeLookup.size > 0 &&
+    [...state.nodeLookup.values()].every(node => node.measured.width && node.measured.height))
+  const { fitView } = useReactFlow()
+  const width = useStore(state => state.width)
+  const height = useStore(state => state.height)
+  useEffect(() => {
+    if (initialized && width && height) void fitView({ padding: 0.12, maxZoom: 1.15 })
+  }, [initialized, layoutKey, width, height, fitView])
+  return null
+}
+
+function GraphControls() {
+  const { fitView, zoomIn, zoomOut } = useReactFlow()
+  const { t } = useUiLocale()
+  return <div className="absolute bottom-4 left-4 z-10 flex items-center gap-1 border border-border/60 bg-background/95 p-1">
+    {[{ label: t('worldModel.graph.zoomOut'), icon: Minus, action: () => zoomOut() },
+      { label: t('worldModel.graph.zoomIn'), icon: Plus, action: () => zoomIn() },
+      { label: t('worldModel.graph.fit'), icon: Maximize, action: () => fitView({ padding: .12, maxZoom: 1.15 }) }].map(({ label, icon: Icon, action }) =>
+      <button key={label} type="button" aria-label={label} title={label} onClick={() => void action()} className="rounded p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground"><Icon size={14} /></button>)}
+  </div>
+}
+
 export function StarGraph({ centerId, relationships, entities, onSelectEntity, onSelectEdge, selectedRelId, onClearSelection }: {
   centerId: number
   relationships: WorldRelationship[]
@@ -136,6 +146,8 @@ export function StarGraph({ centerId, relationships, entities, onSelectEntity, o
   onClearSelection?: () => void
 }) {
   const { theme } = useTheme()
+  const { t } = useUiLocale()
+  const [hoveredRelId, setHoveredRelId] = useState<number | null>(null)
   const entityMap = useMemo(() => new Map(entities.map(e => [e.id, e])), [entities])
 
   const selectedRelIdValue = selectedRelId ?? null
@@ -154,26 +166,25 @@ export function StarGraph({ centerId, relationships, entities, onSelectEntity, o
   }, [relationships, onSelectEdge])
 
   return (
-    <div className="w-full h-full">
+    <div className="relative w-full h-full">
       <ReactFlow
-        key={centerId}
         className="bg-transparent"
         colorMode={theme}
         style={{
           '--xy-background-color': 'transparent',
-          // Defensive overrides: ensure no default XYFlow label/node surfaces render as opaque white
-          // (we render custom glass chips for nodes/labels).
           '--xy-node-background-color': 'transparent',
           '--xy-edge-label-background-color': 'transparent',
           '--xy-edge-label-color': 'hsl(var(--foreground))',
         } as CSSProperties}
         nodes={nodes}
-        edges={edges}
+        edges={edges.map(edge => ({ ...edge, data: { ...edge.data, hovered: edge.data?.relId === hoveredRelId } }))}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         nodesDraggable={false}
         onNodeClick={onNodeClick}
         onEdgeClick={onEdgeClick}
+        onEdgeMouseEnter={(_, edge: Edge) => setHoveredRelId(Number(edge.data?.relId))}
+        onEdgeMouseLeave={() => setHoveredRelId(null)}
         onPaneClick={() => onClearSelection?.()}
         proOptions={{ hideAttribution: true }}
         panOnDrag
@@ -181,10 +192,11 @@ export function StarGraph({ centerId, relationships, entities, onSelectEntity, o
         zoomOnPinch
         zoomOnDoubleClick={false}
         preventScrolling
-        fitView
-        fitViewOptions={{ padding: 0.12 }}
       >
-        <Background variant={BackgroundVariant.Dots} color="hsl(var(--foreground) / 0.045)" gap={18} size={1} />
+        <FitGraphToStage layoutKey={nodes.map(node => node.id).join(',')} />
+        <GraphControls />
+        <Background variant={BackgroundVariant.Dots} color="hsl(var(--foreground) / 0.065)" gap={24} size={1} />
+        <div className="pointer-events-none absolute left-5 top-4 z-10 text-[11px] text-muted-foreground">{t('worldModel.graph.hint')}</div>
       </ReactFlow>
     </div>
   )

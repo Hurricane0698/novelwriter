@@ -249,6 +249,19 @@ function DrawerTriggers() {
 }
 
 describe('NovelCopilotDrawer', () => {
+  it('keeps unsent session drafts when the drawer closes and unmounts', async () => {
+    const user = userEvent.setup()
+    render(createElement(DrawerHarness))
+    await user.click(screen.getByRole('button', { name: 'open-whole-book' }))
+    const input = await screen.findByRole('textbox')
+    await user.type(input, '尚未发送的研究问题')
+    await user.click(screen.getByRole('button', { name: '关闭助手' }))
+    expect(screen.queryByTestId('novel-copilot-drawer')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'open-whole-book' }))
+    expect(await screen.findByRole('textbox')).toHaveValue('尚未发送的研究问题')
+    expect(mockCreateRun).not.toHaveBeenCalled()
+  })
+
   it('stays cold while closed and only initializes world run data after opening a session', async () => {
     const user = userEvent.setup()
     render(createElement(DrawerHarness))
@@ -356,7 +369,7 @@ describe('NovelCopilotDrawer', () => {
       await user.click(screen.getByRole('button', { name: 'open-whole-book' }))
 
       expect(screen.getAllByText('全书研究').length).toBeGreaterThan(0)
-      expect(screen.getByText('研究工作台')).toBeTruthy()
+      expect(screen.getByText('查找原文、梳理线索，或核对已有设定。')).toBeTruthy()
       expect(screen.getByText('盘点设定缺口')).toBeTruthy()
       expect(screen.getByPlaceholderText('输入研究问题，例如“盘点全书里反复出现但尚未入模的势力、地点和规则”')).toBeTruthy()
 
@@ -365,8 +378,7 @@ describe('NovelCopilotDrawer', () => {
       expect(screen.getByTestId('novel-copilot-session-strip')).toBeTruthy()
       expect(screen.getAllByText('苏瑶').length).toBeGreaterThan(0)
       expect(screen.getAllByText('实体上下文').length).toBeGreaterThan(0)
-      expect(screen.getByText('实体补完')).toBeTruthy()
-      expect(screen.getByText('围绕 苏瑶 补足类型、属性、约束与关联线索，不要默认它只是人物。')).toBeTruthy()
+      expect(screen.getByText('结合原文，补全 苏瑶 的属性、约束与关联。')).toBeTruthy()
       expect(screen.getByText('补完当前实体')).toBeTruthy()
       expect(screen.getByPlaceholderText('输入补充要求，例如“优先补足苏瑶与宗门的关联线索”')).toBeTruthy()
 
@@ -380,7 +392,6 @@ describe('NovelCopilotDrawer', () => {
 
       expect(screen.getAllByText('草稿整理').length).toBeGreaterThan(0)
       expect(screen.getAllByText('草稿上下文').length).toBeGreaterThan(0)
-      expect(screen.getByText('草稿清理')).toBeTruthy()
       expect(screen.getByText('统一草稿命名')).toBeTruthy()
       expect(screen.getByPlaceholderText('输入清理目标，例如“统一草稿命名并标出最值得先确认的条目”')).toBeTruthy()
       expect(screen.queryByText('补完苏瑶的设定锚点')).toBeNull()

@@ -70,12 +70,13 @@ export function useStudioNavigation({
     })
   }, [activeArtifactPanelState, activeChapterNum, applyWorldEntryRouteSearchParams, effectiveResultsProvenance, navigate, novelId, resultsNavigationState])
   const navigateToWriteStage = useCallback(() => {
-    let nextSearchParams = setStudioStageSearchParams(new URLSearchParams(), 'write')
+    let nextSearchParams = setStudioChapterSearchParams(new URLSearchParams(), activeChapterNum)
+    nextSearchParams = setStudioStageSearchParams(nextSearchParams, 'write')
     nextSearchParams = setResultsProvenanceSearchParams(nextSearchParams, null)
     nextSearchParams = setNovelShellArtifactPanelSearchParams(nextSearchParams, null)
     nextSearchParams = applyWorldEntryRouteSearchParams(nextSearchParams)
     navigate(`/novel/${novelId}?${nextSearchParams.toString()}`, { replace: true, state: null })
-  }, [applyWorldEntryRouteSearchParams, navigate, novelId])
+  }, [activeChapterNum, applyWorldEntryRouteSearchParams, navigate, novelId])
   const navigateToWorldStage = useCallback((
     selectStage: (params: URLSearchParams) => URLSearchParams,
     options?: WorldStageOptions,

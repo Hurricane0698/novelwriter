@@ -15,10 +15,10 @@ export const copilotZhMessages = {
   'copilot.session.title.relationshipWithEntityId': ({ id }) => `实体 ${String(id ?? '')} ↔ 相关实体`,
   'copilot.session.title.relationshipWithName': ({ name }) => `${String(name ?? '').trim()} ↔ 相关实体`,
 
-  'copilot.drawer.badge': 'Novel Copilot',
-  'copilot.drawer.sessionsCount': ({ count }) => `${String(count ?? 0)} 个会话`,
-  'copilot.drawer.currentWorkspace': ({ title }) => `当前工作区：${String(title ?? '')}`,
-  'copilot.drawer.workspace': '工作区',
+  'copilot.drawer.badge': '小说助手',
+  'copilot.drawer.close': '关闭助手',
+  'copilot.drawer.back': '返回辅助工具',
+  'copilot.drawer.resize': '调整助手宽度',
   'copilot.drawer.currentRequest': '当前请求',
   'copilot.drawer.previousRequest': '之前的请求',
   'copilot.drawer.interrupted': '已中断',
@@ -41,9 +41,7 @@ export const copilotZhMessages = {
   'copilot.composer.sendHint': 'Enter 发送 / Shift+Enter 换行',
   'copilot.composer.send': '发送',
 
-  'copilot.sessionStrip.title': '并行工作区',
-  'copilot.sessionStrip.hint': '切换查看不会中断后台运行',
-  'copilot.sessionStrip.current': '当前',
+  'copilot.sessionStrip.title': '会话',
   'copilot.sessionStrip.close': '关闭会话',
 
   'copilot.runStatus.queued': '排队中',
@@ -54,7 +52,6 @@ export const copilotZhMessages = {
   'copilot.runStatus.idle': '待命',
 
   'copilot.aiStatus.idle': 'AI 就绪',
-  'copilot.aiStatus.connected': 'AI 已连接',
   'copilot.aiStatus.running': 'AI 思考中',
   'copilot.aiStatus.error': 'AI 异常',
 
@@ -125,7 +122,7 @@ export const copilotZhMessages = {
   'copilot.card.generateFromSettingsLong': '从设定文本生成草稿',
 
   'copilot.workbench.wholeBook.eyebrow': '研究工作台',
-  'copilot.workbench.wholeBook.title': '从全书视角检索世界状态、设定缺口与潜在线索。',
+  'copilot.workbench.wholeBook.title': '查找原文、梳理线索，或核对已有设定。',
   'copilot.workbench.wholeBook.composerLabel': '研究问题',
   'copilot.workbench.wholeBook.composerPlaceholder': '输入研究问题，例如“盘点全书里反复出现但尚未入模的势力、地点和规则”',
   'copilot.workbench.wholeBook.scanGaps.label': '盘点设定缺口',
@@ -139,7 +136,7 @@ export const copilotZhMessages = {
   'copilot.workbench.wholeBook.findConflicts.prompt': '请检查章节高频提及与当前世界模型之间的命名冲突、设定漂移和明显空洞。',
 
   'copilot.workbench.entity.eyebrow': '实体补完',
-  'copilot.workbench.entity.title': ({ subject }) => `围绕 ${String(subject ?? '')} 补足类型、属性、约束与关联线索，不要默认它只是人物。`,
+  'copilot.workbench.entity.title': ({ subject }) => `结合原文，补全 ${String(subject ?? '')} 的属性、约束与关联。`,
   'copilot.workbench.entity.composerLabel': '补充要求',
   'copilot.workbench.entity.composerPlaceholder': ({ subject }) => `输入补充要求，例如“优先补足${String(subject ?? '')}与宗门的关联线索”`,
   'copilot.workbench.entity.complete.label': '补完当前实体',
@@ -216,10 +213,10 @@ export const copilotEnMessages = {
   'copilot.session.title.relationshipWithEntityId': ({ id }) => `Entity ${String(id ?? '')} ↔ related entities`,
   'copilot.session.title.relationshipWithName': ({ name }) => `${String(name ?? '').trim()} ↔ related entities`,
 
-  'copilot.drawer.badge': 'Novel Copilot',
-  'copilot.drawer.sessionsCount': ({ count }) => `${String(count ?? 0)} ${Number(count) === 1 ? 'session' : 'sessions'}`,
-  'copilot.drawer.currentWorkspace': ({ title }) => `Current workspace: ${String(title ?? '')}`,
-  'copilot.drawer.workspace': 'Workspace',
+  'copilot.drawer.badge': 'Copilot',
+  'copilot.drawer.close': 'Close assistant',
+  'copilot.drawer.back': 'Back to tools',
+  'copilot.drawer.resize': 'Resize assistant',
   'copilot.drawer.currentRequest': 'Current request',
   'copilot.drawer.previousRequest': 'Earlier request',
   'copilot.drawer.interrupted': 'Interrupted',
@@ -242,9 +239,7 @@ export const copilotEnMessages = {
   'copilot.composer.sendHint': 'Enter to send / Shift+Enter for a new line',
   'copilot.composer.send': 'Send',
 
-  'copilot.sessionStrip.title': 'Parallel workspaces',
-  'copilot.sessionStrip.hint': 'Switching views does not interrupt background runs',
-  'copilot.sessionStrip.current': 'Current',
+  'copilot.sessionStrip.title': 'Sessions',
   'copilot.sessionStrip.close': 'Close session',
 
   'copilot.runStatus.queued': 'Queued',
@@ -255,7 +250,6 @@ export const copilotEnMessages = {
   'copilot.runStatus.idle': 'Idle',
 
   'copilot.aiStatus.idle': 'AI ready',
-  'copilot.aiStatus.connected': 'AI connected',
   'copilot.aiStatus.running': 'AI thinking',
   'copilot.aiStatus.error': 'AI error',
 
@@ -326,7 +320,7 @@ export const copilotEnMessages = {
   'copilot.card.generateFromSettingsLong': 'Generate drafts from setting notes',
 
   'copilot.workbench.wholeBook.eyebrow': 'Research workbench',
-  'copilot.workbench.wholeBook.title': 'Search world state, model gaps, and recurring clues from a whole-book perspective.',
+  'copilot.workbench.wholeBook.title': 'Find passages, trace clues, and check your world settings.',
   'copilot.workbench.wholeBook.composerLabel': 'Research question',
   'copilot.workbench.wholeBook.composerPlaceholder': 'Ask a research question, for example “List the factions, places, and rules that keep recurring but are still missing from the world model”',
   'copilot.workbench.wholeBook.scanGaps.label': 'Scan model gaps',
@@ -340,7 +334,7 @@ export const copilotEnMessages = {
   'copilot.workbench.wholeBook.findConflicts.prompt': 'Please check for naming conflicts, lore drift, and obvious gaps between high-frequency chapter mentions and the current world model.',
 
   'copilot.workbench.entity.eyebrow': 'Entity enrichment',
-  'copilot.workbench.entity.title': ({ subject }) => `Enrich ${String(subject ?? '')} with type, attributes, constraints, and connected clues—do not assume it is only a character.`,
+  'copilot.workbench.entity.title': ({ subject }) => `Use the manuscript to enrich ${String(subject ?? '')} with attributes, constraints, and connections.`,
   'copilot.workbench.entity.composerLabel': 'Additional guidance',
   'copilot.workbench.entity.composerPlaceholder': ({ subject }) => `Add guidance, for example “Prioritize ${String(subject ?? '')}'s links to the sect”`,
   'copilot.workbench.entity.complete.label': 'Enrich this entity',

@@ -159,7 +159,7 @@ export function EntityDetail({ novelId, entityId, onDeleted, allowDelete = true,
                 )}
               </div>
               <span className={cn('text-xs', entity.status === 'confirmed' ? 'text-[hsl(var(--color-status-confirmed))]' : 'text-[hsl(var(--color-status-draft))]')}>
-                {entity.status === 'confirmed' ? '✓' : '●'} {entity.status}
+                {entity.status === 'confirmed' ? '✓' : '●'} {t(entity.status === 'confirmed' ? 'worldModel.common.statusConfirmed' : 'worldModel.common.statusDraft')}
               </span>
               <button
                 type="button"
@@ -202,7 +202,7 @@ export function EntityDetail({ novelId, entityId, onDeleted, allowDelete = true,
 
         {/* Description */}
         <div className="mt-4">
-          <div className="rounded-xl border border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-2xl p-4">
+          <div className="border-b border-border/50 pb-5">
             <div className="text-xs font-semibold tracking-wider text-muted-foreground mb-2">{t('worldModel.entity.description')}</div>
             <InlineEdit
               value={entity.description}
@@ -217,7 +217,7 @@ export function EntityDetail({ novelId, entityId, onDeleted, allowDelete = true,
 
         {/* Aliases */}
         <div className="mt-4">
-          <div className="rounded-xl border border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-2xl p-4">
+          <div className="border-b border-border/50 pb-5">
             <div className="text-xs font-semibold tracking-wider text-muted-foreground mb-2">{t('worldModel.entity.aliases')}</div>
             <div className="flex flex-wrap items-center gap-2">
               {aliases.length === 0 ? (
@@ -277,8 +277,8 @@ export function EntityDetail({ novelId, entityId, onDeleted, allowDelete = true,
             </button>
           </div>
 
-          <div className="rounded-xl border border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-2xl overflow-hidden">
-            <div className="grid grid-cols-[16px_120px_1fr_1fr_44px_24px] items-center px-4 py-2 text-[11px] font-semibold text-muted-foreground border-b border-[var(--nw-glass-border)]">
+          <div className="border-y border-border/50 overflow-x-auto">
+            <div className="grid min-w-[520px] grid-cols-[16px_120px_1fr_1fr_44px_24px] items-center px-4 py-2 text-[11px] font-semibold text-muted-foreground border-b border-[var(--nw-glass-border)]">
               <div />
               <div>{t('worldModel.entity.column.name')}</div>
               <div>{t('worldModel.entity.column.surface')}</div>

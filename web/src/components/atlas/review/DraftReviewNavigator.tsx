@@ -165,7 +165,7 @@ export function DraftReviewNavigator({
               key={item.id}
               type="button"
               className={cn(
-                'relative w-full overflow-hidden text-left rounded-xl px-3 py-2 transition-all duration-500',
+                'relative w-full overflow-hidden text-left px-3 py-2 transition-colors',
                 activeItemId === item.id
                   ? 'nw-copilot-target-highlight border'
                   : 'border border-transparent hover:bg-[var(--nw-glass-bg-hover)]',
@@ -197,10 +197,10 @@ function KindButton({
     <button
       type="button"
       className={cn(
-        'w-full flex items-center gap-2 rounded-xl px-3 py-2 text-xs transition-colors border',
+        'w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors border-l-2',
         active
-          ? 'bg-[var(--nw-glass-bg-hover)] text-foreground border-[var(--nw-glass-border-hover)]'
-          : 'border-[var(--nw-glass-border)] text-muted-foreground hover:text-foreground hover:bg-[var(--nw-glass-bg-hover)]',
+          ? 'bg-accent/[0.06] text-accent border-accent'
+          : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-foreground/5',
       )}
       onClick={onClick}
     >

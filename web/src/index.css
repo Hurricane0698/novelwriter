@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "NovWr Display";
+  src: url('/fonts/novwr-display-zh.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -79,12 +87,14 @@
     --nw-copilot-glow-op: 0.8;
     --nw-copilot-glow-1: rgba(255, 255, 255, 0.10);
 
-    /* ── Landing page surfaces ── */
-    /* ── Landing page surfaces ── */
-    --lp-surface: 233 30% 8%;
-    --lp-cta-from: 233 30% 8%;
-    --lp-cta-via: 235 28% 10%;
-    --lp-cta-to: 240 30% 12%;
+    /* ── Landing page surfaces (dark marketing paper + star map) ── */
+    --lp-paper: 0 0% 0%;
+    --lp-ink: 0 0% 100%;
+    --lp-frame: 233 30% 6%;
+    --lp-thread: 235 78% 74%;
+    --lp-thread-soft: 233 40% 30%;
+    --lp-knot: 0 0% 100%;
+    --lp-truth: 38 92% 60%;
   }
 
   /* Light mode — "periwinkle sky": cool cloud whites over a lavender-blue cast. */
@@ -158,13 +168,255 @@
     --nw-copilot-glow-op: 0.45;
     --nw-copilot-glow-1: rgba(139, 147, 248, 0.14);
 
-    /* ── Landing page surfaces ── */
-    --lp-surface: 236 56% 97%;
-    --lp-cta-from: 236 56% 97%;
-    --lp-cta-via: 235 70% 96%;
-    --lp-cta-to: 233 76% 93%;
+    /* ── Landing page surfaces (light paper + indigo ink) ── */
+    --lp-paper: 0 0% 100%;
+    --lp-ink: 0 0% 0%;
+    --lp-frame: 0 0% 97%;
+    --lp-thread: 235 74% 62%;
+    --lp-thread-soft: 228 100% 88%;
+    --lp-knot: 236 62% 32%;
+    --lp-truth: 38 92% 50%;
   }
 }
+
+/* Marketing paper: canvas and ink driven by --lp-* only. Workspace tokens stay intact. */
+html[data-route-surface='marketing'] {
+  position: relative;
+  --background: var(--lp-paper);
+  --foreground: var(--lp-ink);
+  --card: var(--lp-paper);
+  --card-foreground: var(--lp-ink);
+  --muted: 0 0% 0%;
+  --muted-foreground: 0 0% 0%;
+  --border: 0 0% 0%;
+  --primary: var(--lp-ink);
+  --primary-foreground: var(--lp-paper);
+  background: hsl(var(--lp-paper));
+  color: hsl(var(--lp-ink) / 0.88);
+}
+
+html[data-route-surface='marketing'] body {
+  background: hsl(var(--lp-paper));
+  color: hsl(var(--lp-ink) / 0.88);
+}
+
+html[data-route-surface='marketing'] .lp-muted {
+  color: hsl(var(--lp-ink) / 0.6);
+}
+
+html[data-route-surface='marketing'] .lp-faint {
+  color: hsl(var(--lp-ink) / 0.44);
+}
+
+html[data-route-surface='marketing'] .lp-border {
+  border-color: hsl(var(--lp-ink) / 0.12);
+}
+
+html[data-route-surface='marketing'] .lp-fill {
+  background: hsl(var(--lp-ink) / 0.04);
+}
+
+html[data-route-surface='marketing'] .lp-display {
+  font-family:
+    "NovWr Display",
+    "Songti SC",
+    "STSong",
+    "Noto Serif CJK SC",
+    "Noto Serif SC",
+    "SimSun",
+    Georgia,
+    serif;
+  font-weight: 500;
+  line-height: 1.08;
+  letter-spacing: 0;
+  color: hsl(var(--lp-ink));
+}
+
+html[data-route-surface='marketing'][data-ui-locale='en'] .lp-display {
+  font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+}
+
+html[data-route-surface='marketing'] .lp-h2 {
+  font-family:
+    "NovWr Display",
+    "Songti SC",
+    "STSong",
+    "Noto Serif CJK SC",
+    "Noto Serif SC",
+    "SimSun",
+    Georgia,
+    serif;
+  font-weight: 500;
+  font-size: clamp(1.75rem, 1.2rem + 1.6vw, 2.5rem);
+  line-height: 1.35;
+  text-wrap: balance;
+  color: hsl(var(--lp-ink));
+}
+
+html[data-route-surface='marketing'][data-ui-locale='en'] .lp-h2 {
+  font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.025em;
+}
+
+html[data-route-surface='marketing'] .lp-body {
+  font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  color: hsl(var(--lp-ink) / 0.72);
+}
+
+html[data-route-surface='marketing'] .lp-meta {
+  font-size: 0.875rem;
+  line-height: 1.4;
+  font-weight: 500;
+  color: hsl(var(--lp-ink) / 0.6);
+}
+
+html[data-route-surface='marketing'] .lp-cta-primary {
+  background: hsl(var(--lp-ink));
+  color: hsl(var(--lp-paper));
+  border-color: hsl(var(--lp-ink));
+  border-radius: 999px;
+}
+
+html[data-route-surface='marketing'] .lp-cta-primary:hover {
+  opacity: 0.88;
+}
+
+html[data-route-surface='marketing'] .lp-cta-secondary {
+  background: hsl(var(--lp-ink) / 0.04);
+  color: hsl(var(--lp-ink) / 0.88);
+  border-color: transparent;
+  border-radius: 999px;
+}
+
+html[data-route-surface='marketing'] .lp-cta-secondary:hover {
+  background: hsl(var(--lp-ink) / 0.08);
+}
+
+html[data-route-surface='marketing'] .lp-frame {
+  border-radius: 20px;
+  border: 1px solid hsl(var(--lp-ink) / 0.08);
+  background: hsl(var(--lp-frame));
+  box-shadow: none;
+  overflow: hidden;
+}
+
+html[data-route-surface='marketing'] .lp-node-highlight {
+  color: hsl(var(--lp-thread));
+  border-bottom: 1.5px solid hsl(var(--lp-thread) / 0.55);
+  display: inline;
+  padding: 0;
+  border-radius: 2px;
+  cursor: pointer;
+  font: inherit;
+  line-height: inherit;
+}
+
+html[data-route-surface='marketing'] .lp-node-highlight[data-active='true'] {
+  background: hsl(var(--lp-thread) / 0.12);
+}
+
+/* Landing: paper outside, fine threads inside. */
+html[data-route-surface='marketing'] .lp-hero-title {
+  font-size: clamp(2.25rem, 1.4rem + 3.4vw, 4.25rem);
+  line-height: 1.22;
+  text-wrap: balance;
+  white-space: pre-line;
+}
+html[data-route-surface='marketing'] .lp-h3 {
+  font-family: "NovWr Display", "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+  font-size: clamp(1.5rem, 1.1rem + 1vw, 2rem);
+  font-weight: 500;
+  line-height: 1.5;
+  text-wrap: balance;
+}
+html[data-route-surface='marketing'][data-ui-locale='en'] .lp-h3 { font-family: Outfit, sans-serif; }
+.lp-section { padding: 80px 24px; background: hsl(var(--lp-paper)); }
+.lp-lattice { position: relative; height: clamp(340px, 35vw, 460px); isolation: isolate; }
+.lp-lattice-threads, .lp-relations { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.lp-lattice-threads { fill: hsl(var(--lp-thread) / 0.55); }
+.lp-lattice-threads path { fill: none; stroke: hsl(var(--lp-thread) / 0.22); stroke-width: 0.65; }
+.lp-relations path { fill: none; stroke: hsl(var(--lp-thread) / 0.28); stroke-width: 1; transition: stroke 180ms; }
+.lp-relations path[data-active='true'] { stroke: hsl(var(--lp-thread) / 0.85); stroke-width: 1.3; }
+.lp-relation-label { position: absolute; left: 47%; top: 43%; color: hsl(var(--lp-thread)); font-size: 12px; }
+.lp-lattice-node { position: absolute; z-index: 2; display: flex; align-items: center; width: 44px; height: 44px; transform: translate(-50%, -50%); border-radius: 50%; }
+.lp-knot { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; transform: translate(-50%, -50%); border-radius: 50%; background: hsl(var(--lp-thread)); box-shadow: 0 0 0 4px hsl(var(--lp-paper)), 0 0 0 5px hsl(var(--lp-thread) / 0.18); }
+.lp-lattice-node[data-primary='true'] .lp-knot { width: 10px; height: 10px; box-shadow: 0 0 0 4px hsl(var(--lp-paper)), 0 0 0 5px hsl(var(--lp-thread) / 0.3), 0 0 24px hsl(var(--lp-thread) / 0.2); }
+.lp-node-name { position: absolute; left: 34px; white-space: nowrap; color: hsl(var(--lp-thread)); font-size: 12px; text-shadow: 0 1px 5px hsl(var(--lp-paper)), 0 -1px 5px hsl(var(--lp-paper)); }
+.lp-lattice-node:not([data-primary='true']) .lp-node-name { font-size: 11px; color: hsl(var(--lp-ink) / 0.55); }
+.lp-lattice-node[aria-pressed='true'] .lp-knot { box-shadow: 0 0 0 5px hsl(var(--lp-paper)), 0 0 0 6px hsl(var(--lp-thread)), 0 0 28px hsl(var(--lp-thread) / 0.28); }
+.lp-lattice-node[aria-pressed='true'] .lp-node-name { color: hsl(var(--lp-thread)); }
+.lp-lattice-caption { position: absolute; inset: auto 22px 18px; display: flex; justify-content: space-between; gap: 16px; color: hsl(var(--lp-ink) / 0.6); font-size: 11px; pointer-events: none; }
+.lp-lattice-detail { position: absolute; right: 20px; bottom: 48px; z-index: 3; width: min(320px, calc(100% - 40px)); padding: 18px; border: 1px solid hsl(var(--lp-ink) / 0.12); border-radius: 12px; background: hsl(var(--lp-paper) / 0.97); }
+.lp-detail-close { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; color: hsl(var(--lp-ink) / 0.6); }
+.lp-detail-close:hover { background: hsl(var(--lp-ink) / 0.06); }
+html[data-route-surface='marketing'] :is(button, a, [tabindex='0']):focus-visible { outline: 2px solid hsl(var(--lp-thread)); outline-offset: 4px; }
+html:not(.light) .lp-knot { background: #fff; box-shadow: 0 0 8px hsl(var(--lp-thread)), 0 0 18px hsl(var(--lp-thread) / 0.4); }
+html:not(.light) .lp-lattice-node[data-primary='true'] .lp-knot { width: 6px; height: 6px; background: #fff; box-shadow: 0 0 5px #fff, 0 0 16px hsl(var(--lp-thread)); }
+html:not(.light) .lp-lattice-threads path { stroke: hsl(var(--lp-thread) / 0.3); }
+html:not(.light) .lp-node-name { color: hsl(var(--lp-ink) / 0.85); }
+html[data-route-surface='marketing'] .lp-injection-stage { position: relative; background: hsl(var(--lp-paper)); }
+.lp-injection-stage > .lp-lattice-threads { top: auto; bottom: -75%; height: 130%; opacity: 0.24; }
+.lp-excerpt { font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif; font-size: clamp(1.125rem, 0.95rem + 0.45vw, 1.4rem); line-height: 2; color: hsl(var(--lp-ink) / 0.85); }
+.lp-setting-card { position: relative; border: 1px solid hsl(var(--lp-ink) / 0.14); border-radius: 12px; background: hsl(var(--lp-paper)); padding: 24px; }
+.lp-layer-switch { display: flex; gap: 24px; border-bottom: 1px solid hsl(var(--lp-ink) / 0.1); }
+.lp-layer-switch button { display: flex; gap: 7px; align-items: center; padding: 0 0 10px; font-size: 13px; color: hsl(var(--lp-ink) / 0.6); border-bottom: 2px solid transparent; }
+.lp-layer-switch button[aria-pressed='true'] { color: hsl(var(--lp-ink)); border-bottom-color: currentColor; }
+.lp-injection-links { position: relative; display: flex; justify-content: space-around; gap: 16px; padding: 20px 36px 32px; }
+.lp-injection-links::before { content: ''; position: absolute; top: 38px; left: 16%; right: 16%; border-top: 1px dashed hsl(var(--lp-thread) / 0.35); }
+.lp-injection-links button { position: relative; display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 12px; color: hsl(var(--lp-ink) / 0.65); }
+.lp-injection-links button span { height: 5px; width: 5px; border-radius: 50%; background: hsl(var(--lp-thread)); box-shadow: 0 0 0 5px hsl(var(--lp-paper)); }
+.lp-injection-links button[aria-pressed='true'] { color: hsl(var(--lp-thread)); }
+.lp-injection-links button[aria-pressed='true'] span { box-shadow: 0 0 0 4px hsl(var(--lp-paper)), 0 0 0 5px hsl(var(--lp-thread) / 0.4); }
+.lp-screenshot { background: hsl(var(--background)); }
+.lp-surface-tabs { display: flex; gap: 24px; overflow-x: auto; padding-bottom: 4px; }
+.lp-surface-tabs button { flex-shrink: 0; padding: 12px 0; border-bottom: 2px solid transparent; color: hsl(var(--lp-ink) / 0.6); font-size: 15px; }
+.lp-surface-tabs button[aria-selected='true'] { border-color: hsl(var(--lp-ink)); color: hsl(var(--lp-ink)); }
+.lp-workflow-track { position: relative; height: 320svh; }
+.lp-workflow-sticky { position: sticky; top: 80px; height: calc(100svh - 96px); display: grid; align-content: center; gap: 24px; }
+.lp-workflow-nav { display: flex; gap: 4px; border-bottom: 1px solid hsl(var(--lp-ink) / 0.12); }
+.lp-workflow-nav button { display: flex; flex: 1; justify-content: center; align-items: center; gap: 8px; padding: 12px 4px; font-size: 14px; white-space: nowrap; color: hsl(var(--lp-ink) / 0.44); border-bottom: 2px solid transparent; transition: color 180ms, border-color 180ms; }
+.lp-workflow-nav button[aria-current='step'] { color: hsl(var(--lp-ink)); border-color: hsl(var(--lp-ink)); }
+.lp-workflow-nav button:hover { color: hsl(var(--lp-ink)); }
+.lp-workflow-description { margin-top: 24px; min-height: 156px; }
+.lp-workflow-stage { height: clamp(260px, 43svh, 520px); min-width: 0; }
+.lp-narrative-act .lp-body { font-size: 15px; }
+#narrative { scroll-margin-top: 64px; }
+@media (min-width: 640px) {
+  .lp-section { padding: 80px 32px; }
+}
+@media (min-width: 1024px) {
+  .lp-section { padding: 80px 48px; }
+  .lp-workflow-sticky { grid-template-columns: minmax(240px, 0.65fr) minmax(0, 1.85fr); gap: 48px; align-items: center; }
+  .lp-workflow-nav { flex-direction: column; border-bottom: 0; }
+  .lp-workflow-nav button { justify-content: flex-start; gap: 18px; padding: 14px 18px; border-bottom: 0; border-left: 2px solid hsl(var(--lp-ink) / 0.12); font-size: 16px; }
+  .lp-workflow-description { margin-top: 32px; min-height: 176px; }
+  .lp-workflow-stage { height: min(72svh, 650px); }
+}
+@media (max-width: 639px) {
+  .lp-screenshot img { object-fit: cover; object-position: var(--screenshot-mobile-position); transform: scale(var(--screenshot-mobile-scale)); transform-origin: var(--screenshot-mobile-position); }
+  .lp-workflow-nav button { gap: 4px; font-size: 13px; }
+  .lp-workflow-nav button .font-mono { font-size: 10px; }
+  html[data-route-surface='marketing'] .lp-hero-title { max-width: 9em; line-height: 1.45; }
+  .lp-hero-actions > * { width: 100%; justify-content: center; }
+  .lp-lattice { height: auto; aspect-ratio: 4/5; }
+  .lp-lattice-node:not([data-primary='true']), .lp-lattice-node[data-entity='jingu-zhou'] { display: none; }
+  .lp-relation-label { display: none; }
+  .lp-node-name { font-size: 11px; }
+  .lp-lattice-caption { inset: auto 16px 14px; font-size: 10px; flex-direction: column; gap: 4px; }
+  .lp-lattice-detail { inset: auto 12px 58px; width: auto; padding: 14px; }
+  .lp-setting-card { padding: 20px; }
+  .lp-injection-links { padding: 8px 24px 24px; gap: 12px; }
+  .lp-injection-links::before { top: 26px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-narrative-act, .lp-relations path { transition: none; }
+}
+
 
 @layer base {
   * {
@@ -374,4 +626,20 @@ html[data-route-surface='workspace'] [class*='backdrop-blur']:not(.nw-preserve-b
   .animated-blob {
     animation: none !important;
   }
+}
+
+/* One quiet divider per workspace region; the hit area also works with touch. */
+.nw-panel-resize::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 2px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.nw-panel-resize:hover::after,
+.nw-panel-resize:active::after,
+.nw-panel-resize:focus-visible::after {
+  background: hsl(var(--accent) / .55);
 }

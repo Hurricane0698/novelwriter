@@ -47,20 +47,21 @@ function RelationshipsGraphSection({
           centerId={centerId}
           relationships={relationships}
           entities={entities}
-          onSelectEntity={onSelectEntity}
+          onSelectEntity={id => { setSelectedRelId(null); onSelectEntity(id) }}
           onSelectEdge={(rel) => setSelectedRelId(rel.id)}
           selectedRelId={selectedRelId}
           onClearSelection={() => setSelectedRelId(null)}
         />
       </div>
-      <RelationshipInspector
-        key={effectiveSelectedRel?.id ?? 'none'}
+      {effectiveSelectedRel && <RelationshipInspector
+        key={effectiveSelectedRel.id}
+        onClose={() => setSelectedRelId(null)}
         rel={effectiveSelectedRel}
         entities={entities}
         onUpdate={onUpdate}
         onConfirm={onConfirm}
         onDelete={onDelete}
-      />
+      />}
     </>
   )
 }
@@ -83,7 +84,7 @@ export function RelationshipsTab({
   const { t } = useUiLocale()
   const { data: relationships = [] } = useWorldRelationships(
     novelId,
-    selectedEntityId !== null ? { entity_id: selectedEntityId } : undefined,
+    undefined,
     selectedEntityId !== null,
   )
   const { data: entities = [] } = useWorldEntities(novelId)
@@ -160,10 +161,10 @@ export function RelationshipsTab({
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden">
-      <div className="flex-1 min-h-0 rounded-2xl border border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-2xl overflow-hidden flex flex-col">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <RelationshipsGraphSection
-          key={`${selectedEntityId}:${selectedRelationshipId ?? 'none'}`}
+          key={selectedRelationshipId ?? 'none'}
           centerId={selectedEntityId}
           relationships={relationships}
           entities={entities}
