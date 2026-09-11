@@ -3,11 +3,10 @@ import { waitForInitialNovelReady } from '../fixtures/novel-ready'
 import {
   INSTALLED_EDITED_CHAPTER_CONTENT,
   INSTALLED_ORIGIN,
-  assertDesktopLanding,
+  assertDesktopProductEntry,
   assertDesktopLlmConfigRestored,
   assertSeededDemoVisible,
   assertUploadedNovelVisible,
-  enterLibraryThroughDesktopLanding,
   installInstalledProductFailureGuard,
   readInstalledProductState,
   testDesktopLlmConnection,
@@ -23,8 +22,7 @@ test('overwrite install preserves and reuses encrypted LLM config', async ({ pag
   const failureGuard = installInstalledProductFailureGuard(page)
   const state = await readInstalledProductState()
 
-  await assertDesktopLanding(page)
-  await enterLibraryThroughDesktopLanding(page)
+  await assertDesktopProductEntry(page)
   await assertSeededDemoVisible(page)
   await assertUploadedNovelVisible(page, state)
   await assertDesktopLlmConfigRestored(page)

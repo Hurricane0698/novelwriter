@@ -182,36 +182,26 @@ export async function writeInstalledPageDiagnostics(page: Page, label: string) {
   console.error(`[desktop-installed] page diagnostics:\n${JSON.stringify(diagnostics, null, 2)}`)
 }
 
-async function expectDesktopLandingSurface(page: Page) {
+/** Desktop skips marketing and opens the product library on every launch. */
+async function expectDesktopProductEntry(page: Page) {
   try {
-    await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/`)
-    // First launch renders Landing while the runner absorbs WebView2 first-run,
-    // Defender scanning of the fresh install, and first-user demo seeding; the
-    // route chunk can take 30-70s to arrive, so this gate gets the shared
-    // storm budget below the 360s test and 480s outer process deadlines.
-    await expect(page.getByTestId('home-start-writing')).toBeVisible({ timeout: INSTALLED_STORM_TIMEOUT_MS })
+    await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/library`, { timeout: INSTALLED_STORM_TIMEOUT_MS })
+    // First launch absorbs WebView2 first-run, Defender scanning, and demo seeding.
+    await expect(page.getByTestId('library-create-novel')).toBeVisible({ timeout: INSTALLED_STORM_TIMEOUT_MS })
   } catch (error) {
-    await writeInstalledPageDiagnostics(page, 'landing surface')
+    await writeInstalledPageDiagnostics(page, 'product entry')
     throw error
   }
 }
 
-export async function assertDesktopLanding(page: Page) {
+export async function assertDesktopProductEntry(page: Page) {
   await page.goto(`${INSTALLED_ORIGIN}/`)
-  await expectDesktopLandingSurface(page)
+  await expectDesktopProductEntry(page)
 }
 
 export async function assertDesktopLoginRouteRemoved(page: Page) {
   await page.goto(`${INSTALLED_ORIGIN}/login`)
-  await expectDesktopLandingSurface(page)
-}
-
-export async function enterLibraryThroughDesktopLanding(page: Page) {
-  const startWritingLink = page.getByTestId('home-start-writing')
-  await expect(startWritingLink).toHaveAttribute('href', '/library')
-  await page.goto(`${INSTALLED_ORIGIN}/library`, { waitUntil: 'domcontentloaded' })
-  await expect(page).toHaveURL(`${INSTALLED_ORIGIN}/library`, { timeout: INSTALLED_STORM_TIMEOUT_MS })
-  await expect(page.getByTestId('library-create-novel')).toBeVisible()
+  await expectDesktopProductEntry(page)
 }
 
 function isLlmConfigResponse(response: Response, method: string) {
