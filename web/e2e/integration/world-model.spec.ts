@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test'
 import { authHeaders, blockExternalNoise, createApiSession, ensureProductAccess } from '../fixtures/api-helpers'
 
-const API = 'http://localhost:8000'
+const API = process.env.E2E_API_ORIGIN ?? 'http://localhost:8000'
 const RUN = Math.random().toString(36).slice(2, 6)
 const AUTH_SCOPE = 'world-model'
 
@@ -374,70 +374,80 @@ test('attribute: create → auto-expands → shows placeholders → editable', a
 // 8. StarGraph: center transitions when clicking peripheral node
 // ---------------------------------------------------------------------------
 
-test('star graph: click peripheral node → becomes new center', async ({ page, request }) => {
-  // Create 3 entities + 2 relationships forming a chain: A—B—C
-  const r1 = await apiPost(request, `/api/novels/${novelId}/world/entities`, {
-    name: `图中心_${RUN}`, entity_type: 'Character',
-  })
-  const r2 = await apiPost(request, `/api/novels/${novelId}/world/entities`, {
-    name: `图外围_${RUN}`, entity_type: 'Character',
-  })
-  const r3 = await apiPost(request, `/api/novels/${novelId}/world/entities`, {
-    name: `图远端_${RUN}`, entity_type: 'Location',
-  })
-  const e1 = await r1.json()
-  const e2 = await r2.json()
-  const e3 = await r3.json()
-
-  await apiPost(request, `/api/novels/${novelId}/world/relationships`, {
-    source_id: e1.id, target_id: e2.id, label: '认识',
-  })
-  await apiPost(request, `/api/novels/${novelId}/world/relationships`, {
-    source_id: e2.id, target_id: e3.id, label: '居住',
-  })
-
-  await page.goto(`/world/${novelId}`)
-  await page.getByTestId('tab-relationships').click()
-
-  // Select e1 as center
-  const sidebar = page.getByTestId('entity-navigator')
-  await sidebar.getByTestId('entity-search').fill(`图中心_${RUN}`)
-  const centerRow = sidebar.getByRole('button', { name: new RegExp(`图中心_${RUN}`) })
-  await centerRow.focus()
-  await centerRow.press('Enter')
-
-  // Graph should show e1 as center, e2 as peripheral
-  await expect(page.locator('.react-flow').getByText(`图中心_${RUN}`)).toBeVisible({ timeout: 10000 })
-  await expect(page.locator('.react-flow').getByText(`图外围_${RUN}`)).toBeVisible({ timeout: 10000 })
-  // e3 should NOT be visible (not directly connected to e1)
-  await expect(page.locator('.react-flow').getByText(`图远端_${RUN}`)).not.toBeVisible()
-
-  // Click peripheral node e2 → should become new center
-  const peerNode = page.locator('.react-flow__node').filter({ hasText: `图外围_${RUN}` }).first()
-  const flow = page.locator('.react-flow')
-  await flow.hover()
-  // Defensive: occasionally fitView runs before the graph has a stable size, leaving nodes out of viewport.
-  // Zoom out a bit until the peer node becomes clickable.
-  for (let i = 0; i < 8; i++) {
-    const inViewport = await peerNode.evaluate((el) => {
-      const r = el.getBoundingClientRect()
-      return r.bottom > 0 && r.top < window.innerHeight && r.right > 0 && r.left < window.innerWidth
-    })
-    if (inViewport) break
-    await page.mouse.wheel(0, 1200)
-    await page.waitForTimeout(100)
+test('relationship network keeps the camera for selection and panel changes, and clears stale editors', async ({ page, request }) => {
+  const created = []
+  for (const name of ['图中心', '图外围', '图远端', '另一网络A', '另一网络B']) {
+    created.push(await (await apiPost(request, `/api/novels/${novelId}/world/entities`, {
+      name: `${name}_${RUN}`, entity_type: 'Character',
+    })).json())
   }
-  await peerNode.click()
-  await page.waitForTimeout(500)
+  const [a, b, c, d, e] = created
+  const ab = await (await apiPost(request, `/api/novels/${novelId}/world/relationships`, {
+    source_id: a.id, target_id: b.id, label: '认识',
+  })).json()
+  await apiPost(request, `/api/novels/${novelId}/world/relationships`, { source_id: b.id, target_id: c.id, label: '居住' })
+  await apiPost(request, `/api/novels/${novelId}/world/relationships`, { source_id: d.id, target_id: e.id, label: '同行' })
 
-  // Now e2 is center — e3 should appear (connected to e2), and e1 should still be visible
-  await expect(page.locator('.react-flow').getByText(`图远端_${RUN}`)).toBeVisible({ timeout: 10000 })
-  await expect(page.locator('.react-flow').getByText(`图中心_${RUN}`)).toBeVisible()
+  await page.goto(`/world/${novelId}?tab=relationships&entity=${a.id}`)
+  const flow = page.locator('.react-flow')
+  const node = (id: number) => flow.locator(`.react-flow__node[data-id="${id}"]`)
+  const viewport = () => flow.locator('.react-flow__viewport').evaluate(el => {
+    const transform = new DOMMatrix(getComputedStyle(el).transform)
+    return { x: transform.e, y: transform.f, zoom: transform.a }
+  })
+  await expect(node(a.id)).toBeVisible()
+  await expect(node(b.id)).toBeVisible()
+  await expect(node(c.id)).toBeVisible()
+  await expect(node(d.id)).toHaveCount(0)
+  await expect.poll(async () => (await viewport()).x).not.toBe(0)
+  const initial = await viewport()
+  await flow.getByRole('button', { name: '放大关系图' }).click()
+  await expect.poll(async () => (await viewport()).zoom).toBeGreaterThan(initial.zoom)
+  const box = (await flow.boundingBox())!
+  await page.mouse.move(box.x + 25, box.y + 80)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 60, box.y + 100, { steps: 5 })
+  await page.mouse.up()
+  const manual = await viewport()
 
-  // Cleanup
+  const selectAB = async () => {
+    const edge = flow.getByTestId(`rf__edge-rel-${ab.id}`)
+    // Wait for the measured SVG after resize, and allow the hover label to settle.
+    await edge.hover()
+    await expect(flow.getByText('认识', { exact: true })).toBeVisible()
+    await edge.click()
+    await expect(page.getByTestId('relationship-inspector')).toBeVisible()
+  }
+  await selectAB()
+  await expect.poll(viewport).toEqual(manual)
+  await page.getByRole('button', { name: '关闭关系详情' }).click()
+  await expect(page.getByTestId('relationship-inspector')).toHaveCount(0)
+  await expect.poll(viewport).toEqual(manual)
+
+  await node(b.id).click()
+  await expect(page).toHaveURL(url => url.searchParams.get('entity') === String(b.id))
+  await expect.poll(viewport).toEqual(manual)
+  await selectAB()
+  const sidebar = page.getByTestId('entity-navigator')
+  await sidebar.getByTestId('entity-search').fill(a.name)
+  await sidebar.getByTestId(`entity-row-${a.id}`).press('Enter')
+  await expect(page.getByTestId('relationship-inspector')).toHaveCount(0)
+  await expect.poll(viewport).toEqual(manual)
+
+  const divider = page.getByRole('separator', { name: '调整实体列表宽度' })
+  await divider.press('ArrowRight')
+  await expect.poll(viewport).toEqual(manual)
+  await selectAB()
+  await sidebar.getByTestId('entity-search').fill(d.name)
+  await sidebar.getByTestId(`entity-row-${d.id}`).press('Enter')
+  await expect(node(d.id)).toBeVisible()
+  await expect(node(a.id)).toHaveCount(0)
+  await expect(page.getByTestId('relationship-inspector')).toHaveCount(0)
+  await expect(page.getByTestId('relationship-inspector-delete')).toHaveCount(0)
+  await flow.getByRole('button', { name: '适应画布' }).click()
+  await expect(node(e.id)).toBeInViewport()
+
   const rels = await (await apiGet(request, `/api/novels/${novelId}/world/relationships`)).json()
-  for (const rel of rels) await apiDelete(request, `/api/novels/${novelId}/world/relationships/${rel.id}`)
-  await apiDelete(request, `/api/novels/${novelId}/world/entities/${e1.id}`)
-  await apiDelete(request, `/api/novels/${novelId}/world/entities/${e2.id}`)
-  await apiDelete(request, `/api/novels/${novelId}/world/entities/${e3.id}`)
+  for (const relation of rels) await apiDelete(request, `/api/novels/${novelId}/world/relationships/${relation.id}`)
+  for (const entity of created) await apiDelete(request, `/api/novels/${novelId}/world/entities/${entity.id}`)
 })

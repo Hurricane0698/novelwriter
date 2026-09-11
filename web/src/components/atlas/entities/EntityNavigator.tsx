@@ -1,3 +1,4 @@
+import { useOverlayPanelFocus } from '@/hooks/useOverlayPanelFocus'
 import { useEffect, useState, useMemo, type KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
 import { PanelResizeHandle } from '@/components/novel-shell/PanelResizeHandle'
@@ -21,6 +22,7 @@ export function EntityNavigator({ novelId, selectedEntityId, onSelectEntity, bot
   bottomSlot?: React.ReactNode
 }) {
   const { locale, t } = useUiLocale()
+  const panelRef = useOverlayPanelFocus(overlay && !hidden)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set())
   const { data: entities = [], isLoading } = useWorldEntities(novelId)
@@ -80,8 +82,10 @@ export function EntityNavigator({ novelId, selectedEntityId, onSelectEntity, bot
 
   return (
     <div
-      className={cn('relative shrink-0 flex-col min-h-0 h-full border-r border-border/50 bg-background', hidden ? 'hidden' : 'flex', overlay && 'absolute left-0 top-12 bottom-0 !h-auto z-30 shadow-xl')}
+      className={cn('relative shrink-0 flex-col min-h-0 h-full border-r border-border/50 bg-background', hidden ? 'hidden' : 'flex', overlay && '!absolute left-0 top-12 bottom-0 !h-auto z-30 shadow-xl')}
       style={{ width }} hidden={hidden}
+      ref={panelRef} tabIndex={-1} aria-label={t('worldModel.graph.toggleNavigator')}
+      onKeyDown={event => { if (overlay && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); onClose?.() } }}
       data-testid="entity-navigator"
     >
       {onResize && <PanelResizeHandle side="right" width={width} min={200} max={400} onResize={onResize} label={t('worldModel.graph.resizeNavigator')} />}

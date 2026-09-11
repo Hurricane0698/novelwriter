@@ -2,7 +2,7 @@ import { test, expect, type APIRequestContext } from '@playwright/test'
 import { authHeaders, blockExternalNoise, createApiSession, ensureProductAccess } from '../fixtures/api-helpers'
 import { waitForInitialNovelReady } from '../fixtures/novel-ready'
 
-const API = 'http://localhost:8000'
+const API = process.env.E2E_API_ORIGIN ?? 'http://localhost:8000'
 const RUN = Math.random().toString(36).slice(2, 6)
 const AUTH_SCOPE = 'worldpack-import'
 

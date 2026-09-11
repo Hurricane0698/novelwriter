@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { ChevronDown, ChevronUp, Sparkles, Trash2, X } from 'lucide-react'
+import { useOverlayPanelFocus } from '@/hooks/useOverlayPanelFocus'
 import { useElementWidth } from '@/hooks/useElementWidth'
 import { PanelResizeHandle } from '@/components/novel-shell/PanelResizeHandle'
 import { AssistToggleButton } from '@/components/studio/AssistToggleButton'
@@ -115,6 +116,7 @@ export function ContinuationSetupStage({
   const { t } = useUiLocale()
   const { ref: stageRef, width: stageWidth } = useElementWidth()
   const overlay = stageWidth < 640
+  const panelRef = useOverlayPanelFocus(overlay)
   const maxPanelWidth = Math.max(280, overlay ? stageWidth - 24 : stageWidth - 360)
   const visiblePanelWidth = Math.min(panelWidth, maxPanelWidth)
   const { confirm, dialogProps } = useConfirmDialog()
@@ -138,7 +140,7 @@ export function ContinuationSetupStage({
   return (
     <div ref={stageRef} className="relative flex flex-1 min-h-0 overflow-hidden">
       {/* Chapter Preview */}
-      <div className="flex-1 min-w-0 flex flex-col gap-6 px-6 py-6 overflow-hidden">
+      <div inert={overlay} className="flex-1 min-w-0 flex flex-col gap-6 px-6 py-6 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div>
             <span className="text-sm font-medium text-foreground">
@@ -176,8 +178,8 @@ export function ContinuationSetupStage({
 
       {overlay && onClose && <div aria-hidden="true" onClick={onClose} className="absolute inset-0 z-10 bg-background/80" />}
       {/* Parameter Panel */}
-      <aside data-testid="continuation-parameters" data-presentation={overlay ? 'overlay' : 'rail'}
-        className={cn('relative shrink-0 border-l border-border/50 bg-background flex flex-col', overlay && 'absolute inset-y-0 right-0 z-20 shadow-xl')}
+      <aside ref={panelRef} tabIndex={-1} aria-label={t('continuation.setup.title')} data-testid="continuation-parameters" data-presentation={overlay ? 'overlay' : 'rail'}
+        className={cn('relative shrink-0 border-l border-border/50 bg-background flex flex-col', overlay && '!absolute inset-y-0 right-0 z-20 shadow-xl')}
         style={{ width: visiblePanelWidth }}>
         {onPanelResize && <PanelResizeHandle side="left" width={visiblePanelWidth} min={280} max={Math.min(560, maxPanelWidth)} onResize={onPanelResize} label={t('studio.layout.resizeContinuation')} />}
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/50 px-5">

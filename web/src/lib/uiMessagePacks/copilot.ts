@@ -42,7 +42,7 @@ export const copilotZhMessages = {
   'copilot.composer.send': '发送',
 
   'copilot.sessionStrip.title': '会话',
-  'copilot.sessionStrip.close': '关闭会话',
+  'copilot.sessionStrip.close': '结束会话',
 
   'copilot.runStatus.queued': '排队中',
   'copilot.runStatus.running': '运行中',
@@ -240,7 +240,7 @@ export const copilotEnMessages = {
   'copilot.composer.send': 'Send',
 
   'copilot.sessionStrip.title': 'Sessions',
-  'copilot.sessionStrip.close': 'Close session',
+  'copilot.sessionStrip.close': 'End session',
 
   'copilot.runStatus.queued': 'Queued',
   'copilot.runStatus.running': 'Running',

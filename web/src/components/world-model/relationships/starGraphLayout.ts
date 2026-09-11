@@ -1,5 +1,6 @@
 import { MarkerType, type Edge, type Node } from '@xyflow/react'
 import { LABELS } from '@/constants/labels'
+import type { GraphPositions, RelationshipGraphTopology } from './relationshipGraphGeometry'
 import type { WorldEntity, WorldRelationship } from '@/types/api'
 
 export type StarNodeData = {
@@ -18,73 +19,15 @@ function angleToHandle(angle: number): string {
   return 'top'
 }
 
-/** Stable spring layout for the connected network around an entity. */
-function layoutNeighborhood(ids: number[], relationships: WorldRelationship[]) {
-  const points = ids.map((id, index) => ({
-    id,
-    x: index === 0 ? 0 : Math.cos(index * 2.39996) * Math.sqrt(index) * 130,
-    y: index === 0 ? 0 : Math.sin(index * 2.39996) * Math.sqrt(index) * 105,
-  }))
-  const indices = new Map(ids.map((id, index) => [id, index]))
-  // Multiple facts about one pair share a spring, so duplicates do not pull nodes together.
-  const pairs = [...new Map(relationships.filter(r => r.source_id !== r.target_id).map(r => [
-    [r.source_id, r.target_id].sort((a, b) => a - b).join(':'),
-    [indices.get(r.source_id)!, indices.get(r.target_id)!],
-  ])).values()]
-  for (let iteration = 0; iteration < 180; iteration++) {
-    const forces = points.map(() => ({ x: 0, y: 0 }))
-    for (let i = 0; i < points.length; i++) {
-      for (let j = i + 1; j < points.length; j++) {
-        const dx = points[i].x - points[j].x
-        const dy = points[i].y - points[j].y
-        const squaredDistance = Math.max(1, dx * dx + dy * dy)
-        const push = 12000 / squaredDistance
-        forces[i].x += dx * push; forces[j].x -= dx * push
-        forces[i].y += dy * push; forces[j].y -= dy * push
-      }
-    }
-    for (const [source, target] of pairs) {
-      const dx = points[target].x - points[source].x
-      const dy = points[target].y - points[source].y
-      const pull = Math.hypot(dx, dy) / 650
-      forces[source].x += dx * pull; forces[target].x -= dx * pull
-      forces[source].y += dy * pull; forces[target].y -= dy * pull
-    }
-    const step = 10 * (1 - iteration / 180) + 0.1
-    points.forEach((point, index) => {
-      if (index === 0) return
-      const force = forces[index]
-      const length = Math.max(1, Math.hypot(force.x, force.y))
-      point.x += force.x / length * Math.min(step, length)
-      point.y += force.y / length * Math.min(step, length)
-    })
+/** Only node membership and unique connections influence geometry. */
+export function getRelationshipTopologyKey(centerId: number, relationships: WorldRelationship[]): string {
+  const adjacency = new Map<number, Set<number>>()
+  for (const rel of relationships) {
+    if (!adjacency.has(rel.source_id)) adjacency.set(rel.source_id, new Set())
+    if (!adjacency.has(rel.target_id)) adjacency.set(rel.target_id, new Set())
+    adjacency.get(rel.source_id)!.add(rel.target_id)
+    adjacency.get(rel.target_id)!.add(rel.source_id)
   }
-  // Label-aware spacing: shallow collisions are resolved without changing graph topology.
-  for (let pass = 0; pass < 24; pass++) {
-    for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
-      const dx = points[j].x - points[i].x
-      const dy = points[j].y - points[i].y
-      if (Math.abs(dx) >= 170 || Math.abs(dy) >= 90) continue
-      const shift = (90 - Math.abs(dy)) * (i === 0 ? 1 : 0.5)
-      const sign = dy >= 0 ? 1 : -1
-      points[j].y += shift * sign
-      if (i !== 0) points[i].y -= shift * sign
-    }
-  }
-  return new Map(points.map(point => [point.id, point]))
-}
-
-export function buildGraph(
-  centerId: number,
-  relationships: WorldRelationship[],
-  entityMap: Map<number, WorldEntity>,
-  selectedRelId: number | null = null,
-): { nodes: Node<StarNodeData>[]; edges: Edge[] } {
-  const adjacency = new Map<number, number[]>()
-  relationships.forEach(rel => {
-    adjacency.set(rel.source_id, [...(adjacency.get(rel.source_id) ?? []), rel.target_id])
-    adjacency.set(rel.target_id, [...(adjacency.get(rel.target_id) ?? []), rel.source_id])
-  })
   const connected = new Set([centerId])
   const queue = [centerId]
   for (let index = 0; index < queue.length; index++) {
@@ -94,10 +37,26 @@ export function buildGraph(
       queue.push(neighbor)
     }
   }
-  // Focus changes highlight, not the map's shape. Separate networks stay out of view.
   const ids = [...connected].sort((a, b) => a - b)
-  const rels = relationships.filter(r => connected.has(r.source_id) && connected.has(r.target_id)).sort((a, b) => a.id - b.id)
-  const positions = layoutNeighborhood(ids, rels)
+  const pairs: [number, number][] = []
+  for (const source of ids) {
+    for (const target of adjacency.get(source) ?? []) {
+      if (source < target) pairs.push([source, target])
+    }
+  }
+  pairs.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  return JSON.stringify({ ids, pairs } satisfies RelationshipGraphTopology)
+}
+
+export function buildGraph(
+  centerId: number,
+  relationships: WorldRelationship[],
+  entityMap: Map<number, WorldEntity>,
+  positions: GraphPositions,
+  selectedRelId: number | null = null,
+): { nodes: Node<StarNodeData>[]; edges: Edge[] } {
+  const ids = [...positions.keys()]
+  const rels = relationships.filter(r => positions.has(r.source_id) && positions.has(r.target_id)).sort((a, b) => a.id - b.id)
   const nodes: Node<StarNodeData>[] = ids.map(id => {
     const entity = entityMap.get(id)
     const position = positions.get(id)!

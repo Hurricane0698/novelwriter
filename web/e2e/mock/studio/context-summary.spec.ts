@@ -79,7 +79,7 @@ test('reviews and confirms a distant chapter recap before continuation uses it',
 
   await page.goto('/novel/1')
   await page.getByTestId('studio-rail-continuation').click()
-  await expect(page).toHaveURL(/\/novel\/1\?stage=write$/)
+  await expect(page).toHaveURL(url => url.pathname === '/novel/1' && url.searchParams.get('stage') === 'write' && url.searchParams.get('chapter') === '1')
   await expect(page.getByText('续写设置')).toBeVisible()
   await page.getByRole('button', { name: '高级设置' }).click()
   await page.getByRole('textbox', { name: '回顾章节范围' }).fill('1-2')
@@ -104,4 +104,49 @@ test('reviews and confirms a distant chapter recap before continuation uses it',
   await expect.poll(() => continuationPayload).not.toBeNull()
   expect(continuationPayload).toMatchObject({ context_summary_ids: [41] })
   await expect(page.getByText('倒计时仍在继续。')).toBeVisible()
+
+  const toolbar = page.getByTestId('studio-workspace-toolbar')
+  const assistantToggle = toolbar.getByRole('button', { name: '切换 AI 侧栏' })
+  const chapterToggle = toolbar.getByRole('button', { name: '章节', exact: true })
+  const summary = page.getByTestId('injection-summary-panel')
+  // Start with the ordinary assist closed: the summary must own its own visibility.
+  if (await assistantToggle.getAttribute('aria-expanded') === 'true') await assistantToggle.click()
+  await page.getByRole('button', { name: /^注入摘要\(/ }).click()
+  await expect(summary).toBeVisible()
+  await expect(assistantToggle).toHaveAttribute('aria-expanded', 'true')
+  await summary.getByRole('button', { name: '关系 0', exact: true }).click()
+  await assistantToggle.click()
+  await expect(summary).toHaveCount(0)
+  await assistantToggle.click()
+  await expect(summary.getByText('第1—2章远期剧情回顾')).toBeVisible()
+  await expect(page).toHaveURL(url => url.searchParams.get('summaryCategory') === 'relationships')
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByTestId('studio-support-panel')).toBeFocused()
+  await expect(page.getByTestId('studio-chapter-panel')).toBeHidden()
+  // The toolbar swaps narrow overlays instead of stacking them.
+  await chapterToggle.click()
+  await expect(summary).toHaveCount(0)
+  await expect(page.getByTestId('studio-chapter-panel')).toBeVisible()
+  await chapterToggle.click()
+
+  for (const control of ['toolbar', 'escape', 'panel', 'scrim']) {
+    await test.step(`close and restore the narrow summary with ${control}`, async () => {
+      await assistantToggle.click()
+      await expect(summary).toBeVisible()
+      await expect(page.getByTestId('studio-overlay-scrim')).toBeVisible()
+      await expect(assistantToggle).toHaveAttribute('aria-expanded', 'true')
+      await expect(page).toHaveURL(url => url.searchParams.get('summaryCategory') === 'relationships')
+      await expect(summary.getByText('第1—2章远期剧情回顾')).toBeVisible()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+      if (control === 'toolbar') await assistantToggle.click()
+      else if (control === 'escape') await page.keyboard.press('Escape')
+      else if (control === 'panel') await summary.getByRole('button', { name: '关闭助手' }).click()
+      else await page.getByTestId('studio-overlay-scrim').click({ position: { x: 8, y: 100 } })
+      await expect(summary).toHaveCount(0)
+      await expect(page.getByTestId('studio-overlay-scrim')).toHaveCount(0)
+      await expect(assistantToggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(assistantToggle).toBeFocused()
+    })
+  }
 })

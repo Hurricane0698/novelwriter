@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useEffect, useState, Fragment, type CSSProperties } from 'react'
+import { useMemo, useCallback, useEffect, useState, useRef, Fragment, type CSSProperties } from 'react'
 import {
   ReactFlow,
   BaseEdge,
@@ -24,6 +24,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { LABELS } from '@/constants/labels'
 import type { WorldRelationship, WorldEntity } from '@/types/api'
 import { buildGraph, type StarNodeData } from './starGraphLayout'
+import { useRelationshipGraphLayout } from './useRelationshipGraphLayout'
 import { getParallelEdgeShift } from './starEdgeGeometry'
 
 const HANDLE_CLS = '!w-0 !h-0 !border-0 !bg-transparent'
@@ -119,8 +120,11 @@ function FitGraphToStage({ layoutKey }: { layoutKey: string }) {
   const { fitView } = useReactFlow()
   const width = useStore(state => state.width)
   const height = useStore(state => state.height)
+  const fittedKey = useRef<string | null>(null)
   useEffect(() => {
-    if (initialized && width && height) void fitView({ padding: 0.12, maxZoom: 1.15 })
+    if (!initialized || !width || !height || fittedKey.current === layoutKey) return
+    fittedKey.current = layoutKey
+    void fitView({ padding: 0.12, maxZoom: 1.15 })
   }, [initialized, layoutKey, width, height, fitView])
   return null
 }
@@ -136,7 +140,8 @@ function GraphControls() {
   </div>
 }
 
-export function StarGraph({ centerId, relationships, entities, onSelectEntity, onSelectEdge, selectedRelId, onClearSelection }: {
+export function StarGraph({ topologyKey, centerId, relationships, entities, onSelectEntity, onSelectEdge, selectedRelId, onClearSelection }: {
+  topologyKey: string
   centerId: number
   relationships: WorldRelationship[]
   entities: WorldEntity[]
@@ -150,10 +155,11 @@ export function StarGraph({ centerId, relationships, entities, onSelectEntity, o
   const [hoveredRelId, setHoveredRelId] = useState<number | null>(null)
   const entityMap = useMemo(() => new Map(entities.map(e => [e.id, e])), [entities])
 
+  const { positions, failed, retry } = useRelationshipGraphLayout(topologyKey)
   const selectedRelIdValue = selectedRelId ?? null
   const { nodes, edges } = useMemo(
-    () => buildGraph(centerId, relationships, entityMap, selectedRelIdValue),
-    [centerId, relationships, entityMap, selectedRelIdValue],
+    () => positions ? buildGraph(centerId, relationships, entityMap, positions, selectedRelIdValue) : { nodes: [], edges: [] },
+    [centerId, relationships, entityMap, positions, selectedRelIdValue],
   )
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
@@ -166,7 +172,11 @@ export function StarGraph({ centerId, relationships, entities, onSelectEntity, o
   }, [relationships, onSelectEdge])
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full" aria-busy={!positions && !failed}>
+      {!positions && <div className="absolute inset-0 z-10 flex items-center justify-center gap-3 bg-background text-sm text-muted-foreground" role="status">
+        {t(failed ? 'worldModel.graph.layoutFailed' : 'worldModel.graph.layoutLoading')}
+        {failed && <button type="button" onClick={retry} className="text-accent underline">{t('worldModel.graph.retry')}</button>}
+      </div>}
       <ReactFlow
         className="bg-transparent"
         colorMode={theme}
@@ -193,7 +203,7 @@ export function StarGraph({ centerId, relationships, entities, onSelectEntity, o
         zoomOnDoubleClick={false}
         preventScrolling
       >
-        <FitGraphToStage layoutKey={nodes.map(node => node.id).join(',')} />
+        {positions && <FitGraphToStage layoutKey={topologyKey} />}
         <GraphControls />
         <Background variant={BackgroundVariant.Dots} color="hsl(var(--foreground) / 0.065)" gap={24} size={1} />
         <div className="pointer-events-none absolute left-5 top-4 z-10 text-[11px] text-muted-foreground">{t('worldModel.graph.hint')}</div>

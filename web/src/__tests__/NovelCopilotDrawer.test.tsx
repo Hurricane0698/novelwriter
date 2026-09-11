@@ -262,6 +262,24 @@ describe('NovelCopilotDrawer', () => {
     expect(mockCreateRun).not.toHaveBeenCalled()
   })
 
+  it('can end the last session and clears its local draft while ordinary close preserves it', async () => {
+    const user = userEvent.setup()
+    render(createElement(DrawerHarness))
+    await user.click(screen.getByRole('button', { name: 'open-whole-book' }))
+    await user.type(await screen.findByRole('textbox'), '待清理草稿')
+    await user.click(screen.getByRole('button', { name: 'open-current-entity' }))
+    const strip = screen.getByTestId('novel-copilot-session-strip')
+    await user.click(within(strip).getAllByRole('button', { name: '结束会话' })[1])
+    expect(screen.queryByTestId('novel-copilot-session-strip')).toBeNull()
+    expect(await screen.findByRole('textbox')).toHaveValue('待清理草稿')
+    await user.click(screen.getByRole('button', { name: '结束会话' }))
+    expect(screen.queryByTestId('novel-copilot-drawer')).toBeNull()
+    expect(screen.getByTestId('copilot-session-count')).toHaveTextContent('0')
+    await user.click(screen.getByRole('button', { name: 'open-whole-book' }))
+    expect(await screen.findByRole('textbox')).toHaveValue('')
+    expect(mockCreateRun).not.toHaveBeenCalled()
+  })
+
   it('stays cold while closed and only initializes world run data after opening a session', async () => {
     const user = userEvent.setup()
     render(createElement(DrawerHarness))
@@ -445,7 +463,7 @@ describe('NovelCopilotDrawer', () => {
         .getByText('苏瑶')
         .closest('[data-testid^="novel-copilot-session-"]')
       expect(entitySession).toBeTruthy()
-      await user.click(within(entitySession as HTMLElement).getByRole('button', { name: '关闭会话' }))
+      await user.click(within(entitySession as HTMLElement).getByRole('button', { name: '结束会话' }))
 
       expect(screen.queryByText('补完 苏瑶 的设定锚点')).toBeNull()
       expect(screen.getAllByText('草稿整理').length).toBeGreaterThan(0)

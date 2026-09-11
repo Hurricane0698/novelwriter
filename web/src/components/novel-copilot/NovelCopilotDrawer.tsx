@@ -1,3 +1,4 @@
+import { useOverlayPanelFocus } from '@/hooks/useOverlayPanelFocus'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { PanelResizeHandle } from '@/components/novel-shell/PanelResizeHandle'
 import { ArrowLeft, RotateCcw, X } from 'lucide-react'
@@ -148,6 +149,7 @@ function ActiveNovelCopilotDrawer({
   dismissSuggestions: ReturnType<typeof useNovelCopilot>['dismissSuggestions']
 }) {
   const { locale, t } = useUiLocale()
+  const panelRef = useOverlayPanelFocus(presentation === 'overlay')
   const [fallbackDrawerWidth, setFallbackDrawerWidth] = useState(DEFAULT_NOVEL_SHELL_DRAWER_WIDTH)
   const [retryingRunId, setRetryingRunId] = useState<string | null>(null)
   const [applyingSuggestionKeys, setApplyingSuggestionKeys] = useState<Set<string>>(() => new Set())
@@ -160,7 +162,7 @@ function ActiveNovelCopilotDrawer({
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') (onClose ?? closeDrawer)()
+      if (e.key === 'Escape' && !e.defaultPrevented) (onClose ?? closeDrawer)()
     }
     window.addEventListener('keydown', handleEsc)
     return () => window.removeEventListener('keydown', handleEsc)
@@ -225,6 +227,9 @@ function ActiveNovelCopilotDrawer({
   return (
     <>
       <div
+        ref={panelRef}
+        tabIndex={-1}
+        aria-label={t('copilot.drawer.badge')}
         className={cn(
           'nw-copilot-drawer relative shrink-0 flex flex-col overflow-hidden transition-none border-l',
           copilotDrawerShellClassName,
@@ -252,6 +257,11 @@ function ActiveNovelCopilotDrawer({
             <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
               <span>{scopeLabel}</span>
               {session.displayTitle !== scopeLabel && <><span aria-hidden="true">·</span><span className="truncate">{session.displayTitle}</span></>}
+              {sessions.length === 1 && <button type="button" onClick={() => removeSession(session.sessionId)}
+                className="ml-auto shrink-0 rounded px-1.5 py-1 text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                aria-label={t('copilot.sessionStrip.close')} data-role="close-session">
+                {t('copilot.sessionStrip.close')}
+              </button>}
             </div>
           </header>
 

@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { useOverlayPanelFocus } from '@/hooks/useOverlayPanelFocus'
+import { getStudioWorkspaceLayout, resolveStudioRightPanel, type StudioRightPanel } from '@/components/studio/studioWorkspaceLayout'
 import { lazy, Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import '@/lib/uiMessagePacks/novel'
@@ -193,17 +195,13 @@ export function NovelStudioPage() {
   } | null>(null)
   const [showMoreActions, setShowMoreActions] = useState(false)
   const [assistOpen, setAssistOpen] = useState<boolean | null>(null)
+  const [lastRightPanel, setLastRightPanel] = useState<StudioRightPanel>('assist')
   const [chaptersOpen, setChaptersOpen] = useState(true)
   const [chapterRailWidth, setChapterRailWidth] = useState(256)
   const [continuationPanelWidth, setContinuationPanelWidth] = useState(320)
   const { ref: workspaceRef, width: workspaceWidth } = useElementWidth()
-  const navigationOverlay = workspaceWidth < 760
-  const visibleChapterWidth = Math.min(chapterRailWidth, Math.max(200, workspaceWidth - 48))
-  const occupiedChapterWidth = chaptersOpen && !navigationOverlay ? visibleChapterWidth : 0
-  const minimumStageWidth = activeStage === 'write' ? 640 : 420
-  const maxAssistantWidth = Math.max(280, workspaceWidth - occupiedChapterWidth - minimumStageWidth)
-  const assistantOverlay = workspaceWidth - occupiedChapterWidth < minimumStageWidth + 280
-  const visibleDrawerWidth = Math.min(drawerWidth, assistantOverlay ? Math.max(280, workspaceWidth - 32) : maxAssistantWidth)
+  const { navigationOverlay, visibleChapterWidth, maxAssistantWidth, assistantOverlay, visibleDrawerWidth } =
+    getStudioWorkspaceLayout(workspaceWidth, chaptersOpen, chapterRailWidth, drawerWidth, activeStage === 'write')
 
   const exportGenerationRef = useRef(0)
   const exportNovelContextRef = useRef({ novelId, locationKey: location.key })
@@ -809,12 +807,47 @@ export function NovelStudioPage() {
     handoff: worldEntryHandoff,
     pending: worldEntryPending,
   }) !== 'routine'
-  const showAssistRail = assistOpen ?? assistNeedsAttention
-  const closeAssistant = () => { closeDrawer(); setAssistOpen(false) }
+  const rightPanel = resolveStudioRightPanel(showWorkbenchRail, showInjectionSummaryRail && resultsDebug !== null, assistOpen ?? assistNeedsAttention)
+  const assistantOpen = rightPanel !== 'hidden'
+  const rightOverlayOpen = assistantOverlay && assistantOpen
+  const chaptersVisible = chaptersOpen && !(navigationOverlay && rightOverlayOpen)
+  const navigationOverlayOpen = navigationOverlay && chaptersVisible
+  const chapterPanelRef = useOverlayPanelFocus(navigationOverlayOpen)
+  const supportPanelRef = useOverlayPanelFocus(rightOverlayOpen && rightPanel !== 'copilot')
+  const closeAssistant = useCallback(() => {
+    if (rightPanel !== 'hidden') setLastRightPanel(rightPanel)
+    closeDrawer()
+    setAssistOpen(false)
+    if (showInjectionSummaryRail) closeInjectionSummaryRail()
+  }, [rightPanel, closeDrawer, showInjectionSummaryRail, closeInjectionSummaryRail])
   const handleToggleAssist = () => {
-    if (showWorkbenchRail || showAssistRail) closeAssistant()
-    else if (focusedSessionId) reopenDrawer()
+    if (assistantOpen) closeAssistant()
+    else if (lastRightPanel === 'injection-summary' && resultsDebug) toggleInjectionSummaryRail()
+    else if (lastRightPanel === 'copilot' && focusedSessionId) reopenDrawer()
     else setAssistOpen(true)
+  }
+  const handleToggleChapters = () => {
+    if (chaptersVisible) setChaptersOpen(false)
+    else {
+      if (navigationOverlay && rightOverlayOpen) closeAssistant()
+      setChaptersOpen(true)
+    }
+  }
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (assistantOpen) closeAssistant()
+      else if (navigationOverlay) setChaptersOpen(false)
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [assistantOpen, closeAssistant, navigationOverlay])
+  const handleToggleInjectionSummary = () => {
+    if (rightPanel === 'injection-summary') closeAssistant()
+    else {
+      closeDrawer()
+      if (!showInjectionSummaryRail) toggleInjectionSummaryRail()
+    }
   }
   const handleToggleWriting = () => {
     if (activeStage === 'write') { navigateToChapterStage(activeChapterNum); return }
@@ -886,21 +919,21 @@ export function NovelStudioPage() {
               {t('studio.actions.exportFailed')}
             </div>
           ) : null}
-          <StudioWorkspaceToolbar title={novel.title} chaptersOpen={chaptersOpen}
-            onToggleChapters={() => setChaptersOpen(current => !current)} writing={activeStage === 'write'}
+          <StudioWorkspaceToolbar title={novel.title} chaptersOpen={chaptersVisible}
+            onToggleChapters={handleToggleChapters} writing={activeStage === 'write'}
             onToggleWriting={handleToggleWriting} canContinue={latestChapterNum !== null}
-            assistantOpen={showWorkbenchRail || showAssistRail} onToggleAssistant={handleToggleAssist}
+            assistantOpen={assistantOpen} onToggleAssistant={handleToggleAssist}
             onOpenAtlas={() => { setShowMoreActions(false); navigateToAtlas() }} onWarmAtlas={warmAtlasAssist} />
           <div ref={workspaceRef} className="relative flex min-h-0 flex-1 overflow-hidden">
-          {((navigationOverlay && chaptersOpen) || (assistantOverlay && (showWorkbenchRail || showAssistRail))) && (
-            <div aria-hidden="true" className="absolute inset-0 z-20 bg-background/80" onClick={() => {
+          {(navigationOverlayOpen || rightOverlayOpen) && (
+            <div aria-hidden="true" data-testid="studio-overlay-scrim" className="absolute inset-0 z-20 bg-background/80" onClick={() => {
               if (navigationOverlay) setChaptersOpen(false)
               if (assistantOverlay) closeAssistant()
             }} />
           )}
           <NovelShellLayout className="flex-1 min-h-0 overflow-hidden bg-background">
-            <aside id="studio-chapters" hidden={!chaptersOpen} data-testid="studio-chapter-panel"
-              className={`relative shrink-0 border-r border-border/50 bg-background ${chaptersOpen ? 'flex flex-col' : 'hidden'} ${navigationOverlay ? '!absolute inset-y-0 left-0 z-30 shadow-xl' : ''}`}
+            <aside ref={chapterPanelRef} tabIndex={-1} aria-label={t('studio.layout.chapters')} inert={rightOverlayOpen} id="studio-chapters" hidden={!chaptersVisible} data-testid="studio-chapter-panel"
+              className={`relative shrink-0 border-r border-border/50 bg-background ${chaptersVisible ? 'flex flex-col' : 'hidden'} ${navigationOverlay ? '!absolute inset-y-0 left-0 z-30 shadow-xl' : ''}`}
               style={{ width: visibleChapterWidth }}>
               <PanelResizeHandle side="right" width={visibleChapterWidth} min={200} max={Math.min(400, Math.max(200, workspaceWidth - 48))}
                 onResize={setChapterRailWidth} label={t('studio.layout.resizeChapters')} />
@@ -920,7 +953,7 @@ export function NovelStudioPage() {
             </aside>
 
           {/* ── Content Area ── */}
-          <ArtifactStage variant="glass">
+          <ArtifactStage variant="glass" inert={rightOverlayOpen || navigationOverlayOpen}>
             {hasResultsContext ? (
               <div className={activeStage === 'results' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
               <ContinuationResultsStage
@@ -929,10 +962,10 @@ export function NovelStudioPage() {
                 isActive={activeStage === 'results'}
                 activeChapterNum={activeChapterNum}
                 activeChapterReference={activeChapterReference}
-                showInjectionSummaryRail={showInjectionSummaryRail}
-                onToggleInjectionSummaryRail={toggleInjectionSummaryRail}
+                showInjectionSummaryRail={rightPanel === 'injection-summary'}
+                onToggleInjectionSummaryRail={handleToggleInjectionSummary}
                   onDebugChange={handleResultsDebugChange}
-                  assistOpen={showAssistRail}
+                  assistOpen={assistantOpen}
                 />
               </div>
             ) : null}
@@ -977,7 +1010,7 @@ export function NovelStudioPage() {
                 onRegenerateContextSummary={continuationState.handleRegenerateContextSummary}
                 onDeleteContextSummary={continuationState.handleDeleteContextSummary}
                 onGenerate={continuationState.handleGenerate}
-                assistOpen={showAssistRail}
+                assistOpen={assistantOpen}
               />
             ) : activeStage === 'entity' ? (
               <Suspense fallback={<StudioStagePanelFallback />}>
@@ -996,7 +1029,7 @@ export function NovelStudioPage() {
                     navigateToAtlas(nextParams)
                   }}
                   onWarmAtlas={warmAtlasAssist}
-                  assistOpen={showAssistRail}
+                  assistOpen={assistantOpen}
                 />
               </Suspense>
             ) : activeStage === 'relationship' ? (
@@ -1016,7 +1049,7 @@ export function NovelStudioPage() {
                   navigateToAtlas(nextParams)
                 }}
                 onWarmAtlas={warmAtlasAssist}
-                assistOpen={showAssistRail}
+                assistOpen={assistantOpen}
               />
             ) : activeStage === 'review' ? (
               <Suspense fallback={<StudioStagePanelFallback />}>
@@ -1033,7 +1066,7 @@ export function NovelStudioPage() {
                   }}
                   onWarmAtlas={warmAtlasAssist}
                   onReturnToArtifact={hasResultsContext ? handleReturnToArtifact : undefined}
-                  assistOpen={showAssistRail}
+                  assistOpen={assistantOpen}
                 />
               </Suspense>
             ) : activeStage === 'system' ? (
@@ -1052,7 +1085,7 @@ export function NovelStudioPage() {
                 }}
                 onWarmAtlas={warmAtlasAssist}
                 onReturnToArtifact={hasResultsContext ? handleReturnToArtifact : undefined}
-                assistOpen={showAssistRail}
+                assistOpen={assistantOpen}
               />
             ) : (
               /* ── Chapter Stage ── */
@@ -1069,7 +1102,7 @@ export function NovelStudioPage() {
                     isOpen: showMoreActions, onOpenChange: setShowMoreActions,
                     exportChapter: handleExportChapter, exportAll: handleExportAll, deleteChapter: handleDeleteChapter,
                   }}
-                  assistOpen={showAssistRail}
+                  assistOpen={assistantOpen}
                 />
 
                 {/* ── Editor / Reader Area ── */}
@@ -1102,22 +1135,22 @@ export function NovelStudioPage() {
             )}
           </ArtifactStage>
 
-          {showWorkbenchRail ? (
+          {rightPanel === 'copilot' ? (
             <Suspense fallback={<NovelCopilotDrawerFallback width={visibleDrawerWidth} />}>
               <NovelCopilotDrawer novelId={novelId} width={visibleDrawerWidth}
                 presentation={assistantOverlay ? 'overlay' : 'rail'} onClose={closeAssistant}
-                onBack={() => { closeDrawer(); setAssistOpen(true) }}
+                onBack={() => { closeDrawer(); closeInjectionSummaryRail(); setAssistOpen(true) }}
                 onLocateTarget={handleStudioLocateTarget} />
             </Suspense>
-          ) : (showInjectionSummaryRail && resultsDebug) || showAssistRail ? (
-            <aside className={`relative shrink-0 border-l border-border/50 bg-background ${assistantOverlay ? '!absolute inset-y-0 right-0 z-30 shadow-xl' : ''}`}
-              style={{ width: visibleDrawerWidth }} data-testid="studio-support-panel">
+          ) : rightPanel !== 'hidden' ? (
+            <aside ref={supportPanelRef} tabIndex={-1} aria-label={t('studio.layout.assistant')} className={`relative shrink-0 border-l border-border/50 bg-background ${assistantOverlay ? '!absolute inset-y-0 right-0 z-30 shadow-xl' : ''}`}
+              style={{ width: visibleDrawerWidth }} data-testid="studio-support-panel" data-panel={rightPanel}>
               <PanelResizeHandle side="left" width={visibleDrawerWidth} min={280}
                 max={assistantOverlay ? Math.max(280, workspaceWidth - 32) : maxAssistantWidth}
                 onResize={setDrawerWidth} label={t('copilot.drawer.resize')} />
-              {showInjectionSummaryRail && resultsDebug ? (
+              {rightPanel === 'injection-summary' && resultsDebug ? (
                 <InjectionSummaryPanel debug={resultsDebug} activeCategory={injectionSummaryPanelState?.injectionCategory ?? undefined}
-                  onActiveCategoryChange={setInjectionSummaryCategory} onClose={closeInjectionSummaryRail}
+                  onActiveCategoryChange={setInjectionSummaryCategory} onClose={closeAssistant}
                   onOpenAtlas={handleOpenInjectionCategory} onWarmAtlas={warmAtlasAssist} onSelectItem={handleOpenInjectionItem} />
               ) : (
             <StudioSupportRail

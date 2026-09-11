@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { buildGraph } from '@/components/world-model/relationships/starGraphLayout'
+import { buildGraph as presentGraph, getRelationshipTopologyKey } from '@/components/world-model/relationships/starGraphLayout'
+import { layoutRelationshipGraph, type RelationshipGraphTopology } from '@/components/world-model/relationships/relationshipGraphGeometry'
 import type { WorldRelationship, WorldEntity } from '@/types/api'
+
+function buildGraph(center: number, rels: WorldRelationship[], entities: Map<number, WorldEntity>, selected: number | null = null) {
+  const positions = layoutRelationshipGraph(JSON.parse(getRelationshipTopologyKey(center, rels)) as RelationshipGraphTopology)
+  return presentGraph(center, rels, entities, positions, selected)
+}
 
 const entity = (id: number, name: string): WorldEntity => ({
   id, name, entity_type: 'Character', novel_id: 1, status: 'confirmed',
@@ -94,6 +100,15 @@ describe('buildGraph', () => {
       const dy = Math.abs(node.position.y - other.position.y)
       expect(dx >= 169 || dy >= 89).toBe(true)
     }))
+  })
+
+  it('keys geometry by connections, not focus, labels, direction, or duplicate facts', () => {
+    const relations = [rel(1, 1, 2), rel(2, 2, 3)]
+    const key = getRelationshipTopologyKey(1, relations)
+    expect(getRelationshipTopologyKey(3, relations)).toBe(key)
+    expect(getRelationshipTopologyKey(1, [rel(9, 2, 1, 'renamed'), ...relations].reverse())).toBe(key)
+    expect(getRelationshipTopologyKey(1, [...relations, rel(3, 1, 3)])).not.toBe(key)
+    expect(getRelationshipTopologyKey(1, [relations[0]])).not.toBe(key)
   })
 
 })

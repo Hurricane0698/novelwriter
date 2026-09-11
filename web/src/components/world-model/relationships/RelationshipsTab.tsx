@@ -3,6 +3,8 @@ import { cn } from '@/lib/utils'
 import { useWorldRelationships, useCreateRelationship, useUpdateRelationship, useDeleteRelationship, useConfirmRelationships } from '@/hooks/world/useRelationships'
 import { useWorldEntities } from '@/hooks/world/useEntities'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
+import { getRelationshipTopologyKey } from './starGraphLayout'
+import type { RelationshipGraphTopology } from './relationshipGraphGeometry'
 import { StarGraph } from './StarGraph'
 import { RelationshipInspector } from './RelationshipInspector'
 import { Button } from '@/components/ui/button'
@@ -29,21 +31,24 @@ function RelationshipsGraphSection({
   onDelete: (relId: number) => void
   selectedRelationshipId?: number | null
 }) {
-  const [selectedRelIdState, setSelectedRelId] = useState<number | null>(() => selectedRelationshipId ?? null)
-
-  const selectedRelId = selectedRelIdState !== null
-    && relationships.some((relationship) => relationship.id === selectedRelIdState)
-    ? selectedRelIdState
-    : null
-
-  const effectiveSelectedRel = selectedRelId
-    ? (relationships.find((r) => r.id === selectedRelId) ?? null)
-    : null
+  const topologyKey = useMemo(() => getRelationshipTopologyKey(centerId, relationships), [centerId, relationships])
+  const visibleIds = useMemo(() => new Set((JSON.parse(topologyKey) as RelationshipGraphTopology).ids), [topologyKey])
+  const [selection, setSelection] = useState({ centerId, externalId: selectedRelationshipId, id: selectedRelationshipId ?? null })
+  // Both the navigator and external links can change focus without a graph click.
+  // Reset selection without remounting ReactFlow or losing the camera.
+  if (selection.centerId !== centerId || selection.externalId !== selectedRelationshipId) {
+    setSelection({ centerId, externalId: selectedRelationshipId, id: selectedRelationshipId ?? null })
+  }
+  const setSelectedRelId = (id: number | null) => setSelection({ centerId, externalId: selectedRelationshipId, id })
+  const effectiveSelectedRel = relationships.find(relationship => relationship.id === selection.id
+    && visibleIds.has(relationship.source_id) && visibleIds.has(relationship.target_id)) ?? null
+  const selectedRelId = effectiveSelectedRel?.id ?? null
 
   return (
     <>
       <div className="flex-1 min-h-0">
         <StarGraph
+          topologyKey={topologyKey}
           centerId={centerId}
           relationships={relationships}
           entities={entities}
@@ -164,7 +169,6 @@ export function RelationshipsTab({
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <RelationshipsGraphSection
-          key={selectedRelationshipId ?? 'none'}
           centerId={selectedEntityId}
           relationships={relationships}
           entities={entities}

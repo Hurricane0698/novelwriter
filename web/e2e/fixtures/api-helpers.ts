@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { type APIRequestContext, Page } from '@playwright/test'
 import { NOVELS, CHAPTERS } from './data'
 
-const BACKEND_ORIGIN = 'http://localhost:8000'
+const BACKEND_ORIGIN = process.env.E2E_API_ORIGIN ?? 'http://localhost:8000'
 const FRONTEND_ORIGIN = 'http://localhost:5173'
 const SESSION_COOKIE_NAME = 'novwr_session'
 const UPLOAD_CONSENT_VERSION = '2026-03-06'

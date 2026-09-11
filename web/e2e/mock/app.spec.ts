@@ -30,7 +30,7 @@ test.describe('Local access', () => {
 
     await page.goto('/novel/1')
     await expect(page).toHaveURL('/novel/1')
-    await expect(page.getByText(NOVELS[0].title)).toBeVisible()
+    await expect(page.getByTestId('studio-workspace-toolbar').getByText(NOVELS[0].title)).toBeVisible()
     await expect(page.getByRole('button', { name: /第\s*1\s*章/ })).toBeVisible()
     await expect(page.getByText(CHAPTERS[0].content)).toBeVisible()
   })

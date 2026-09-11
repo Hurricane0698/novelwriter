@@ -456,6 +456,7 @@ export function ContinuationResultsStage({
         <button
           type="button"
           onClick={onToggleInjectionSummaryRail}
+          aria-expanded={showInjectionSummaryRail}
           className={cn(
             'shrink-0 rounded-[10px] border px-4 py-3 flex items-center justify-between gap-3 text-left transition-colors',
             showInjectionSummaryRail

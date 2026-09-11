@@ -271,7 +271,7 @@ vi.mock('@/components/world-model/shared/BootstrapPanel', () => ({
 }))
 
 vi.mock('@/components/studio/panels/InjectionSummaryPanel', () => ({
-  InjectionSummaryPanel: () => <div data-testid="injection-summary-panel" />,
+  InjectionSummaryPanel: ({ activeCategory, onClose }: { activeCategory: string; onClose: () => void }) => <div data-testid="injection-summary-panel" data-category={activeCategory}><button onClick={onClose}>关闭摘要</button></div>,
 }))
 
 vi.mock('@/components/studio/stages/ContinuationSetupStage', () => ({
@@ -307,7 +307,7 @@ vi.mock('@/components/studio/stages/ContinuationResultsStage', () => ({
 }))
 
 vi.mock('@/components/novel-copilot/NovelCopilotDrawer', () => ({
-  NovelCopilotDrawer: () => <div data-testid="novel-copilot-drawer" />,
+  NovelCopilotDrawer: ({ onBack }: { onBack: () => void }) => <div data-testid="novel-copilot-drawer"><button onClick={onBack}>返回辅助工具</button></div>,
 }))
 
 vi.mock('@/hooks/novel/useUpdateChapter', () => ({
@@ -353,6 +353,10 @@ vi.mock('@/components/atlas/workbench/atlasAssistWorkbenchLoader', () => ({
 }))
 
 vi.mock('@/services/api', () => ({
+  copilotApi: {
+    openSession: vi.fn().mockResolvedValue({ session_id: 'studio-test-session' }),
+    listRuns: vi.fn().mockResolvedValue([]),
+  },
   api: {
     getNovel: vi.fn(),
     listChaptersMeta: vi.fn(),
@@ -554,6 +558,26 @@ describe('NovelStudioPage', () => {
     await user.click(screen.getByRole('button', { name: '切换 AI 侧栏' }))
     expect(screen.getByTestId('studio-assistant-rail')).toHaveAttribute('data-world-entry-stage', 'attention')
     dateNowSpy.mockRestore()
+  })
+
+  it('restores the last visible right panel after returning from Copilot to assist tools', async () => {
+    const user = userEvent.setup()
+    renderWithStudioShell('/novel/7?chapter=3')
+    await screen.findByText('第三章内容')
+    const toggle = screen.getByRole('button', { name: '切换 AI 侧栏' })
+    if (toggle.getAttribute('aria-expanded') !== 'true') await user.click(toggle)
+    await user.click(screen.getByTestId('novel-copilot-trigger'))
+    await screen.findByTestId('novel-copilot-drawer')
+    await user.click(toggle)
+    expect(screen.queryByTestId('novel-copilot-drawer')).toBeNull()
+    await user.click(toggle)
+    await screen.findByTestId('novel-copilot-drawer')
+    await user.click(screen.getByRole('button', { name: '返回辅助工具' }))
+    await screen.findByTestId('studio-assistant-rail')
+    await user.click(toggle)
+    await user.click(toggle)
+    expect(screen.getByTestId('studio-assistant-rail')).toBeInTheDocument()
+    expect(screen.queryByTestId('novel-copilot-drawer')).toBeNull()
   })
 
   it('returns to the same chapter when continuation closes from either control', async () => {
@@ -1318,6 +1342,29 @@ describe('NovelStudioPage', () => {
     expect(screen.getByTestId('injection-summary-panel')).toBeInTheDocument()
     expect(screen.queryByTestId('studio-research-panel')).not.toBeInTheDocument()
     expect(screen.queryByTestId('studio-world-entry-panel')).not.toBeInTheDocument()
+  })
+
+  it.each(['toolbar', 'scrim', 'escape', 'panel'])('closes and restores the visible summary using %s without losing its category', async (control) => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390)
+    mockReadGenerationResultsDebug.mockReturnValue({
+      context_chapters: 3, injected_entities: ['主角'], injected_relationships: ['师徒'],
+      injected_context_summaries: [], injected_systems: [], relevant_entity_ids: [1],
+      ambiguous_keywords_disabled: [], drift_warnings: [], prose_warnings: [],
+    })
+    renderWithStudioShell('/novel/7?stage=entity&entity=1&chapter=3&resultsChapter=3&resultsContinuations=0:101&artifactPanel=injection_summary&summaryCategory=relationships')
+    await screen.findByTestId('injection-summary-panel')
+    const toggle = screen.getByRole('button', { name: '切换 AI 侧栏' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    if (control === 'toolbar') fireEvent.click(toggle)
+    else if (control === 'scrim') fireEvent.click(screen.getByTestId('studio-overlay-scrim'))
+    else if (control === 'panel') fireEvent.click(screen.getByText('关闭摘要'))
+    else fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('injection-summary-panel')).toBeNull())
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByTestId('studio-support-panel')).toBeNull()
+    fireEvent.click(toggle)
+    await screen.findByTestId('injection-summary-panel')
+    expect(screen.getByTestId('injection-summary-panel')).toHaveAttribute('data-category', 'relationships')
   })
 
   it('waits for chapter save success before navigating from studio to atlas', async () => {

@@ -1,3 +1,4 @@
+import { useOverlayPanelFocus } from '@/hooks/useOverlayPanelFocus'
 import '@/lib/uiMessagePacks/novel'
 import { useCallback, useMemo, useRef, useState, type ReactElement } from 'react'
 import { AnimatePresence, domAnimation, LazyMotion, LayoutGroup, m, useReducedMotion } from 'framer-motion'
@@ -71,6 +72,7 @@ export function AtlasAssistWorkbench({
   onOpenDraftReview: (kind?: DraftReviewKind) => void
 }) {
   const { t } = useUiLocale()
+  const panelRef = useOverlayPanelFocus(presentation === 'overlay')
   const shell = useOptionalNovelShell()
   const copilot = useNovelCopilot()
   const prefersReducedMotion = useReducedMotion()
@@ -403,7 +405,8 @@ export function AtlasAssistWorkbench({
   return (
     <LazyMotion features={domAnimation}>
       <>
-      <aside
+      <aside ref={panelRef} tabIndex={-1} aria-label={t('worldModel.atlas.assist.title')}
+        onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); onClose?.() } }}
         className={cn(
           'relative shrink-0 overflow-hidden',
           copilotDrawerShellClassName,
