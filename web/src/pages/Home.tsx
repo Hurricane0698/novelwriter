@@ -23,11 +23,11 @@ function scheduleDeferredHomeSections(callback: () => void) {
 
 function DeferredSectionsFallback() {
   return (
-    <div aria-hidden="true" className="flex flex-col">
-      <div className="min-h-[720px] bg-[hsl(var(--lp-surface))]" />
-      <div className="min-h-[1200px] bg-card" />
-      <div className="min-h-[640px] bg-[hsl(var(--lp-surface))]" />
-      <div className="min-h-[560px] bg-[hsl(var(--lp-cta-via))]" />
+    <div aria-hidden="true" className="flex flex-col bg-[hsl(var(--lp-paper))]">
+      <div className="min-h-[60vh]" />
+      <div className="min-h-[60vh]" />
+      <div className="min-h-[60vh]" />
+      <div className="min-h-[40vh]" />
     </div>
   )
 }

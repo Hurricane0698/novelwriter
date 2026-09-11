@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 
 type StageShellProps = {
   label?: ReactNode
-  accentHex?: string
+  headerAction?: ReactNode
   className?: string
   headerClassName?: string
   bodyClassName?: string
@@ -15,7 +15,7 @@ type StageShellProps = {
 
 export function StageShell({
   label = 'NovWr',
-  accentHex = '#5b6bf0',
+  headerAction,
   className,
   headerClassName,
   bodyClassName,
@@ -23,7 +23,7 @@ export function StageShell({
 }: StageShellProps) {
   const resolvedLabel = typeof label === 'string'
     ? (
-        <span className="ml-auto font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400">
+        <span className="ml-4 text-xs text-[hsl(var(--lp-ink)/0.6)]">
           {label}
         </span>
       )
@@ -32,22 +32,25 @@ export function StageShell({
   return (
     <div
       className={cn(
-        'relative flex w-full flex-col overflow-hidden rounded-[28px] border border-black/8 bg-white shadow-[0_32px_72px_rgba(15,23,42,0.10)]',
+        'relative flex w-full flex-col overflow-hidden rounded-[20px] border border-[hsl(var(--lp-ink)/0.08)] bg-[hsl(var(--lp-frame))] shadow-none',
         className,
       )}
     >
       <div
-        className={cn('flex h-10 shrink-0 items-center border-b bg-white/92 px-4 backdrop-blur-sm', headerClassName)}
-        style={{ borderBottomColor: `${accentHex}22` }}
+        className={cn(
+          'flex h-10 shrink-0 items-center border-b border-[hsl(var(--lp-ink)/0.08)] bg-[hsl(var(--lp-paper))] px-4',
+          headerClassName,
+        )}
       >
         <div className="flex gap-1.5">
-          <div className="h-2.5 w-2.5 rounded-full bg-slate-300" />
-          <div className="h-2.5 w-2.5 rounded-full bg-slate-300" />
-          <div className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+          <div className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--lp-ink)/0.12)]" />
+          <div className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--lp-ink)/0.12)]" />
+          <div className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--lp-ink)/0.12)]" />
         </div>
         {resolvedLabel}
+        {headerAction ? <div className="ml-auto pl-3">{headerAction}</div> : null}
       </div>
-      <div className={cn('relative bg-white', bodyClassName)}>{children}</div>
+      <div className={cn('relative bg-[hsl(var(--lp-frame))]', bodyClassName)}>{children}</div>
     </div>
   )
 }

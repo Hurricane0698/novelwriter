@@ -64,6 +64,7 @@ export function InjectionSummaryPanel({
           <button
             type="button"
             onClick={onClose}
+            aria-label={t('copilot.drawer.close')}
             className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-[var(--nw-glass-bg-hover)] transition-colors"
           >
             <X size={14} />

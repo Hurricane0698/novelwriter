@@ -1,7 +1,9 @@
+import { useOverlayPanelFocus } from '@/hooks/useOverlayPanelFocus'
 import '@/lib/uiMessagePacks/novel'
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactElement } from 'react'
 import { AnimatePresence, domAnimation, LazyMotion, LayoutGroup, m, useReducedMotion } from 'framer-motion'
-import { Bot, Globe, Search, Sparkles } from 'lucide-react'
+import { Bot, Globe, Search, Sparkles, X } from 'lucide-react'
+import { PanelResizeHandle } from '@/components/novel-shell/PanelResizeHandle'
 import { AtlasAssistAttentionBanner } from '@/components/atlas/workbench/AtlasAssistAttentionBanner'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { cn } from '@/lib/utils'
@@ -42,6 +44,7 @@ export function AtlasAssistWorkbench({
   width,
   presentation = 'rail',
   onResize,
+  onClose,
   selectedEntityId,
   selectedEntityName,
   worldEntityCount,
@@ -56,6 +59,7 @@ export function AtlasAssistWorkbench({
   tab: AtlasWorkbenchTab
   width: number
   presentation?: 'rail' | 'overlay'
+  onClose?: () => void
   onResize: (nextWidth: number) => void
   selectedEntityId: number | null
   selectedEntityName?: string | null
@@ -68,6 +72,7 @@ export function AtlasAssistWorkbench({
   onOpenDraftReview: (kind?: DraftReviewKind) => void
 }) {
   const { t } = useUiLocale()
+  const panelRef = useOverlayPanelFocus(presentation === 'overlay')
   const shell = useOptionalNovelShell()
   const copilot = useNovelCopilot()
   const prefersReducedMotion = useReducedMotion()
@@ -80,12 +85,7 @@ export function AtlasAssistWorkbench({
     isResolved: isDraftBacklogResolved,
   } = useDraftReviewBacklog(novelId)
   const [genOpen, setGenOpen] = useState(false)
-  const [isDragging, setIsDragging] = useState(false)
-  const drawerRef = useRef<HTMLDivElement>(null)
   const governanceSectionRef = useRef<HTMLElement>(null)
-  const isDraggingRef = useRef(false)
-  const startXRef = useRef(0)
-  const startWidthRef = useRef(width)
 
   const indexStatusMeta = getWindowIndexCopilotStatusMeta(indexState)
   const preferredReviewKind: DraftReviewKind =
@@ -153,49 +153,12 @@ export function AtlasAssistWorkbench({
     return null
   }, [copilot, selectedEntityId, selectedEntityName, t, tab])
 
-  const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    event.stopPropagation()
-    isDraggingRef.current = true
-    setIsDragging(true)
-    startXRef.current = event.clientX
-    startWidthRef.current = width
-    document.body.style.cursor = 'ew-resize'
-    document.body.style.userSelect = 'none'
-  }, [width])
-
   const scrollToGovernance = useCallback(() => {
     governanceSectionRef.current?.scrollIntoView({
       block: 'start',
       behavior: 'smooth',
     })
   }, [])
-
-  useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      if (!isDraggingRef.current) return
-      const delta = startXRef.current - event.clientX
-      let nextWidth = startWidthRef.current + delta
-      const parentWidth = drawerRef.current?.parentElement?.clientWidth
-      if (parentWidth) nextWidth = Math.min(nextWidth, parentWidth * 0.5)
-      onResize(nextWidth)
-    }
-
-    const handlePointerUp = () => {
-      if (!isDraggingRef.current) return
-      isDraggingRef.current = false
-      setIsDragging(false)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-
-    document.addEventListener('pointermove', handlePointerMove)
-    document.addEventListener('pointerup', handlePointerUp)
-    return () => {
-      document.removeEventListener('pointermove', handlePointerMove)
-      document.removeEventListener('pointerup', handlePointerUp)
-    }
-  }, [onResize])
 
   const queueTone = governanceFeedback?.phase
     ?? (totalDrafts > 0 ? 'needs_review' : 'success')
@@ -267,7 +230,6 @@ export function AtlasAssistWorkbench({
   const attentionBanner = assistStage === 'attention' && attentionTone ? (
     <AtlasAssistAttentionBanner
       tone={attentionTone}
-      eyebrow={t('worldModel.atlas.assist.attention.eyebrow')}
       title={
         attentionTone === 'running'
           ? t('worldModel.atlas.assist.attention.runningTitle')
@@ -305,10 +267,10 @@ export function AtlasAssistWorkbench({
       <button
         type="button"
         onClick={() => copilot.openDrawer(...buildWholeBookCopilotLaunchArgs(shell?.routeState))}
-        className="flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
+        className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
         data-testid="atlas-assist-open-whole-book"
       >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[var(--nw-glass-border)] bg-background/20 text-muted-foreground">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground">
           <Search className="h-3.5 w-3.5" />
         </div>
         <div className="min-w-0 flex-1">
@@ -325,10 +287,10 @@ export function AtlasAssistWorkbench({
         <button
           type="button"
           onClick={contextualAction.onClick}
-          className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-left transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
           data-testid="atlas-assist-context-action"
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[var(--nw-glass-border)] bg-background/20 text-muted-foreground">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground">
             <Bot className="h-3.5 w-3.5" />
           </div>
           <div className="min-w-0">
@@ -367,11 +329,11 @@ export function AtlasAssistWorkbench({
         <button
           type="button"
           onClick={() => onOpenDraftReview(preferredReviewKind)}
-          className="flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
+          className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
           data-testid="atlas-assist-queue-meta"
           data-tone={queueTone}
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[var(--nw-glass-border)] bg-background/20 text-muted-foreground">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground">
             <Globe className="h-3.5 w-3.5" />
           </div>
           <div className="min-w-0 flex-1">
@@ -386,10 +348,10 @@ export function AtlasAssistWorkbench({
       <button
         type="button"
         onClick={() => setGenOpen(true)}
-        className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-left transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
+        className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
         data-testid="atlas-assist-generate"
       >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[var(--nw-glass-border)] bg-background/20 text-muted-foreground">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground">
           <Sparkles className="h-3.5 w-3.5" />
         </div>
         <div className="min-w-0 flex-1">
@@ -443,41 +405,29 @@ export function AtlasAssistWorkbench({
   return (
     <LazyMotion features={domAnimation}>
       <>
-      <aside
-        ref={drawerRef}
+      <aside ref={panelRef} tabIndex={-1} aria-label={t('worldModel.atlas.assist.title')}
+        onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); onClose?.() } }}
         className={cn(
           'relative shrink-0 overflow-hidden',
           copilotDrawerShellClassName,
           presentation === 'rail'
             ? 'border-l'
-            : 'rounded-[28px] border shadow-[0_24px_80px_var(--nw-backdrop)]',
+            : 'shadow-xl',
         )}
         style={{
           width,
-          transition: isDragging ? 'none' : 'width 0.3s cubic-bezier(0.19,1,0.22,1)',
         }}
         data-testid="atlas-assist-workbench"
         data-presentation={presentation}
       >
-        {presentation === 'rail' ? (
-          <div
-            className="absolute left-0 top-0 bottom-0 z-50 w-1.5 cursor-ew-resize transition-colors hover:bg-[hsl(var(--accent)/0.15)] active:bg-[hsl(var(--accent)/0.3)]"
-            onPointerDown={handlePointerDown}
-          />
-        ) : null}
-        <div className="absolute inset-0 bg-[var(--nw-copilot-shell-bg)]" />
+        <PanelResizeHandle side="left" width={width} min={280} max={800} onResize={onResize} label={t('copilot.drawer.resize')} />
 
         <div className="relative flex h-full flex-col">
-          <div className="shrink-0 border-b border-[var(--nw-copilot-border)] px-5 py-4">
-            <div className="min-w-0">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground/72">
-                {t('worldModel.atlas.assist.eyebrow')}
-              </div>
-              <h2 className="mt-2 text-[16px] font-semibold leading-6 text-foreground">
-                {t('worldModel.atlas.assist.title')}
-              </h2>
-            </div>
-          </div>
+          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--nw-copilot-border)] px-4 py-3">
+            <h2 className="text-sm font-medium">{t('worldModel.atlas.assist.title')}</h2>
+            {onClose && <button type="button" onClick={onClose} aria-label={t('copilot.drawer.close')}
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-foreground/5"><X className="h-4 w-4" /></button>}
+          </header>
 
           <div
             className="nw-scrollbar-thin flex-1 overflow-y-auto px-3 py-4"

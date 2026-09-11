@@ -6,7 +6,6 @@ import { translateUiMessage, type UiLocale } from '@/lib/uiMessages'
 import type { CopilotEvidence, CopilotTraceStep } from '@/types/copilot'
 import { getCopilotEvidenceSourceMeta } from './novelCopilotView'
 import {
-  copilotPanelClassName,
   copilotPanelMutedClassName,
   copilotPillClassName,
   copilotPillInteractiveClassName,
@@ -174,7 +173,7 @@ export function NovelCopilotResearchProcess({
   const processSummary = buildProcessSummary(toolSteps.length, evidence.length, hasRunningStep, locale)
 
   return (
-    <section className={cn('rounded-[22px] p-3.5', copilotPanelClassName)} data-testid="copilot-research-process">
+    <section className="border-y border-[var(--nw-copilot-border)] py-3" data-testid="copilot-research-process">
       <button
         type="button"
         onClick={() => setIsExpanded((value) => !value)}
@@ -183,7 +182,7 @@ export function NovelCopilotResearchProcess({
         aria-label={isExpanded ? t('copilot.research.collapse') : t('copilot.research.expand')}
       >
         <div className="min-w-0">
-          <div className="text-[11px] font-semibold tracking-[0.2em] text-foreground/82 uppercase">
+          <div className="text-xs font-medium text-foreground/82">
             {t('copilot.research.panelLabel')}
           </div>
           <div className="mt-1 text-[12px] text-muted-foreground/78">
@@ -205,14 +204,14 @@ export function NovelCopilotResearchProcess({
       {isExpanded ? (
         <div className="mt-3 space-y-3 border-t border-[var(--nw-copilot-border)] pt-3">
           {toolModeStep ? (
-            <div className={cn('rounded-[18px] px-3 py-2.5 text-[12px] text-muted-foreground/80', copilotPanelMutedClassName)}>
+            <div className="text-xs leading-5 text-muted-foreground/80">
               {getToolSummaryText(toolModeStep, locale)}
             </div>
           ) : null}
 
           {toolSteps.length > 0 ? (
             <div className="space-y-2">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/72">
+              <div className="text-xs font-medium text-foreground/72">
                 {t('copilot.research.searchProcess')}
               </div>
               <div className="space-y-2">
@@ -226,8 +225,8 @@ export function NovelCopilotResearchProcess({
                       type="button"
                       onClick={() => setSelection({ type: 'tool', id: step.step_id })}
                       className={cn(
-                        'flex w-full items-start gap-3 rounded-[18px] px-3 py-2.5 text-left transition-colors',
-                        active ? copilotPanelClassName : copilotPanelMutedClassName,
+                        'flex w-full items-start gap-3 rounded-xl px-2 py-2.5 text-left transition-colors',
+                        active ? 'bg-foreground/8' : 'hover:bg-foreground/4',
                       )}
                     >
                       <span className={cn('mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full', copilotPillClassName)}>
@@ -246,7 +245,7 @@ export function NovelCopilotResearchProcess({
 
           {evidence.length > 0 ? (
             <div className="space-y-2">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/72">
+              <div className="text-xs font-medium text-foreground/72">
                 {t('copilot.research.relatedEvidenceSection')}
               </div>
               <div className="space-y-2">
@@ -264,8 +263,8 @@ export function NovelCopilotResearchProcess({
                       type="button"
                       onClick={() => setSelection({ type: 'evidence', id: item.evidence_id })}
                       className={cn(
-                        'flex w-full flex-col gap-2 rounded-[18px] px-3 py-3 text-left transition-colors',
-                        active ? copilotPanelClassName : copilotPanelMutedClassName,
+                        'flex w-full flex-col gap-2 rounded-xl px-2 py-3 text-left transition-colors',
+                        active ? 'bg-foreground/8' : 'hover:bg-foreground/4',
                       )}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -312,11 +311,11 @@ export function NovelCopilotResearchProcess({
           ) : null}
 
           {(selectedEvidence || selectedTool) ? (
-            <div className={cn('space-y-2 rounded-[20px] p-3.5', copilotPanelClassName)} data-testid="copilot-research-detail">
+            <div className="space-y-2 border-t border-[var(--nw-copilot-border)] pt-3" data-testid="copilot-research-detail">
               {selectedEvidence ? (
                 <>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/72">
+                    <div className="text-xs font-medium text-foreground/72">
                       {getEvidenceDetailHeading(selectedEvidence, locale)}
                     </div>
                     <div className="flex flex-wrap justify-end gap-1.5">
@@ -349,7 +348,7 @@ export function NovelCopilotResearchProcess({
               {selectedTool ? (
                 <>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/72">
+                    <div className="text-xs font-medium text-foreground/72">
                       {t('copilot.research.processDescription')}
                     </div>
                     <span className={cn('rounded-full px-2 py-0.5 text-[10px] text-muted-foreground/80', copilotPillClassName)}>

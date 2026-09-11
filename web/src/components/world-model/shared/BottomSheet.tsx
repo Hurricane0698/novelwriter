@@ -9,7 +9,7 @@ export function BottomSheet({ open, onClose, children }: {
 }) {
   useEffect(() => {
     if (!open) return
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
@@ -28,6 +28,8 @@ export function BottomSheet({ open, onClose, children }: {
           'fixed inset-x-0 bottom-0 z-50 transition-transform duration-200',
           open ? 'translate-y-0' : 'translate-y-[calc(100%+120px)]'
         )}
+        inert={!open}
+        aria-hidden={!open}
         data-testid="bottom-sheet"
         data-open={open ? 'true' : 'false'}
       >

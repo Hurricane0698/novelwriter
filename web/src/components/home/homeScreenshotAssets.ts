@@ -34,20 +34,19 @@ function preloadImage(src: string): Promise<void> {
 
 export const homeScreenshotAssets = {
   // ── Workflow scenes (1–5) ──
-  library: buildVersionedHomeScreenshotUrl('1.png'),
-  settingsGenerate: buildVersionedHomeScreenshotUrl('2.png'),
-  atlasReview: buildVersionedHomeScreenshotUrl('3.png'),
-  copilotChat: buildVersionedHomeScreenshotUrl('4.png'),
-  studioWrite: buildVersionedHomeScreenshotUrl('5.png'),
+  library: buildVersionedHomeScreenshotUrl('library-light.jpg'),
+  settingsGenerate: buildVersionedHomeScreenshotUrl('settings-light.jpg'),
+  atlasReview: buildVersionedHomeScreenshotUrl('review-light.jpg'),
+  copilotChat: buildVersionedHomeScreenshotUrl('copilot-light.jpg'),
+  studioWrite: buildVersionedHomeScreenshotUrl('continuation-light.jpg'),
   // ── Dedicated non-workflow product surfaces ──
-  studioWorkspace: buildVersionedHomeScreenshotUrl('new_studio.png'),
-  atlasWorkspace: buildVersionedHomeScreenshotUrl('new_atlas_overview.png'),
-  // ── Feature showcase / details ──
-  atlasSelected: buildVersionedHomeScreenshotUrl('new_atlas_overview.png'),
-  atlasEntityEdit: buildVersionedHomeScreenshotUrl('atlas_entity_edit.png'),
-  draftReviewStrip: buildVersionedHomeScreenshotUrl('detail.png'),
-  draftReviewHighlight: buildVersionedHomeScreenshotUrl('detail2.png'),
+  studioWorkspace: buildVersionedHomeScreenshotUrl('studio-light.jpg'),
+  atlasWorkspace: buildVersionedHomeScreenshotUrl('atlas-light.jpg'),
 } as const
+
+export function getHomeScreenshotForTheme(src: string, theme: 'light' | 'dark'): string {
+  return theme === 'dark' ? src.replace('-light.jpg', '-dark.jpg') : src
+}
 
 export const homeProductStageScreenshotPublicPaths = [
   homeScreenshotAssets.library,
@@ -57,10 +56,7 @@ export const homeProductStageScreenshotPublicPaths = [
   homeScreenshotAssets.studioWrite,
   homeScreenshotAssets.studioWorkspace,
   homeScreenshotAssets.atlasWorkspace,
-  homeScreenshotAssets.atlasEntityEdit,
-  homeScreenshotAssets.draftReviewStrip,
-  homeScreenshotAssets.draftReviewHighlight,
-] as const
+].flatMap((src) => [src, getHomeScreenshotForTheme(src, 'dark')])
 
 export async function preloadHomeProductStageScreenshots(): Promise<void> {
   await Promise.all(homeProductStageScreenshotPublicPaths.map((src) => preloadImage(src)))

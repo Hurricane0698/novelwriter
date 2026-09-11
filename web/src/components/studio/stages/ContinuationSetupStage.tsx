@@ -1,10 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { ChevronDown, ChevronUp, Sparkles, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Sparkles, Trash2, X } from 'lucide-react'
+import { useOverlayPanelFocus } from '@/hooks/useOverlayPanelFocus'
+import { useElementWidth } from '@/hooks/useElementWidth'
+import { PanelResizeHandle } from '@/components/novel-shell/PanelResizeHandle'
 import { AssistToggleButton } from '@/components/studio/AssistToggleButton'
 import { useQuery } from '@tanstack/react-query'
-import { GlassCard } from '@/components/GlassCard'
 import { AdvancedRow } from '@/components/workspace/AdvancedRow'
 import { NwButton } from '@/components/ui/nw-button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -29,6 +31,7 @@ import type { NovelContentFormat, NovelContextSummary } from '@/types/api'
  * without losing user input.
  */
 export function ContinuationSetupStage({
+  panelWidth = 320, onPanelResize, onClose,
   novelId,
   contentFormat,
   chapterNum,
@@ -66,6 +69,9 @@ export function ContinuationSetupStage({
   assistOpen,
   onToggleAssist,
 }: {
+  panelWidth?: number
+  onPanelResize?: (width: number) => void
+  onClose?: () => void
   novelId: number
   contentFormat: NovelContentFormat
   chapterNum: number
@@ -108,6 +114,11 @@ export function ContinuationSetupStage({
   onToggleAssist?: () => void
 }) {
   const { t } = useUiLocale()
+  const { ref: stageRef, width: stageWidth } = useElementWidth()
+  const overlay = stageWidth < 640
+  const panelRef = useOverlayPanelFocus(overlay)
+  const maxPanelWidth = Math.max(280, overlay ? stageWidth - 24 : stageWidth - 360)
+  const visiblePanelWidth = Math.min(panelWidth, maxPanelWidth)
   const { confirm, dialogProps } = useConfirmDialog()
   const isMarkdown = isMarkdownContentFormat(contentFormat)
   const { data: chapter, isLoading: chapterLoading } = useQuery({
@@ -127,15 +138,15 @@ export function ContinuationSetupStage({
   }
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-hidden">
+    <div ref={stageRef} className="relative flex flex-1 min-h-0 overflow-hidden">
       {/* Chapter Preview */}
-      <div className="flex-1 min-w-0 flex flex-col gap-6 px-8 py-8 lg:px-12 overflow-hidden">
-        <div className="flex items-center justify-between shrink-0">
-          <GlassCard variant="control" className="rounded-xl px-4 py-2">
+      <div inert={overlay} className="flex-1 min-w-0 flex flex-col gap-6 px-6 py-6 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <div>
             <span className="text-sm font-medium text-foreground">
               {t('continuation.setup.basedOn', { chapter: chapterReference ?? `Ch. ${chapterNum}` })}
             </span>
-          </GlassCard>
+          </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">
               {t('continuation.setup.charCount', { count: wordCount })}
@@ -144,9 +155,10 @@ export function ContinuationSetupStage({
           </div>
         </div>
 
-        <GlassCard className="flex-1 overflow-auto rounded-xl p-6 sm:p-8 nw-scrollbar-thin">
+        <div className="min-h-0 flex-1 overflow-auto pr-2 nw-scrollbar-thin">
           {isMarkdown ? (
             <MarkdownContent
+              maxWidth
               isLoading={chapterLoading}
               content={chapter?.content}
               loadingLabel={t('continuation.setup.loadingChapter')}
@@ -154,197 +166,206 @@ export function ContinuationSetupStage({
             />
           ) : (
             <PlainTextContent
+              maxWidth
               isLoading={chapterLoading}
               content={chapter?.content}
               loadingLabel={t('continuation.setup.loadingChapter')}
               emptyLabel={t('continuation.setup.emptyChapter')}
             />
           )}
-        </GlassCard>
+        </div>
       </div>
 
+      {overlay && onClose && <div aria-hidden="true" onClick={onClose} className="absolute inset-0 z-10 bg-background/80" />}
       {/* Parameter Panel */}
-      <aside className="w-[420px] shrink-0 border-l border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-2xl p-6 flex flex-col gap-6 overflow-auto nw-scrollbar-thin">
-        <h2 className="font-mono text-base font-semibold text-foreground">
-          {t('continuation.setup.title')}
-        </h2>
+      <aside ref={panelRef} tabIndex={-1} aria-label={t('continuation.setup.title')} data-testid="continuation-parameters" data-presentation={overlay ? 'overlay' : 'rail'}
+        className={cn('relative shrink-0 border-l border-border/50 bg-background flex flex-col', overlay && '!absolute inset-y-0 right-0 z-20 shadow-xl')}
+        style={{ width: visiblePanelWidth }}>
+        {onPanelResize && <PanelResizeHandle side="left" width={visiblePanelWidth} min={280} max={Math.min(560, maxPanelWidth)} onResize={onPanelResize} label={t('studio.layout.resizeContinuation')} />}
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/50 px-5">
+          <h2 className="text-sm font-medium">{t('continuation.setup.title')}</h2>
+          {onClose && <button type="button" onClick={onClose} aria-label={t('studio.layout.closeContinuation')} className="rounded-md p-1.5 text-muted-foreground hover:bg-foreground/5"><X size={15} /></button>}
+        </header>
+        <div className="min-h-0 flex-1 flex flex-col gap-6 overflow-auto p-5 nw-scrollbar-thin">
 
-        {/* Instruction */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">
-            {t('continuation.setup.instruction')}
-          </label>
-          <Textarea
-            value={instruction}
-            onChange={e => onInstructionChange(e.target.value)}
-            placeholder={t('continuation.setup.instructionPlaceholder')}
-            className="min-h-[80px] resize-none text-[13px] leading-relaxed bg-[var(--nw-glass-bg)] border-[var(--nw-glass-border)] text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-accent focus-visible:ring-offset-0"
-          />
-        </div>
-
-        {/* Length */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">
-            {t('continuation.setup.length')}
-          </label>
-          <div className="flex gap-2">
-            {LENGTH_OPTIONS.map(option => {
-              const isDisabled = option.disabled
-              const isSelected = !isDisabled && selectedLength === option.value
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => !isDisabled && onSelectedLengthChange(option.value)}
-                  disabled={isDisabled}
-                  className={cn(
-                    'flex-1 h-9 rounded-[10px] border text-sm font-mono transition-colors',
-                    isDisabled
-                      ? 'bg-muted/50 border-muted text-muted-foreground/40 cursor-not-allowed'
-                      : isSelected
-                      ? 'bg-[hsl(var(--accent)/0.12)] border-accent text-accent font-semibold'
-                      : 'bg-[var(--nw-glass-bg)] border-[var(--nw-glass-border)] text-muted-foreground hover:bg-[var(--nw-glass-bg-hover)]'
-                  )}
-                >
-                  {option.label}
-                </button>
-              )
-            })}
+          {/* Instruction */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">
+              {t('continuation.setup.instruction')}
+            </label>
+            <Textarea
+              value={instruction}
+              onChange={e => onInstructionChange(e.target.value)}
+              placeholder={t('continuation.setup.instructionPlaceholder')}
+              className="min-h-[80px] resize-none text-[13px] leading-relaxed bg-[var(--nw-glass-bg)] border-[var(--nw-glass-border)] text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-accent focus-visible:ring-offset-0"
+            />
           </div>
-        </div>
 
-        {/* Advanced Toggle */}
-        <button
-          type="button"
-          onClick={() => onAdvancedOpenChange(!advancedOpen)}
-          className="w-full flex items-center justify-between py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <span>{t('continuation.setup.advancedSettings')}</span>
-          {advancedOpen ? (
-            <ChevronUp size={14} className="text-muted-foreground" />
-          ) : (
-            <ChevronDown size={14} className="text-muted-foreground" />
-          )}
-        </button>
-
-        {/* Advanced Panel */}
-        <div
-          className={cn(
-            'grid transition-[grid-template-rows] duration-200',
-            advancedOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
-          )}
-        >
-          <div className="overflow-hidden">
-            <GlassCard className="rounded-xl p-4 flex flex-col gap-4">
-              <AdvancedRow label={t('continuation.setup.contextChapters')} desc="1–5" value={contextChapters} onChange={onContextChaptersChange} type="number" min={1} max={5} step={1} />
-              <div className="border-t border-border/50 pt-3">
-                <div className="mb-1 text-xs font-medium text-foreground">
-                  {t('continuation.setup.contextSummary.title')}
-                </div>
-                <p className="mb-2 text-[11px] leading-relaxed text-muted-foreground">
-                  {t('continuation.setup.contextSummary.description')}
-                </p>
-                <div className="flex gap-2">
-                  <input
-                    className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
-                    aria-label={t('continuation.setup.contextSummary.rangeLabel')}
-                    placeholder={t('continuation.setup.contextSummary.rangePlaceholder')}
-                    value={contextSummaryRange}
-                    onChange={event => onContextSummaryRangeChange(event.target.value)}
-                  />
-                  <NwButton
-                    variant="accentOutline"
-                    className="h-8 px-3 text-xs"
-                    onClick={onCreateContextSummary}
-                    disabled={contextSummaryGenerating || contextSummaryRange.trim().length === 0}
+          {/* Length */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">
+              {t('continuation.setup.length')}
+            </label>
+            <div className="flex gap-2">
+              {LENGTH_OPTIONS.map(option => {
+                const isDisabled = option.disabled
+                const isSelected = !isDisabled && selectedLength === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => !isDisabled && onSelectedLengthChange(option.value)}
+                    disabled={isDisabled}
+                    className={cn(
+                      'flex-1 h-9 rounded-md border text-sm font-mono transition-colors',
+                      isDisabled
+                        ? 'bg-muted/50 border-muted text-muted-foreground/40 cursor-not-allowed'
+                        : isSelected
+                        ? 'bg-[hsl(var(--accent)/0.12)] border-accent text-accent font-semibold'
+                        : 'bg-[var(--nw-glass-bg)] border-[var(--nw-glass-border)] text-muted-foreground hover:bg-[var(--nw-glass-bg-hover)]'
+                    )}
                   >
-                    {contextSummaryGenerating
-                      ? t('continuation.setup.contextSummary.generating')
-                      : t('continuation.setup.contextSummary.create')}
-                  </NwButton>
-                </div>
-                {contextSummaryError ? (
-                  <p className="mt-2 text-[11px] leading-relaxed text-[hsl(var(--color-danger))]" role="alert">
-                    {contextSummaryError}
-                  </p>
-                ) : null}
-                <div className="mt-2 max-h-40 space-y-1 overflow-auto">
-                  {contextSummariesLoading ? (
-                    <div className="text-[11px] text-muted-foreground">
-                      {t('continuation.setup.contextSummary.loading')}
-                    </div>
-                  ) : contextSummaries.length === 0 ? (
-                    <div className="text-[11px] text-muted-foreground">
-                      {t('continuation.setup.contextSummary.empty')}
-                    </div>
-                  ) : contextSummaries.map(contextSummary => {
-                    const usable = contextSummary.review_status === 'confirmed' && !contextSummary.is_stale
-                    const statusLabel = contextSummary.is_stale
-                      ? t('continuation.setup.contextSummary.status.stale')
-                      : contextSummary.review_status === 'confirmed'
-                        ? t('continuation.setup.contextSummary.status.confirmed')
-                        : t('continuation.setup.contextSummary.status.draft')
-                    return (
-                      <div key={contextSummary.id} className="flex items-start gap-1 rounded-md px-1 py-1 text-xs hover:bg-muted/40">
-                        <label className="flex shrink-0 cursor-pointer items-start pt-1">
-                          <input
-                            type="checkbox"
-                            className="mt-0.5"
-                            checked={selectedContextSummaryIds.includes(contextSummary.id)}
-                            disabled={!usable}
-                            aria-label={t('continuation.setup.contextSummary.selectNamed', { title: contextSummary.title })}
-                            onChange={event => onSelectedContextSummaryIdsChange(
-                              event.target.checked
-                                ? [...selectedContextSummaryIds, contextSummary.id]
-                                : selectedContextSummaryIds.filter(id => id !== contextSummary.id)
-                            )}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          className="min-w-0 flex-1 rounded px-1 py-0.5 text-left hover:text-accent"
-                          onClick={() => onReviewContextSummaryChange(contextSummary.id)}
-                        >
-                          <span className="block truncate" title={contextSummary.title}>
-                            {contextSummary.title}
-                          </span>
-                          <span className="mt-0.5 block text-[10px] text-muted-foreground">
-                            {statusLabel}
-                          </span>
-                        </button>
-                        <NwButton
-                          variant="ghost"
-                          className="h-6 w-6 shrink-0 p-0 text-[hsl(var(--color-danger))]"
-                          aria-label={t('continuation.setup.contextSummary.deleteNamed', { title: contextSummary.title })}
-                          disabled={contextSummaryDeletingId === contextSummary.id}
-                          onClick={() => void handleDeleteContextSummary(contextSummary)}
-                        >
-                          <Trash2 size={12} />
-                        </NwButton>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-              <AdvancedRow label={t('continuation.setup.numVersions')} desc="1–2" value={numVersions} onChange={onNumVersionsChange} type="number" min={1} max={2} step={1} />
-              <AdvancedRow label={t('continuation.setup.temperature')} desc="0.0–2.0" value={temperature} onChange={onTemperatureChange} type="number" min={0} max={2} step={0.1} />
-            </GlassCard>
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        </div>
 
-        <div className="flex-1" />
+          {/* Advanced Toggle */}
+          <button
+            type="button"
+            onClick={() => onAdvancedOpenChange(!advancedOpen)}
+            className="w-full flex items-center justify-between py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <span>{t('continuation.setup.advancedSettings')}</span>
+            {advancedOpen ? (
+              <ChevronUp size={14} className="text-muted-foreground" />
+            ) : (
+              <ChevronDown size={14} className="text-muted-foreground" />
+            )}
+          </button>
+
+          {/* Advanced Panel */}
+          <div
+            className={cn(
+              'grid transition-[grid-template-rows] duration-200',
+              advancedOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+            )}
+          >
+            <div className="overflow-hidden">
+              <div className="border-t border-border/50 pt-4 flex flex-col gap-4">
+                <AdvancedRow label={t('continuation.setup.contextChapters')} desc="1–5" value={contextChapters} onChange={onContextChaptersChange} type="number" min={1} max={5} step={1} />
+                <div className="border-t border-border/50 pt-3">
+                  <div className="mb-1 text-xs font-medium text-foreground">
+                    {t('continuation.setup.contextSummary.title')}
+                  </div>
+                  <p className="mb-2 text-[11px] leading-relaxed text-muted-foreground">
+                    {t('continuation.setup.contextSummary.description')}
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                      aria-label={t('continuation.setup.contextSummary.rangeLabel')}
+                      placeholder={t('continuation.setup.contextSummary.rangePlaceholder')}
+                      value={contextSummaryRange}
+                      onChange={event => onContextSummaryRangeChange(event.target.value)}
+                    />
+                    <NwButton
+                      variant="accentOutline"
+                      className="h-8 px-3 text-xs"
+                      onClick={onCreateContextSummary}
+                      disabled={contextSummaryGenerating || contextSummaryRange.trim().length === 0}
+                    >
+                      {contextSummaryGenerating
+                        ? t('continuation.setup.contextSummary.generating')
+                        : t('continuation.setup.contextSummary.create')}
+                    </NwButton>
+                  </div>
+                  {contextSummaryError ? (
+                    <p className="mt-2 text-[11px] leading-relaxed text-[hsl(var(--color-danger))]" role="alert">
+                      {contextSummaryError}
+                    </p>
+                  ) : null}
+                  <div className="mt-2 max-h-40 space-y-1 overflow-auto">
+                    {contextSummariesLoading ? (
+                      <div className="text-[11px] text-muted-foreground">
+                        {t('continuation.setup.contextSummary.loading')}
+                      </div>
+                    ) : contextSummaries.length === 0 ? (
+                      <div className="text-[11px] text-muted-foreground">
+                        {t('continuation.setup.contextSummary.empty')}
+                      </div>
+                    ) : contextSummaries.map(contextSummary => {
+                      const usable = contextSummary.review_status === 'confirmed' && !contextSummary.is_stale
+                      const statusLabel = contextSummary.is_stale
+                        ? t('continuation.setup.contextSummary.status.stale')
+                        : contextSummary.review_status === 'confirmed'
+                          ? t('continuation.setup.contextSummary.status.confirmed')
+                          : t('continuation.setup.contextSummary.status.draft')
+                      return (
+                        <div key={contextSummary.id} className="flex items-start gap-1 rounded-md px-1 py-1 text-xs hover:bg-muted/40">
+                          <label className="flex shrink-0 cursor-pointer items-start pt-1">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={selectedContextSummaryIds.includes(contextSummary.id)}
+                              disabled={!usable}
+                              aria-label={t('continuation.setup.contextSummary.selectNamed', { title: contextSummary.title })}
+                              onChange={event => onSelectedContextSummaryIdsChange(
+                                event.target.checked
+                                  ? [...selectedContextSummaryIds, contextSummary.id]
+                                  : selectedContextSummaryIds.filter(id => id !== contextSummary.id)
+                              )}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 rounded px-1 py-0.5 text-left hover:text-accent"
+                            onClick={() => onReviewContextSummaryChange(contextSummary.id)}
+                          >
+                            <span className="block truncate" title={contextSummary.title}>
+                              {contextSummary.title}
+                            </span>
+                            <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                              {statusLabel}
+                            </span>
+                          </button>
+                          <NwButton
+                            variant="ghost"
+                            className="h-6 w-6 shrink-0 p-0 text-[hsl(var(--color-danger))]"
+                            aria-label={t('continuation.setup.contextSummary.deleteNamed', { title: contextSummary.title })}
+                            disabled={contextSummaryDeletingId === contextSummary.id}
+                            onClick={() => void handleDeleteContextSummary(contextSummary)}
+                          >
+                            <Trash2 size={12} />
+                          </NwButton>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                <AdvancedRow label={t('continuation.setup.numVersions')} desc="1–2" value={numVersions} onChange={onNumVersionsChange} type="number" min={1} max={2} step={1} />
+                <AdvancedRow label={t('continuation.setup.temperature')} desc="0.0–2.0" value={temperature} onChange={onTemperatureChange} type="number" min={0} max={2} step={0.1} />
+              </div>
+            </div>
+          </div>
+
+        </div>
 
         {/* Generate Button */}
-        <NwButton
-          data-testid="studio-generate-button"
-          onClick={onGenerate}
-          disabled={!novelId}
-          variant="accent"
-          className="w-full h-12 rounded-xl shadow-[0_4px_24px_hsl(var(--accent)/0.25)] text-[15px] font-semibold disabled:cursor-default"
-        >
-          <Sparkles size={18} />
-          {t('continuation.setup.generate')}
-        </NwButton>
+        <div className="shrink-0 border-t border-border/50 p-5">
+          <NwButton
+            data-testid="studio-generate-button"
+            onClick={onGenerate}
+            disabled={!novelId}
+            variant="accent"
+            className="w-full h-11 rounded-md text-[15px] font-medium disabled:cursor-default"
+          >
+            <Sparkles size={18} />
+            {t('continuation.setup.generate')}
+          </NwButton>
+        </div>
       </aside>
       <ConfirmDialog {...dialogProps} />
       <ContextSummaryReviewDialog

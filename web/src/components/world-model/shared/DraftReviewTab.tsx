@@ -169,7 +169,7 @@ export function DraftReviewTab({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 text-[hsl(var(--color-danger))] hover:text-[hsl(var(--color-danger))]"
+                className="h-8 border-[hsl(var(--color-danger)/0.2)] bg-transparent text-[hsl(var(--color-danger))] hover:bg-[hsl(var(--color-danger)/0.08)] hover:text-[hsl(var(--color-danger))]"
                 onClick={handleRejectAll}
                 disabled={idsForKind.length === 0 || rejectEntities.isPending || rejectRelationships.isPending || rejectSystems.isPending}
               >
@@ -268,7 +268,7 @@ function CardShell({ id, highlighted, className, children }: { id?: string; high
     <div
       id={id}
       className={cn(
-        'relative overflow-hidden rounded-xl border bg-[var(--nw-glass-bg)] backdrop-blur-xl p-4 transition-all duration-500',
+        'relative overflow-hidden border-b px-4 py-5 transition-colors',
         highlighted
           ? 'nw-copilot-target-highlight'
           : 'border-[var(--nw-glass-border)]',
@@ -310,7 +310,7 @@ function EntityDraftCard({
           <div className="flex items-center gap-2">
             <div className="text-sm font-semibold truncate">{entity.name}</div>
             <span className="text-xs text-muted-foreground">{entity.entity_type}</span>
-            <span className="text-xs text-[hsl(var(--color-status-draft))]">● draft</span>
+            <span className="text-xs text-[hsl(var(--color-status-draft))]">● {t('worldModel.common.statusDraft')}</span>
           </div>
           {entity.description ? (
             <div className="text-xs text-muted-foreground line-clamp-2">{entity.description}</div>
@@ -326,7 +326,7 @@ function EntityDraftCard({
           <Button
             size="sm"
             variant="outline"
-            className="h-8 text-[hsl(var(--color-danger))] hover:text-[hsl(var(--color-danger))]"
+            className="h-8 border-[hsl(var(--color-danger)/0.2)] bg-transparent text-[hsl(var(--color-danger))] hover:bg-[hsl(var(--color-danger)/0.08)] hover:text-[hsl(var(--color-danger))]"
             onClick={onReject}
           >
             {t('worldModel.common.reject')}
@@ -365,7 +365,7 @@ function RelationshipDraftCard({
             <div className="text-sm font-semibold truncate">
               {left} <span className="text-muted-foreground">—</span> {rel.label} <span className="text-muted-foreground">→</span> {right}
             </div>
-            <span className="text-xs text-[hsl(var(--color-status-draft))]">● draft</span>
+            <span className="text-xs text-[hsl(var(--color-status-draft))]">● {t('worldModel.common.statusDraft')}</span>
           </div>
           {rel.description ? (
             <div className="text-xs text-muted-foreground line-clamp-2">{rel.description}</div>
@@ -381,7 +381,7 @@ function RelationshipDraftCard({
           <Button
             size="sm"
             variant="outline"
-            className="h-8 text-[hsl(var(--color-danger))] hover:text-[hsl(var(--color-danger))]"
+            className="h-8 border-[hsl(var(--color-danger)/0.2)] bg-transparent text-[hsl(var(--color-danger))] hover:bg-[hsl(var(--color-danger)/0.08)] hover:text-[hsl(var(--color-danger))]"
             onClick={onReject}
           >
             {t('worldModel.common.reject')}
@@ -413,7 +413,7 @@ function SystemDraftCard({
           <div className="flex items-center gap-2">
             <div className="text-sm font-semibold truncate">{system.name || '\u00A0'}</div>
             <span className="text-xs text-muted-foreground">{getSystemDisplayTypeLabel(system.display_type, locale)}</span>
-            <span className="text-xs text-[hsl(var(--color-status-draft))]">● draft</span>
+            <span className="text-xs text-[hsl(var(--color-status-draft))]">● {t('worldModel.common.statusDraft')}</span>
           </div>
           {system.description ? (
             <div className="text-xs text-muted-foreground line-clamp-2">{system.description}</div>
@@ -431,7 +431,7 @@ function SystemDraftCard({
           <Button
             size="sm"
             variant="outline"
-            className="h-8 text-[hsl(var(--color-danger))] hover:text-[hsl(var(--color-danger))]"
+            className="h-8 border-[hsl(var(--color-danger)/0.2)] bg-transparent text-[hsl(var(--color-danger))] hover:bg-[hsl(var(--color-danger)/0.08)] hover:text-[hsl(var(--color-danger))]"
             onClick={onReject}
           >
             {t('worldModel.common.reject')}

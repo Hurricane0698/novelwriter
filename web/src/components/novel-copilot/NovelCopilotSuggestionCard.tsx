@@ -5,8 +5,6 @@ import { useUiLocale } from '@/contexts/UiLocaleContext'
 import type { CopilotSuggestion, CopilotSuggestionTarget } from '@/types/copilot'
 import { getCopilotSuggestionKindMeta } from './novelCopilotView'
 import {
-  copilotPanelClassName,
-  copilotPanelStrongClassName,
   copilotPillClassName,
   copilotPillInteractiveClassName,
 } from './novelCopilotChrome'
@@ -34,16 +32,12 @@ export function NovelCopilotSuggestionCard({
   return (
     <div
       className={cn(
-        'group relative overflow-hidden rounded-[22px] p-4 transition-all',
-        isApplied ? copilotPanelStrongClassName : copilotPanelClassName,
-        isApplied && 'border-[hsl(var(--foreground)/0.16)]',
+        'group relative border-t border-border/60 py-4',
       )}
       data-testid={`copilot-suggestion-${suggestion.suggestion_id}`}
       data-status={mode}
     >
-      <div className={cn('absolute inset-y-0 left-0 w-1.5 pointer-events-none', isApplied ? 'bg-[hsl(var(--foreground)/0.58)]' : kindMeta.accentClassName)} />
-
-      <div className="pl-3">
+      <div>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -97,7 +91,7 @@ export function NovelCopilotSuggestionCard({
             <div className="text-[11px] font-semibold text-foreground/80 mb-2 uppercase tracking-wide">
               {t('copilot.suggestion.changePreview')}
             </div>
-            <div className="rounded-lg bg-[hsl(var(--foreground)/0.03)] p-3 text-xs leading-5 text-muted-foreground">
+            <div className="text-xs leading-5 text-muted-foreground">
               <div className="mb-2 pb-2 border-b border-[hsl(var(--foreground)/0.06)]">
                 <span className="font-medium text-foreground">{t('copilot.suggestion.target')}</span> {suggestion.preview.target_label}
               </div>
@@ -106,7 +100,7 @@ export function NovelCopilotSuggestionCard({
               </div>
               <div className="space-y-2">
                 {suggestion.preview.field_deltas.map((delta) => (
-                  <div key={`${suggestion.suggestion_id}-${delta.field}`} className="rounded-md border border-[hsl(var(--foreground)/0.06)] bg-background/40 p-2.5">
+                  <div key={`${suggestion.suggestion_id}-${delta.field}`} className="border-t border-border/40 py-2.5">
                     <div className="mb-1 text-[11px] font-medium text-foreground">{delta.label}</div>
                     <div className="flex gap-2">
                       <span className="shrink-0 text-[hsl(var(--color-danger))] line-through opacity-70">{t('copilot.suggestion.previousValue')}</span>
@@ -124,7 +118,7 @@ export function NovelCopilotSuggestionCard({
                   <div className="mb-2 text-[11px] font-medium text-foreground">{t('copilot.suggestion.keyEvidence')}</div>
                   <div className="space-y-2">
                     {suggestion.preview.evidence_quotes.map((quote, index) => (
-                      <div key={`${suggestion.suggestion_id}-quote-${index}`} className="rounded-md bg-background/40 px-2.5 py-2 text-[11px] leading-5 text-muted-foreground">
+                      <div key={`${suggestion.suggestion_id}-quote-${index}`} className="border-l-2 border-accent/25 pl-3 py-1 text-[11px] leading-5 text-muted-foreground">
                         {quote}
                       </div>
                     ))}

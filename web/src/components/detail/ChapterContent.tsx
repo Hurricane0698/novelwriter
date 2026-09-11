@@ -1,4 +1,3 @@
-import { GlassCard } from '@/components/GlassCard'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { PlainTextContent } from '@/components/ui/plain-text-content'
 import type { TextAnnotation } from '@/components/ui/annotated-text'
@@ -21,7 +20,7 @@ export function ChapterContent({
   const isMarkdown = isMarkdownContentFormat(contentFormat)
 
   return (
-    <GlassCard className="flex-1 overflow-auto rounded-xl p-6 sm:p-8 nw-scrollbar-thin">
+    <div className="min-h-0 flex-1 overflow-auto px-2 py-2 sm:px-4 nw-scrollbar-thin">
       {isMarkdown ? (
         <MarkdownContent
           isLoading={isLoading}
@@ -42,6 +41,6 @@ export function ChapterContent({
           annotations={annotations}
         />
       )}
-    </GlassCard>
+    </div>
   )
 }

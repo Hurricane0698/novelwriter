@@ -3,26 +3,13 @@
 
 import { useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import type { ComponentType } from 'react'
 import { homeNarrativeActs } from '@/components/home/homeContent'
 import { StageShell } from '@/components/home/StageShell'
-import ImportScene from '@/components/home/scenes/ImportScene'
-import SettingsScene from '@/components/home/scenes/SettingsScene'
-import GovernanceScene from '@/components/home/scenes/GovernanceScene'
-import CopilotScene from '@/components/home/scenes/CopilotScene'
-import ContinuationScene from '@/components/home/scenes/ContinuationScene'
+import { ScreenshotStageAsset, ScreenshotExpandLink } from '@/components/home/ScreenshotStageAsset'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
-import { sceneManifest, type SceneId } from '@/components/home/screenshotManifest'
+import { sceneManifest } from '@/components/home/screenshotManifest'
 import { preloadHomeProductStageScreenshots } from '@/components/home/homeScreenshotAssets'
 import type { NarrativeActs } from '@/components/home/useNarrativeScroll'
-
-const scenes: Record<SceneId, ComponentType> = {
-  import: ImportScene,
-  settings: SettingsScene,
-  governance: GovernanceScene,
-  copilot: CopilotScene,
-  continuation: ContinuationScene,
-}
 
 type ProductStageProps = {
   activeAct: NarrativeActs
@@ -35,41 +22,22 @@ export function ProductStage({ activeAct, prefersReducedMotion }: ProductStagePr
     void preloadHomeProductStageScreenshots()
   }, [])
   const activeSceneId = homeNarrativeActs[activeAct].sceneId
-  const Scene = scenes[activeSceneId]
   const activeScene = sceneManifest[activeSceneId]
-  const accent = activeScene.accentHex
-  const label = t(activeScene.windowLabelKey)
 
   return (
-    <StageShell
-      accentHex={accent}
-      className="h-full shadow-[0_32px_72px_rgba(15,23,42,0.10)]"
-      headerClassName="transition-colors duration-300"
-      bodyClassName="relative min-h-0 flex-1 overflow-hidden bg-white"
-      label={(
-        <motion.span
-          key={label}
-          className="ml-auto font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400"
-          initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
-          animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-          transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.18, ease: 'easeOut' }}
-        >
-          {label}
-        </motion.span>
-      )}
-    >
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div
-          key={activeAct}
-          className="absolute inset-0 will-change-transform"
-          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: 24, scale: 0.996 }}
-          animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, x: 0, scale: 1 }}
-          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: -18, scale: 0.996 }}
-          transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
-        >
-          <Scene />
+    <div className="relative h-full overflow-hidden rounded-[20px]">
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.div key={activeAct} className="absolute inset-0"
+          initial={prefersReducedMotion ? false : { opacity: 0, y: 80, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -64, scale: prefersReducedMotion ? 1 : 0.98 }}
+          transition={{ duration: prefersReducedMotion ? 0 : 0.46, ease: [0.22, 1, 0.36, 1] }}>
+          <StageShell className="h-full" bodyClassName="relative min-h-0 flex-1 overflow-hidden" label={t(activeScene.windowLabelKey)}
+            headerAction={<ScreenshotExpandLink src={activeScene.screenshot} alt={t(activeScene.labelKey)} />}>
+            <ScreenshotStageAsset src={activeScene.screenshot} alt={t(activeScene.labelKey)} mobilePosition={activeScene.mobilePosition} mobileScale={activeScene.mobileScale} />
+          </StageShell>
         </motion.div>
       </AnimatePresence>
-    </StageShell>
+    </div>
   )
 }

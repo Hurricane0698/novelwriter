@@ -2,7 +2,6 @@ import { useMemo, useRef, useState } from 'react'
 import { Check, Redo2, Undo2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NwButton } from '@/components/ui/nw-button'
-import { GlassCard } from '@/components/GlassCard'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { MarkdownContent } from '@/components/ui/markdown-content'
 import type { TextAnnotation } from '@/components/ui/annotated-text'
@@ -116,7 +115,7 @@ export function ChapterEditor({
   }
 
   return (
-    <GlassCard className="flex-1 flex flex-col overflow-hidden rounded-xl">
+    <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--nw-glass-border)]">
         <NwButton
           onClick={onUndo}
@@ -186,7 +185,7 @@ export function ChapterEditor({
           onSelect={onSelectionChange}
           onClick={onSelectionChange}
           onKeyUp={onSelectionChange}
-          className="flex-1 resize-none bg-transparent px-8 py-6 outline-none text-[15px] leading-[2] text-foreground caret-accent nw-scrollbar-thin"
+          className="min-h-0 flex-1 w-full max-w-[76ch] self-center resize-none bg-transparent px-4 py-6 sm:px-6 outline-none text-[15px] leading-[2] text-foreground caret-accent nw-scrollbar-thin"
         />
       )}
 
@@ -241,6 +240,6 @@ export function ChapterEditor({
           </NwButton>
         </div>
       </div>
-    </GlassCard>
+    </div>
   )
 }

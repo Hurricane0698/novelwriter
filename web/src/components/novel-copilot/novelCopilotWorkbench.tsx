@@ -17,12 +17,9 @@ export interface CopilotQuickActionSpec {
   description: string
   prompt: string
   icon: LucideIcon
-  iconClassName: string
-  layoutClassName?: string
 }
 
 export interface CopilotWorkbenchMeta {
-  introEyebrow: string
   introTitle: string
   composerLabel: string
   composerPlaceholder: string
@@ -41,8 +38,6 @@ function wholeBookActions(locale: UiLocale): CopilotQuickActionSpec[] {
       description: t(locale, 'copilot.workbench.wholeBook.scanGaps.description'),
       prompt: t(locale, 'copilot.workbench.wholeBook.scanGaps.prompt'),
       icon: Search,
-      iconClassName: 'bg-[hsl(var(--accent)/0.12)] text-accent-foreground ring-1 ring-[hsl(var(--accent)/0.20)]',
-      layoutClassName: 'sm:col-span-2',
     },
     {
       id: 'trace_recurring_signals',
@@ -50,7 +45,6 @@ function wholeBookActions(locale: UiLocale): CopilotQuickActionSpec[] {
       description: t(locale, 'copilot.workbench.wholeBook.traceSignals.description'),
       prompt: t(locale, 'copilot.workbench.wholeBook.traceSignals.prompt'),
       icon: Sparkles,
-      iconClassName: 'bg-[hsl(270_80%_65%/0.10)] text-[hsl(270_80%_65%)] ring-1 ring-[hsl(270_80%_65%/0.20)]',
     },
     {
       id: 'find_world_conflicts',
@@ -58,7 +52,6 @@ function wholeBookActions(locale: UiLocale): CopilotQuickActionSpec[] {
       description: t(locale, 'copilot.workbench.wholeBook.findConflicts.description'),
       prompt: t(locale, 'copilot.workbench.wholeBook.findConflicts.prompt'),
       icon: FileSearch,
-      iconClassName: 'bg-[hsl(220_90%_65%/0.10)] text-[hsl(220_90%_65%)] ring-1 ring-[hsl(220_90%_65%/0.20)]',
     },
   ]
 }
@@ -71,8 +64,6 @@ function currentEntityActions(locale: UiLocale, subject: string): CopilotQuickAc
       description: t(locale, 'copilot.workbench.entity.complete.description'),
       prompt: t(locale, 'copilot.workbench.entity.complete.prompt', { subject }),
       icon: Sparkles,
-      iconClassName: 'bg-[hsl(var(--accent)/0.12)] text-accent-foreground ring-1 ring-[hsl(var(--accent)/0.20)]',
-      layoutClassName: 'sm:col-span-2',
     },
     {
       id: 'find_relations',
@@ -80,7 +71,6 @@ function currentEntityActions(locale: UiLocale, subject: string): CopilotQuickAc
       description: t(locale, 'copilot.workbench.entity.findRelations.description'),
       prompt: t(locale, 'copilot.workbench.entity.findRelations.prompt', { subject }),
       icon: Link2,
-      iconClassName: 'bg-[hsl(270_80%_65%/0.10)] text-[hsl(270_80%_65%)] ring-1 ring-[hsl(270_80%_65%/0.20)]',
     },
     {
       id: 'collect_entity_evidence',
@@ -88,7 +78,6 @@ function currentEntityActions(locale: UiLocale, subject: string): CopilotQuickAc
       description: t(locale, 'copilot.workbench.entity.collectEvidence.description'),
       prompt: t(locale, 'copilot.workbench.entity.collectEvidence.prompt', { subject }),
       icon: FileSearch,
-      iconClassName: 'bg-[hsl(220_90%_65%/0.10)] text-[hsl(220_90%_65%)] ring-1 ring-[hsl(220_90%_65%/0.20)]',
     },
   ]
 }
@@ -101,8 +90,6 @@ function relationshipActions(locale: UiLocale, subject: string): CopilotQuickAct
       description: t(locale, 'copilot.workbench.relationships.find.description'),
       prompt: t(locale, 'copilot.workbench.relationships.find.prompt', { subject }),
       icon: Link2,
-      iconClassName: 'bg-[hsl(var(--accent)/0.12)] text-accent-foreground ring-1 ring-[hsl(var(--accent)/0.20)]',
-      layoutClassName: 'sm:col-span-2',
     },
     {
       id: 'label_relationships',
@@ -110,7 +97,6 @@ function relationshipActions(locale: UiLocale, subject: string): CopilotQuickAct
       description: t(locale, 'copilot.workbench.relationships.labeling.description'),
       prompt: t(locale, 'copilot.workbench.relationships.labeling.prompt', { subject }),
       icon: Sparkles,
-      iconClassName: 'bg-[hsl(270_80%_65%/0.10)] text-[hsl(270_80%_65%)] ring-1 ring-[hsl(270_80%_65%/0.20)]',
     },
     {
       id: 'collect_interactions',
@@ -118,7 +104,6 @@ function relationshipActions(locale: UiLocale, subject: string): CopilotQuickAct
       description: t(locale, 'copilot.workbench.relationships.collect.description'),
       prompt: t(locale, 'copilot.workbench.relationships.collect.prompt', { subject }),
       icon: FileSearch,
-      iconClassName: 'bg-[hsl(220_90%_65%/0.10)] text-[hsl(220_90%_65%)] ring-1 ring-[hsl(220_90%_65%/0.20)]',
     },
   ]
 }
@@ -131,8 +116,6 @@ function draftCleanupActions(locale: UiLocale): CopilotQuickActionSpec[] {
       description: t(locale, 'copilot.workbench.draft.review.description'),
       prompt: t(locale, 'copilot.workbench.draft.review.prompt'),
       icon: FileText,
-      iconClassName: 'bg-[hsl(var(--accent)/0.12)] text-accent-foreground ring-1 ring-[hsl(var(--accent)/0.20)]',
-      layoutClassName: 'sm:col-span-2',
     },
     {
       id: 'normalize_terms',
@@ -140,7 +123,6 @@ function draftCleanupActions(locale: UiLocale): CopilotQuickActionSpec[] {
       description: t(locale, 'copilot.workbench.draft.normalize.description'),
       prompt: t(locale, 'copilot.workbench.draft.normalize.prompt'),
       icon: Sparkles,
-      iconClassName: 'bg-[hsl(270_80%_65%/0.10)] text-[hsl(270_80%_65%)] ring-1 ring-[hsl(270_80%_65%/0.20)]',
     },
     {
       id: 'fill_missing_fields',
@@ -148,7 +130,6 @@ function draftCleanupActions(locale: UiLocale): CopilotQuickActionSpec[] {
       description: t(locale, 'copilot.workbench.draft.fill.description'),
       prompt: t(locale, 'copilot.workbench.draft.fill.prompt'),
       icon: FileSearch,
-      iconClassName: 'bg-[hsl(220_90%_65%/0.10)] text-[hsl(220_90%_65%)] ring-1 ring-[hsl(220_90%_65%/0.20)]',
     },
   ]
 }
@@ -160,7 +141,6 @@ export function getCopilotWorkbenchMeta(prefill: CopilotPrefill, displayTitle: s
   switch (scenario) {
     case 'whole_book':
       return {
-        introEyebrow: t(locale, 'copilot.workbench.wholeBook.eyebrow'),
         introTitle: t(locale, 'copilot.workbench.wholeBook.title'),
         composerLabel: t(locale, 'copilot.workbench.wholeBook.composerLabel'),
         composerPlaceholder: t(locale, 'copilot.workbench.wholeBook.composerPlaceholder'),
@@ -168,7 +148,6 @@ export function getCopilotWorkbenchMeta(prefill: CopilotPrefill, displayTitle: s
       }
     case 'relationships':
       return {
-        introEyebrow: t(locale, 'copilot.workbench.relationships.eyebrow'),
         introTitle: t(locale, 'copilot.workbench.relationships.title', { subject }),
         composerLabel: t(locale, 'copilot.workbench.relationships.composerLabel'),
         composerPlaceholder: t(locale, 'copilot.workbench.relationships.composerPlaceholder', { subject }),
@@ -176,7 +155,6 @@ export function getCopilotWorkbenchMeta(prefill: CopilotPrefill, displayTitle: s
       }
     case 'draft_cleanup':
       return {
-        introEyebrow: t(locale, 'copilot.workbench.draft.eyebrow'),
         introTitle: t(locale, 'copilot.workbench.draft.title'),
         composerLabel: t(locale, 'copilot.workbench.draft.composerLabel'),
         composerPlaceholder: t(locale, 'copilot.workbench.draft.composerPlaceholder'),
@@ -184,7 +162,6 @@ export function getCopilotWorkbenchMeta(prefill: CopilotPrefill, displayTitle: s
       }
     default:
       return {
-        introEyebrow: t(locale, 'copilot.workbench.entity.eyebrow'),
         introTitle: t(locale, 'copilot.workbench.entity.title', { subject }),
         composerLabel: t(locale, 'copilot.workbench.entity.composerLabel'),
         composerPlaceholder: t(locale, 'copilot.workbench.entity.composerPlaceholder', { subject }),

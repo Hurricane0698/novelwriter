@@ -69,6 +69,7 @@ export function useStudioArtifactState({
     value: null,
   })
 
+  const [lastSummaryCategory, setLastSummaryCategory] = useState<InjectionSummaryCategory | null>(null)
   const artifactPanelState = useMemo(
     () => readNovelShellArtifactPanelSearchParams(searchParams),
     [searchParams],
@@ -120,9 +121,9 @@ export function useStudioArtifactState({
     if (!resultsDebug) return null
     return {
       panel: 'injection_summary' as const,
-      injectionCategory: artifactPanelState.injectionCategory ?? pickInitialInjectionSummaryCategory(resultsDebug),
+      injectionCategory: artifactPanelState.injectionCategory ?? lastSummaryCategory ?? pickInitialInjectionSummaryCategory(resultsDebug),
     }
-  }, [artifactPanelState.injectionCategory, resultsDebug])
+  }, [artifactPanelState.injectionCategory, lastSummaryCategory, resultsDebug])
   const showInjectionSummaryRail = artifactPanelState.panel === 'injection_summary' && injectionSummaryPanelState !== null
   const activeArtifactPanelState = showInjectionSummaryRail ? injectionSummaryPanelState : null
 
@@ -184,12 +185,14 @@ export function useStudioArtifactState({
 
   const toggleInjectionSummaryRail = useCallback(() => {
     if (!showInjectionSummaryRail && injectionSummaryPanelState === null) return
+    if (showInjectionSummaryRail && injectionSummaryPanelState) setLastSummaryCategory(injectionSummaryPanelState.injectionCategory)
     replaceArtifactPanelState(showInjectionSummaryRail ? null : injectionSummaryPanelState)
   }, [injectionSummaryPanelState, replaceArtifactPanelState, showInjectionSummaryRail])
 
   const closeInjectionSummaryRail = useCallback(() => {
+    if (injectionSummaryPanelState) setLastSummaryCategory(injectionSummaryPanelState.injectionCategory)
     replaceArtifactPanelState(null)
-  }, [replaceArtifactPanelState])
+  }, [injectionSummaryPanelState, replaceArtifactPanelState])
 
   return {
     activeArtifactPanelState,

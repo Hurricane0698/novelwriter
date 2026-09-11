@@ -28,7 +28,7 @@ vi.mock('@/components/ui/glass-surface', () => ({
 }))
 
 vi.mock('@/components/novel-copilot/NovelCopilotDrawer', () => ({
-  NovelCopilotDrawer: () => <div data-testid="novel-copilot-drawer" />,
+  NovelCopilotDrawer: ({ presentation }: { presentation?: string }) => <div data-testid="novel-copilot-drawer" data-presentation={presentation} />,
 }))
 
 vi.mock('@/components/atlas/workbench/AtlasAssistWorkbench', () => ({
@@ -155,11 +155,12 @@ function HistoryBackProbe() {
 }
 
 function CopilotStateProbe() {
-  const { isOpen } = useNovelCopilot()
+  const { isOpen, openDrawer } = useNovelCopilot()
   const { shellState } = useNovelShell()
 
   return (
     <>
+      <button onClick={() => openDrawer({ mode: 'research', scope: 'whole_book' }, { displayTitle: '全书探索' })}>open research</button>
       <div data-testid="copilot-open-state">{isOpen ? 'open' : 'closed'}</div>
       <div data-testid="copilot-drawer-width">{shellState.drawerWidth}</div>
     </>
@@ -572,7 +573,7 @@ describe('NovelAtlasPage', () => {
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
       configurable: true,
       get() {
-        return 1100
+        return 1220
       },
     })
 
@@ -599,14 +600,14 @@ describe('NovelAtlasPage', () => {
     expect(await screen.findByTestId('atlas-assist-workbench')).toBeInTheDocument()
     expect(screen.getByTestId('atlas-assist-workbench')).toHaveAttribute('data-presentation', 'rail')
     expect(screen.getByTestId('atlas-assist-workbench')).toHaveAttribute('data-width', '340')
-    expect(screen.getByTestId('copilot-drawer-width')).toHaveTextContent('340')
+    expect(screen.getByTestId('copilot-drawer-width')).toHaveTextContent('360')
   })
 
   it('keeps Atlas assist reachable on medium desktops by switching it into overlay mode instead of unmounting it', async () => {
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
       configurable: true,
       get() {
-        return 1000
+        return 1120
       },
     })
 
@@ -631,6 +632,9 @@ describe('NovelAtlasPage', () => {
 
     expect(screen.getByTestId('copilot-open-state')).toHaveTextContent('closed')
     expect(await screen.findByTestId('atlas-assist-workbench')).toHaveAttribute('data-presentation', 'overlay')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'open research' }))
+    expect(await screen.findByTestId('novel-copilot-drawer')).toHaveAttribute('data-presentation', 'overlay')
+    expect(screen.getByTestId('copilot-open-state')).toHaveTextContent('open')
   })
 
   it('lets the atlas header toggle collapse and reopen the independent assist zone', async () => {

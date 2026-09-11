@@ -1,86 +1,54 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useId, useContext } from 'react'
+import { NovelCopilotContext } from './NovelCopilotContext'
 import { ArrowUp } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
-import { copilotPanelStrongClassName } from './novelCopilotChrome'
 
-export function NovelCopilotComposer({
-  onSubmit,
-  disabled = false,
-  label,
-  placeholder,
-}: {
+export function NovelCopilotComposer({ onSubmit, disabled = false, label, placeholder, sessionId }: {
   onSubmit: (text: string) => void
   disabled?: boolean
   label?: string
   placeholder?: string
+  sessionId: string
 }) {
   const { t } = useUiLocale()
-  const [value, setValue] = useState('')
+  const copilot = useContext(NovelCopilotContext)
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const inputId = useId()
+  const value = copilot?.composerDrafts?.[sessionId] ?? drafts[sessionId] ?? ''
+  const setValue = (next: string) => copilot?.setComposerDraft
+    ? copilot.setComposerDraft(sessionId, next)
+    : setDrafts(previous => ({ ...previous, [sessionId]: next }))
   const resolvedLabel = label ?? t('copilot.composer.defaultLabel')
-  const resolvedPlaceholder = placeholder ?? t('copilot.composer.defaultPlaceholder')
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (disabled) return
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      if (value.trim()) {
-        onSubmit(value.trim())
-        setValue('')
-      }
-    }
+  const submit = () => {
+    if (disabled || !value.trim()) return
+    onSubmit(value.trim())
+    setValue('')
   }
 
-  // Auto-resize
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`
-    }
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`
   }, [value])
 
   return (
-    <div className="relative group">
-      <div className="absolute -inset-1 rounded-[24px] bg-[radial-gradient(circle_at_top_right,hsl(var(--foreground)/0.15),transparent_60%)] opacity-30 blur-2xl transition duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-focus-within:opacity-60" />
-      <div className={cn('relative rounded-[24px] p-2 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] focus-within:border-[hsl(var(--foreground)/0.14)] focus-within:shadow-[0_12px_40px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.04)]', copilotPanelStrongClassName)}>
-        <div className="mb-2 flex items-center justify-between gap-3 px-2 pt-1">
-          <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-foreground/80">
-            {resolvedLabel}
-          </div>
-          <div className="text-[10px] text-muted-foreground/60">
-            {t('copilot.composer.sendHint')}
-          </div>
-        </div>
-        <div className="flex items-end gap-2">
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={disabled}
-            placeholder={resolvedPlaceholder}
-            className="max-h-[120px] min-h-[44px] w-full resize-none bg-transparent px-2 py-2 text-sm leading-6 text-foreground placeholder:text-muted-foreground/50 focus:outline-none scrollbar-hide disabled:cursor-not-allowed disabled:opacity-60"
-            rows={1}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (disabled) return
-              if (value.trim()) {
-                onSubmit(value.trim())
-                setValue('')
-              }
-            }}
-            disabled={disabled || !value.trim()}
-            className={cn(
-              'mb-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[hsl(var(--foreground)/0.12)] bg-foreground text-background shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-foreground/90 hover:shadow-[0_8px_24px_rgba(0,0,0,0.12),0_2px_8px_rgba(0,0,0,0.04)] hover:-translate-y-[1px] active:scale-[0.97] active:duration-150 disabled:opacity-50 disabled:grayscale disabled:hover:-translate-y-0 disabled:hover:shadow-none',
-            )}
-            aria-label={t('copilot.composer.send')}
-          >
-            <ArrowUp className="h-4 w-4" />
-          </button>
-        </div>
+    <div className="rounded-lg border border-[var(--nw-copilot-border-strong)] bg-background/40 p-3 focus-within:border-accent/50">
+      <label htmlFor={inputId} className="block text-xs text-muted-foreground">{resolvedLabel}</label>
+      <textarea id={inputId} ref={textareaRef} value={value} onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+          if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit() }
+        }}
+        disabled={disabled} placeholder={placeholder ?? t('copilot.composer.defaultPlaceholder')}
+        className="nw-scrollbar-thin mt-1 max-h-[160px] min-h-[72px] w-full resize-none bg-transparent py-2 text-sm leading-6 text-foreground placeholder:text-muted-foreground/65 focus:outline-none disabled:opacity-60" rows={2} />
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] text-muted-foreground/70">{t('copilot.composer.sendHint')}</span>
+        <button type="button" onClick={submit} disabled={disabled || !value.trim()} aria-label={t('copilot.composer.send')}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/85 disabled:opacity-35">
+          <ArrowUp className="h-4 w-4" />
+        </button>
       </div>
     </div>
   )

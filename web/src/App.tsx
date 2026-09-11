@@ -8,7 +8,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { PerformanceModeProvider } from '@/contexts/PerformanceModeContext'
 import { UiLocaleProvider } from '@/contexts/UiLocaleContext'
 import { PageShell } from '@/components/layout/PageShell'
-import { isHostedRuntime } from '@/lib/runtimeMode'
+import { isHostedRuntime, getRuntimeMode } from '@/lib/runtimeMode'
 import { DesktopExitGuard } from '@/components/DesktopExitGuard'
 
 const Home = lazy(() => import('@/pages/Home'))
@@ -69,6 +69,14 @@ function LoginRoute() {
   return <Login />
 }
 
+/** Desktop launches into the product — skip the marketing landing page. */
+function MarketingHomeRoute() {
+  if (getRuntimeMode() === 'desktop') {
+    return <Navigate to="/library" replace />
+  }
+  return <Home />
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -81,7 +89,7 @@ export default function App() {
                 <Routes>
                   {/* Old-layout pages */}
                   <Route element={<Layout />}>
-                    <Route path="/" element={<Home />} />
+                    <Route path="/" element={<MarketingHomeRoute />} />
                     <Route element={<RequireHosted />}>
                       <Route path="/terms" element={<Terms />} />
                       <Route path="/privacy" element={<Privacy />} />

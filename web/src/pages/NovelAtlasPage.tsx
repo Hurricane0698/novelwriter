@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { PanelLeft } from 'lucide-react'
 import { lazy, Suspense, useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import '@/lib/uiMessagePacks/novel'
@@ -59,7 +60,8 @@ import {
   scheduleNovelCopilotDrawerPrefetch,
 } from '@/components/novel-copilot/novelCopilotDrawerLoader'
 
-const ATLAS_MIN_MAIN_STAGE_WIDTH = 760
+// Keep 600px for entity details beside the 280px navigation rail.
+const ATLAS_MIN_MAIN_STAGE_WIDTH = 880
 const ATLAS_ASSIST_OVERLAY_MAX_WIDTH = 420
 const ATLAS_ASSIST_OVERLAY_MARGIN_PX = 24
 const AtlasAssistWorkbench = lazy(async () => {
@@ -196,10 +198,19 @@ export function NovelAtlasPage() {
   const [reviewHighlight, setReviewHighlight] = useState<number | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const trackedWorldModelViewRef = useRef(false)
-  const [assistOpen, setAssistOpen] = useState(true)
+  const tab: AtlasWorkbenchTab = routeState.worldTab ?? 'systems'
+  const [assistOpen, setAssistOpen] = useState(() => window.innerWidth >= 1024)
+  const [navigatorOpen, setNavigatorOpen] = useState(true)
+  const [navigatorWidth, setNavigatorWidth] = useState(280)
+  const [containerWidth, setContainerWidth] = useState(0)
+  const navigatorOverlay = containerWidth < 760
+  const visibleNavigatorWidth = Math.min(navigatorWidth, Math.max(200, containerWidth - 40))
   const [assistDockMode, setAssistDockMode] = useState<'rail' | 'overlay'>('rail')
   const [assistRenderWidth, setAssistRenderWidth] = useState(drawerWidth)
   const assistVisible = assistOpen || copilotIsOpen
+  const assistOverlayOpen = assistVisible && assistDockMode === 'overlay'
+  const navigatorVisible = navigatorOpen && !(navigatorOverlay && assistOverlayOpen)
+  const navigatorOverlayOpen = navigatorOverlay && navigatorVisible && (tab === 'entities' || tab === 'relationships')
   const handleReviewSelect = useCallback((kind: DraftReviewKind, id: number) => {
     setReviewHighlight(id)
     setSearchParams((prev) => setAtlasHighlightSearchParams(setAtlasReviewKindSearchParams(prev, kind), id), {
@@ -225,10 +236,14 @@ export function NovelAtlasPage() {
 
   // Narrow-desktop fallback: keep Atlas assist reachable by switching from docked rail to overlay.
   useEffect(() => {
-    if (!assistVisible || !containerRef.current) return
+    if (!containerRef.current) return
     const el = containerRef.current
     const checkWidth = () => {
-      const maxDrawerWidth = el.clientWidth - ATLAS_MIN_MAIN_STAGE_WIDTH
+      setContainerWidth(el.clientWidth)
+      const navigationWidth = (tab === 'entities' || tab === 'relationships')
+        ? (navigatorOpen && el.clientWidth >= 760 ? visibleNavigatorWidth : 0)
+        : 280
+      const maxDrawerWidth = el.clientWidth - (ATLAS_MIN_MAIN_STAGE_WIDTH - 280 + navigationWidth)
       if (maxDrawerWidth < MIN_NOVEL_SHELL_DRAWER_WIDTH) {
         setAssistDockMode('overlay')
         setAssistRenderWidth(
@@ -238,21 +253,17 @@ export function NovelAtlasPage() {
             Math.max(el.clientWidth - ATLAS_ASSIST_OVERLAY_MARGIN_PX * 2, 0),
           ),
         )
-        if (copilotIsOpen) closeCopilot()
         return
       }
 
       setAssistDockMode('rail')
       setAssistRenderWidth(Math.min(drawerWidth, maxDrawerWidth))
-      if (drawerWidth > maxDrawerWidth) {
-        setDrawerWidth(maxDrawerWidth)
-      }
     }
     checkWidth()
     const observer = new ResizeObserver(checkWidth)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [assistVisible, closeCopilot, copilotIsOpen, drawerWidth, setDrawerWidth])
+  }, [assistVisible, drawerWidth, navigatorOpen, visibleNavigatorWidth, tab])
 
   useEffect(() => {
     if (assistVisible && !copilotIsOpen) return
@@ -279,7 +290,6 @@ export function NovelAtlasPage() {
   const effectiveSelectedSystemId =
     selectedSystemId === null ? null : selectedSystemStillExists ? selectedSystemId : (systems[0]?.id ?? null)
 
-  const tab: AtlasWorkbenchTab = routeState.worldTab ?? 'systems'
   const reviewKind: DraftReviewKind = routeState.reviewKind ?? 'entities'
   const highlightedRelationshipId = useMemo(
     () => parseOptionalNumber(searchParams.get('relationship')),
@@ -417,12 +427,6 @@ export function NovelAtlasPage() {
   })
 
   const handleToggleCopilot = useCallback(() => {
-    if (assistDockMode === 'overlay') {
-      if (copilotIsOpen) closeCopilot()
-      setAssistOpen((current) => !assistVisible ? true : !current)
-      return
-    }
-
     if (assistVisible) {
       if (copilotIsOpen) closeCopilot()
       setAssistOpen(false)
@@ -430,16 +434,30 @@ export function NovelAtlasPage() {
     }
 
     setAssistOpen(true)
+    if (navigatorOverlay) setNavigatorOpen(false)
     if (copilot.sessions.length > 0) {
       copilot.reopenDrawer()
     }
-  }, [assistDockMode, assistVisible, closeCopilot, copilot, copilotIsOpen])
+  }, [assistVisible, closeCopilot, copilot, copilotIsOpen, navigatorOverlay])
+  const handleToggleNavigator = () => {
+    if (navigatorVisible) setNavigatorOpen(false)
+    else {
+      if (navigatorOverlay && assistOverlayOpen) { closeCopilot(); setAssistOpen(false) }
+      setNavigatorOpen(true)
+    }
+  }
 
   if (invalidNovelId) return <div className="p-4 text-muted-foreground">Novel not found</div>
 
   return (
     <AtlasShell>
-      <div ref={containerRef} className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
+      <div ref={containerRef} className="flex-1 min-h-0 flex flex-col overflow-hidden relative bg-background">
+        {(navigatorOverlayOpen || assistOverlayOpen) && (
+          <div aria-hidden="true" className="absolute inset-x-0 bottom-0 top-12 z-10 bg-background/80" onClick={() => {
+            if (navigatorOverlay) setNavigatorOpen(false)
+            if (assistDockMode === 'overlay') { closeCopilot(); setAssistOpen(false) }
+          }} />
+        )}
         <NovelShellLayout>
           <ArtifactStage>
             <Tabs
@@ -483,7 +501,10 @@ export function NovelAtlasPage() {
                   </TabsList>
                 </div>
 
-                <div className="shrink-0 flex items-center">
+                <div className="shrink-0 flex items-center gap-1">
+                  {(tab === 'entities' || tab === 'relationships') && <button type="button" onClick={handleToggleNavigator}
+                    aria-label={t('worldModel.graph.toggleNavigator')} aria-expanded={navigatorVisible}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/5"><PanelLeft size={16} /></button>}
                   <button
                     type="button"
                     onClick={handleToggleCopilot}
@@ -498,14 +519,14 @@ export function NovelAtlasPage() {
                         ? 'bg-[var(--nw-glass-bg-hover)] text-foreground'
                         : 'text-muted-foreground hover:text-foreground hover:bg-[var(--nw-glass-bg-hover)]'
                     }`}
-                    aria-label="Toggle Copilot"
+                    aria-label="Toggle Copilot" aria-expanded={assistVisible}
                   >
                     <Bot className="h-4 w-4" />
                   </button>
                 </div>
               </div>
 
-              <TabsContent value="systems" className="flex-1 min-h-0 mt-0 overflow-hidden">
+              <TabsContent inert={assistOverlayOpen} value="systems" className="flex-1 min-h-0 mt-0 overflow-hidden">
                 <SystemsWorkspace
                   novelId={nid}
                   onOpenDraftReview={openDraftReview}
@@ -514,15 +535,18 @@ export function NovelAtlasPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="entities" className="flex-1 min-h-0 flex mt-0 overflow-hidden">
+              <TabsContent inert={assistOverlayOpen} value="entities" className="flex-1 min-h-0 flex mt-0 overflow-hidden">
                 <EntityNavigator
+                  width={visibleNavigatorWidth} hidden={!navigatorVisible} overlay={navigatorOverlay}
+                  onResize={setNavigatorWidth} onClose={() => setNavigatorOpen(false)}
                   novelId={nid}
                   selectedEntityId={effectiveSelectedEntityId}
-                  onSelectEntity={setSelectedEntity}
+                  onSelectEntity={id => { setSelectedEntity(id); if (navigatorOverlay) setNavigatorOpen(false) }}
                   bottomSlot={(
                     <DraftReviewSummaryCard novelId={nid} onOpen={openDraftReview} />
                   )}
                 />
+                <div className="flex min-h-0 min-w-0 flex-1" inert={navigatorOverlayOpen}>
                 <Suspense fallback={<AtlasEntityDetailFallback />}>
                   <EntityDetail
                     novelId={nid}
@@ -531,20 +555,23 @@ export function NovelAtlasPage() {
                     copilotSurface="atlas"
                   />
                 </Suspense>
+                </div>
               </TabsContent>
 
-              <TabsContent value="relationships" className="flex-1 min-h-0 flex mt-0 overflow-hidden">
+              <TabsContent inert={assistOverlayOpen} value="relationships" className="flex-1 min-h-0 flex mt-0 overflow-hidden">
                 <EntityNavigator
+                  width={visibleNavigatorWidth} hidden={!navigatorVisible} overlay={navigatorOverlay}
+                  onResize={setNavigatorWidth} onClose={() => setNavigatorOpen(false)}
                   novelId={nid}
                   selectedEntityId={effectiveSelectedEntityId}
-                  onSelectEntity={setSelectedEntity}
+                  onSelectEntity={id => { setSelectedEntity(id); if (navigatorOverlay) setNavigatorOpen(false) }}
                   bottomSlot={
                     <>
                       <RelationshipSidebarPanel
                         novelId={nid}
                         selectedEntityId={effectiveSelectedEntityId}
                         selectedEntityName={effectiveSelectedEntityName}
-                        onRequestNewRelationship={() => setRelCreateOpen(true)}
+                        onRequestNewRelationship={() => { setRelCreateOpen(true); if (navigatorOverlay) setNavigatorOpen(false) }}
                         onOpenDraftReview={() => openDraftReview('relationships')}
                         showResearchAction={false}
                       />
@@ -552,6 +579,7 @@ export function NovelAtlasPage() {
                     </>
                   }
                 />
+                <div className="flex min-h-0 min-w-0 flex-1" inert={navigatorOverlayOpen}>
                 <RelationshipsTab
                   novelId={nid}
                   selectedEntityId={effectiveSelectedEntityId}
@@ -560,9 +588,10 @@ export function NovelAtlasPage() {
                   creating={relCreateOpen}
                   onCreatingChange={setRelCreateOpen}
                 />
+                </div>
               </TabsContent>
 
-              <TabsContent value="review" className="flex-1 min-h-0 mt-0 overflow-hidden">
+              <TabsContent inert={assistOverlayOpen} value="review" className="flex-1 min-h-0 mt-0 overflow-hidden">
                 <div className="flex h-full min-h-0 overflow-hidden">
                   <Suspense fallback={<DraftReviewNavigatorFallback />}>
                     <DraftReviewNavigator
@@ -601,8 +630,10 @@ export function NovelAtlasPage() {
             </Tabs>
           </ArtifactStage>
           {assistVisible && copilotIsOpen ? (
-            <Suspense fallback={<NovelCopilotDrawerFallback width={drawerWidth} />}>
-              <NovelCopilotDrawer novelId={nid} onLocateTarget={handleLocateCopilotTarget} />
+            <Suspense fallback={<NovelCopilotDrawerFallback width={assistRenderWidth} />}>
+              <NovelCopilotDrawer novelId={nid} width={assistRenderWidth} presentation={assistDockMode} overlayTop={48} onLocateTarget={handleLocateCopilotTarget}
+                onClose={() => { closeCopilot(); setAssistOpen(false) }}
+                onBack={() => { closeCopilot(); setAssistOpen(true) }} />
             </Suspense>
           ) : null}
           {assistVisible && !copilotIsOpen && assistDockMode === 'rail' ? (
@@ -611,6 +642,7 @@ export function NovelAtlasPage() {
                 novelId={nid}
                 tab={tab}
                 width={assistRenderWidth}
+                onClose={() => setAssistOpen(false)}
                 onResize={setDrawerWidth}
                 selectedEntityId={effectiveSelectedEntityId}
                 selectedEntityName={effectiveSelectedEntityName}
@@ -626,7 +658,7 @@ export function NovelAtlasPage() {
           ) : null}
         </NovelShellLayout>
         {assistVisible && !copilotIsOpen && assistDockMode === 'overlay' ? (
-          <div className="pointer-events-none absolute inset-y-0 right-0 z-20 flex items-stretch justify-end p-3 pl-0">
+          <div className="pointer-events-none absolute inset-y-0 right-0 z-20 flex items-stretch justify-end">
             <div className="pointer-events-auto flex max-w-full pt-12">
               <Suspense fallback={<AtlasAssistWorkbenchFallback width={assistRenderWidth} />}>
                 <AtlasAssistWorkbench
@@ -634,6 +666,7 @@ export function NovelAtlasPage() {
                   tab={tab}
                   width={assistRenderWidth}
                   presentation="overlay"
+                  onClose={() => setAssistOpen(false)}
                   onResize={setDrawerWidth}
                   selectedEntityId={effectiveSelectedEntityId}
                   selectedEntityName={effectiveSelectedEntityName}

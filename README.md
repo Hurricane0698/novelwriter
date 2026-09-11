@@ -22,9 +22,16 @@ NovelWriter（NovWr）是一个面向长篇小说创作与续写的本地写作�
 
 <div align="center">
 <br />
-<img src="docs/screenshot.png" alt="NovWr Studio 工作区" width="90%" />
+<img src="docs/screenshot.jpg" alt="NovWr Studio 工作区" width="90%" />
 <br />
-<sub>Studio 工作区：左栏章节导航 · 中央阅读与编辑 · 右侧续写与研究入口</sub>
+<sub>Studio 工作区：章节栏 · 阅读与编辑 · 续写设置 / Atlas / 助手按需切换</sub>
+<br /><br />
+<table>
+  <tr>
+    <td align="center" width="50%"><img src="web/public/screenshots/home/atlas-light.jpg" alt="Atlas 世界模型" width="100%" /><br /><sub>Atlas：实体、关系与审核</sub></td>
+    <td align="center" width="50%"><img src="web/public/screenshots/home/continuation-light.jpg" alt="续写工作流" width="100%" /><br /><sub>续写：按当前章节注入世界模型</sub></td>
+  </tr>
+</table>
 <br /><br />
 </div>
 

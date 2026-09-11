@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { buildGraph } from '@/components/world-model/relationships/starGraphLayout'
+import { buildGraph as presentGraph, getRelationshipTopologyKey } from '@/components/world-model/relationships/starGraphLayout'
+import { layoutRelationshipGraph, type RelationshipGraphTopology } from '@/components/world-model/relationships/relationshipGraphGeometry'
 import type { WorldRelationship, WorldEntity } from '@/types/api'
+
+function buildGraph(center: number, rels: WorldRelationship[], entities: Map<number, WorldEntity>, selected: number | null = null) {
+  const positions = layoutRelationshipGraph(JSON.parse(getRelationshipTopologyKey(center, rels)) as RelationshipGraphTopology)
+  return presentGraph(center, rels, entities, positions, selected)
+}
 
 const entity = (id: number, name: string): WorldEntity => ({
   id, name, entity_type: 'Character', novel_id: 1, status: 'confirmed',
@@ -30,7 +36,7 @@ describe('buildGraph', () => {
     expect(new Set(ids).size).toBe(2)
   })
 
-  it('defensively handles self-referencing relationship without duplicate node IDs', () => {
+  it('keeps self-referencing relationships without duplicate node IDs', () => {
     const entities = new Map([[1, entity(1, 'A')]])
     const rels = [rel(10, 1, 1, '自引用')]
     const { nodes, edges } = buildGraph(1, rels, entities)
@@ -46,7 +52,7 @@ describe('buildGraph', () => {
     expect(edges).toHaveLength(0)
   })
 
-  it('expands radius when peer count is large to avoid overlap', () => {
+  it('expands the neighborhood when more labels need space', () => {
     // With 20 peers the layout should be larger than with 3 peers
     const makeGraph = (peerCount: number) => {
       const entries: [number, WorldEntity][] = [[1, entity(1, 'Center')]]
@@ -67,4 +73,42 @@ describe('buildGraph', () => {
     }
     expect(bbox(large.nodes)).toBeGreaterThan(bbox(small.nodes))
   })
+  it('includes real network links while excluding disconnected entities', () => {
+    const entities = new Map([1, 2, 3, 4, 5].map(id => [id, entity(id, `Entity ${id}`)]))
+    const relationships = [rel(1, 1, 2), rel(2, 1, 3), rel(3, 2, 3), rel(5, 4, 5)]
+    const graph = buildGraph(1, relationships, entities)
+    expect(graph.nodes.map(node => node.id)).toEqual(['1', '2', '3'])
+    expect(graph.edges.map(edge => edge.id)).toEqual(['rel-1', 'rel-2', 'rel-3'])
+    expect(graph.edges[2]).toMatchObject({ source: '2', target: '3' })
+    expect(buildGraph(1, [...relationships].reverse(), entities).nodes).toEqual(graph.nodes)
+    expect(buildGraph(2, relationships, entities).nodes.map(n => ({ id: n.id, position: n.position })))
+      .toEqual(graph.nodes.map(n => ({ id: n.id, position: n.position })))
+  })
+
+  it('follows connected relationships beyond the selected entity', () => {
+    const entities = new Map([1, 2, 3, 4].map(id => [id, entity(id, `Entity ${id}`)]))
+    expect(buildGraph(1, [rel(1, 1, 2), rel(2, 2, 3), rel(3, 3, 4)], entities).nodes.map(n => n.id)).toEqual(['1', '2', '3', '4'])
+  })
+
+  it('keeps dense labels apart and does not rearrange nodes when a relationship is selected', () => {
+    const entities = new Map(Array.from({ length: 24 }, (_, id) => [id, entity(id, `Entity ${id}`)]))
+    const relationships = Array.from({ length: 23 }, (_, index) => rel(index + 1, 0, index + 1))
+    const graph = buildGraph(0, relationships, entities)
+    expect(buildGraph(0, relationships, entities, 4).nodes).toEqual(graph.nodes)
+    graph.nodes.forEach((node, index) => graph.nodes.slice(index + 1).forEach(other => {
+      const dx = Math.abs(node.position.x - other.position.x)
+      const dy = Math.abs(node.position.y - other.position.y)
+      expect(dx >= 169 || dy >= 89).toBe(true)
+    }))
+  })
+
+  it('keys geometry by connections, not focus, labels, direction, or duplicate facts', () => {
+    const relations = [rel(1, 1, 2), rel(2, 2, 3)]
+    const key = getRelationshipTopologyKey(1, relations)
+    expect(getRelationshipTopologyKey(3, relations)).toBe(key)
+    expect(getRelationshipTopologyKey(1, [rel(9, 2, 1, 'renamed'), ...relations].reverse())).toBe(key)
+    expect(getRelationshipTopologyKey(1, [...relations, rel(3, 1, 3)])).not.toBe(key)
+    expect(getRelationshipTopologyKey(1, [relations[0]])).not.toBe(key)
+  })
+
 })

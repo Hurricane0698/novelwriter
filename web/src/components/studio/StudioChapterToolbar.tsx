@@ -1,6 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { MoreHorizontal, Pencil, Trash2, Upload } from 'lucide-react'
-import { AssistToggleButton } from '@/components/studio/AssistToggleButton'
 import { GlassSurface } from '@/components/ui/glass-surface'
 import { NwButton } from '@/components/ui/nw-button'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
@@ -34,13 +33,13 @@ interface StudioChapterToolbarProps {
     deleteChapter: () => Promise<void>
   }
   assistOpen: boolean
-  onToggleAssist: () => void
+  onToggleAssist?: () => void
 }
 
 /** Chapter metadata and commands; save ownership stays in the mounted Studio editor. */
 export function StudioChapterToolbar({
   currentMeta, currentChapterIdentity, updatedAt, content, canEdit, canDelete,
-  editor, actions, assistOpen: showAssistRail, onToggleAssist: handleToggleAssist,
+  editor, actions,
 }: StudioChapterToolbarProps) {
   const { t } = useUiLocale()
   const { editMode, editingTitle, titleDraft, setTitleDraft, setEditingTitle, handleTitleSave, toggleEdit } = editor
@@ -52,16 +51,16 @@ export function StudioChapterToolbar({
   const wordCount = content.replace(/\s/g, '').length
 
   return (
-    <div className="shrink-0 border-b border-[var(--nw-glass-border)] pb-5">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0 flex-1 space-y-3">
+    <div className="shrink-0 border-b border-[var(--nw-glass-border)] pb-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 basis-[300px] flex-1 space-y-3">
           {currentMeta ? (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center rounded-full border border-[var(--nw-glass-border)] bg-background/20 px-2.5 py-1 text-[11px] font-medium text-foreground/88">
+                <span className="inline-flex items-center text-[11px] font-medium text-foreground/88">
                   {formatChapterBadgeLabel(currentChapterIdentity ?? currentMeta)}
                 </span>
-                <span className="inline-flex items-center rounded-full border border-[var(--nw-glass-border)] bg-background/20 px-2.5 py-1 text-[11px] text-muted-foreground">
+                <span className="inline-flex items-center text-[11px] text-muted-foreground">
                   {editMode ? t('studio.chapter.editing') : t('studio.chapter.reading')}
                 </span>
               </div>
@@ -84,7 +83,7 @@ export function StudioChapterToolbar({
                     className="cursor-text"
                   >
                     {displayTitle ? (
-                      <h1 className="font-mono text-[24px] font-semibold leading-tight text-foreground break-words">
+                      <h1 className="text-[24px] font-semibold leading-tight text-foreground break-words">
                         {displayTitle}
                       </h1>
                     ) : (
@@ -103,17 +102,17 @@ export function StudioChapterToolbar({
             </>
           ) : (
             <div className="space-y-2">
-              <span className="inline-flex items-center rounded-full border border-[var(--nw-glass-border)] bg-background/20 px-2.5 py-1 text-[11px] text-muted-foreground">
+              <span className="inline-flex items-center text-[11px] text-muted-foreground">
                 {t('studio.header.workspace')}
               </span>
-              <h1 className="font-mono text-[24px] font-semibold leading-tight text-foreground">
+              <h1 className="text-[24px] font-semibold leading-tight text-foreground">
                 {t('studio.header.selectChapter')}
               </h1>
             </div>
           )}
         </div>
 
-        <div className="flex w-full flex-col gap-2.5 xl:w-auto xl:max-w-[520px] xl:items-end">
+        <div className="flex shrink-0 flex-col gap-2.5">
           <div className="flex flex-wrap gap-2">
             <NwButton
               onClick={toggleEdit}
@@ -122,7 +121,7 @@ export function StudioChapterToolbar({
               className="rounded-[10px] px-4 py-2 text-sm font-medium disabled:cursor-not-allowed"
             >
               <Pencil size={14} />
-              {t('studio.chapter.edit')}
+              {editMode ? t('studio.chapter.finishEditing') : t('studio.chapter.edit')}
             </NwButton>
 
             <div className="relative">
@@ -192,7 +191,6 @@ export function StudioChapterToolbar({
               ) : null}
             </div>
 
-            <AssistToggleButton active={showAssistRail} onClick={handleToggleAssist} />
           </div>
         </div>
       </div>

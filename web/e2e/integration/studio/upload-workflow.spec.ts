@@ -7,7 +7,7 @@ import {
   wasTestIdSeen,
 } from '../../fixtures/novel-ready'
 
-const API = 'http://localhost:8000'
+const API = process.env.E2E_API_ORIGIN ?? 'http://localhost:8000'
 const RUN = Math.random().toString(36).slice(2, 6)
 const AUTH_SCOPE = 'upload-workflow'
 
@@ -108,7 +108,7 @@ test('import → enter writing desk → continue → adopt', async ({ page }) =>
 
   // Enter writing desk
   await page.getByTestId('studio-rail-continuation').click()
-  await expect(page).toHaveURL(new RegExp(`/novel/${novelId}\\?stage=write$`))
+  await expect(page).toHaveURL(url => url.pathname === `/novel/${novelId}` && url.searchParams.get('stage') === 'write' && url.searchParams.get('chapter') === '1')
   await expect(page.getByText('续写设置')).toBeVisible()
 
   // Mock the LLM streaming endpoint: deterministic NDJSON, no real model calls.

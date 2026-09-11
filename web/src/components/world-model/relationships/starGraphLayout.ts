@@ -1,5 +1,6 @@
-import type { Edge, Node } from '@xyflow/react'
+import { MarkerType, type Edge, type Node } from '@xyflow/react'
 import { LABELS } from '@/constants/labels'
+import type { GraphPositions, RelationshipGraphTopology } from './relationshipGraphGeometry'
 import type { WorldEntity, WorldRelationship } from '@/types/api'
 
 export type StarNodeData = {
@@ -18,71 +19,60 @@ function angleToHandle(angle: number): string {
   return 'top'
 }
 
-/** Estimated node width in px (label + type badge + padding) */
-const EST_NODE_W = 160
-/** Minimum arc gap between adjacent peer nodes */
-const MIN_ARC_GAP = 40
-/** Baseline radius for small graphs */
-const BASE_RADIUS = 200
+/** Only node membership and unique connections influence geometry. */
+export function getRelationshipTopologyKey(centerId: number, relationships: WorldRelationship[]): string {
+  const adjacency = new Map<number, Set<number>>()
+  for (const rel of relationships) {
+    if (!adjacency.has(rel.source_id)) adjacency.set(rel.source_id, new Set())
+    if (!adjacency.has(rel.target_id)) adjacency.set(rel.target_id, new Set())
+    adjacency.get(rel.source_id)!.add(rel.target_id)
+    adjacency.get(rel.target_id)!.add(rel.source_id)
+  }
+  const connected = new Set([centerId])
+  const queue = [centerId]
+  for (let index = 0; index < queue.length; index++) {
+    for (const neighbor of adjacency.get(queue[index]) ?? []) {
+      if (connected.has(neighbor)) continue
+      connected.add(neighbor)
+      queue.push(neighbor)
+    }
+  }
+  const ids = [...connected].sort((a, b) => a - b)
+  const pairs: [number, number][] = []
+  for (const source of ids) {
+    for (const target of adjacency.get(source) ?? []) {
+      if (source < target) pairs.push([source, target])
+    }
+  }
+  pairs.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  return JSON.stringify({ ids, pairs } satisfies RelationshipGraphTopology)
+}
 
 export function buildGraph(
   centerId: number,
   relationships: WorldRelationship[],
   entityMap: Map<number, WorldEntity>,
+  positions: GraphPositions,
   selectedRelId: number | null = null,
 ): { nodes: Node<StarNodeData>[]; edges: Edge[] } {
-  const rels = relationships.filter(r => r.source_id === centerId || r.target_id === centerId)
-  const peers = [...new Set(rels.map(r => r.source_id === centerId ? r.target_id : r.source_id))]
-    .filter((peerId) => peerId !== centerId)
-
-  const centerEntity = entityMap.get(centerId)
-  const N = peers.length
-
-  // Dynamic radius: ensure adjacent nodes don't overlap
-  // circumference = 2πr, arc per peer = 2πr/N, need arc >= EST_NODE_W + MIN_ARC_GAP
-  const minRadius = N > 0 ? (N * (EST_NODE_W + MIN_ARC_GAP)) / (2 * Math.PI) : BASE_RADIUS
-  const radius = Math.max(BASE_RADIUS, minRadius)
-
-  // Canvas sized to fit radius + node padding
-  const padding = EST_NODE_W
-  const canvasW = 2 * radius + 2 * padding
-  const canvasH = 2 * radius + 2 * padding
-  const cx = canvasW / 2
-  const cy = canvasH / 2
-
-  const peerAngles = new Map<number, number>()
-
-  const nodes: Node<StarNodeData>[] = [
-    {
-      id: String(centerId),
-      type: 'star',
-      position: { x: cx - 60, y: cy - 20 },
+  const ids = [...positions.keys()]
+  const rels = relationships.filter(r => positions.has(r.source_id) && positions.has(r.target_id)).sort((a, b) => a.id - b.id)
+  const nodes: Node<StarNodeData>[] = ids.map(id => {
+    const entity = entityMap.get(id)
+    const position = positions.get(id)!
+    return {
+      id: String(id), type: 'star',
+      position: { x: position.x - 72, y: position.y - 12 },
       data: {
-        label: centerEntity?.name ?? '?',
-        entityTypeLabel: LABELS.ENTITY_TYPE_LABEL(centerEntity?.entity_type ?? ''),
-        isCenter: true,
-        isDraft: centerEntity?.status === 'draft',
+        label: entity?.name ?? '?',
+        entityTypeLabel: LABELS.ENTITY_TYPE_LABEL(entity?.entity_type ?? ''),
+        isCenter: id === centerId,
+        isDraft: entity?.status === 'draft',
       },
+      ariaLabel: entity?.name,
       draggable: false,
-    },
-    ...peers.map((pid, i) => {
-      const angle = (2 * Math.PI * i) / N - Math.PI / 2
-      peerAngles.set(pid, angle)
-      const e = entityMap.get(pid)
-      return {
-        id: String(pid),
-        type: 'star' as const,
-        position: { x: cx + radius * Math.cos(angle) - 50, y: cy + radius * Math.sin(angle) - 16 },
-        data: {
-          label: e?.name ?? '?',
-          entityTypeLabel: LABELS.ENTITY_TYPE_LABEL(e?.entity_type ?? ''),
-          isCenter: false,
-          isDraft: e?.status === 'draft',
-        },
-        draggable: false,
-      }
-    }),
-  ]
+    }
+  })
 
   const groupTotals = new Map<string, number>()
   rels.forEach((r) => {
@@ -96,21 +86,23 @@ export function buildGraph(
     const edgeIndex = groupIndex.get(groupKey) ?? 0
     groupIndex.set(groupKey, edgeIndex + 1)
 
-    const peerId = r.source_id === centerId ? r.target_id : r.source_id
-    const peerAngle = peerAngles.get(peerId) ?? 0
-    const isSourceCenter = r.source_id === centerId
-    const centerHandle = angleToHandle(peerAngle)
-    const peerHandle = angleToHandle(peerAngle + Math.PI)
+    const source = positions.get(r.source_id)!
+    const target = positions.get(r.target_id)!
+    const angle = Math.atan2(target.y - source.y, target.x - source.x)
+    const sourceHandle = angleToHandle(angle)
+    const targetHandle = r.source_id === r.target_id ? 'top' : angleToHandle(angle + Math.PI)
     const selected = selectedRelId === r.id
 
     return {
       id: `rel-${r.id}`,
       source: String(r.source_id),
       target: String(r.target_id),
-      sourceHandle: isSourceCenter ? `${centerHandle}-src` : `${peerHandle}-src`,
-      targetHandle: isSourceCenter ? peerHandle : centerHandle,
+      sourceHandle: `${sourceHandle}-src`,
+      targetHandle,
       type: 'star',
       label: r.label,
+      ariaLabel: `${entityMap.get(r.source_id)?.name ?? r.source_id} → ${entityMap.get(r.target_id)?.name ?? r.target_id}: ${r.label}`,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: selected ? 'hsl(var(--accent))' : 'hsl(var(--muted-foreground) / .5)' },
       data: {
         relId: r.id,
         status: r.status,
@@ -122,13 +114,13 @@ export function buildGraph(
         stroke: selected
           ? 'hsl(var(--color-accent) / 0.92)'
           : r.status === 'draft'
-            ? 'hsl(var(--color-status-draft) / 0.70)'
-            : 'hsl(var(--color-accent) / 0.45)',
-        strokeWidth: selected ? 2.75 : r.status === 'draft' ? 1.9 : 1.55,
+            ? 'hsl(var(--color-status-draft) / 0.45)'
+            : 'hsl(var(--muted-foreground) / 0.44)',
+        strokeWidth: selected ? 2 : 1.5,
         strokeLinecap: 'round',
         ...(r.status === 'draft' ? { strokeDasharray: '6 3' } : {}),
       },
-      animated: selected,
+      animated: false,
     }
   })
 

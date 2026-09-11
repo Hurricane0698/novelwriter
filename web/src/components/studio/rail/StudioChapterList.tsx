@@ -32,9 +32,9 @@ function ChapterButton({
       aria-current={selected ? 'true' : undefined}
       onClick={() => onSelectChapter(chapter.chapterNumber)}
       className={cn(
-        'flex w-full items-center gap-2.5 rounded-[12px] border px-3 py-2 text-left text-[13px] transition-all',
+        'flex w-full items-center gap-2.5 border-l-2 px-3 py-2 text-left text-[13px] transition-all',
         selected
-          ? 'border-accent/25 bg-accent/10 text-accent shadow-sm'
+          ? 'border-accent bg-accent/[0.06] text-accent'
           : 'border-transparent text-foreground/80 hover:bg-foreground/5 hover:text-foreground',
         className,
       )}

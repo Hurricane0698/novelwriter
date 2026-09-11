@@ -36,8 +36,19 @@ describe('PerformanceModeProvider', () => {
     vi.restoreAllMocks()
   })
 
-  it('keeps the animated background on marketing routes by default', () => {
+  it('keeps the animated background off on the marketing landing page', () => {
     renderHarness('/')
+    expect(screen.getByTestId('mode')).toHaveTextContent('default')
+    expect(screen.getByTestId('is-lite')).toHaveTextContent('false')
+    expect(screen.getByTestId('route-surface')).toHaveTextContent('marketing')
+    expect(screen.getByTestId('ambient-bg')).toHaveTextContent('false')
+    expect(screen.queryByTestId('animated-background')).not.toBeInTheDocument()
+    expect(document.documentElement.dataset.perfMode).toBeUndefined()
+    expect(document.documentElement.dataset.routeSurface).toBe('marketing')
+  })
+
+  it('keeps the animated background on non-landing marketing routes by default', () => {
+    renderHarness('/login')
     expect(screen.getByTestId('mode')).toHaveTextContent('default')
     expect(screen.getByTestId('is-lite')).toHaveTextContent('false')
     expect(screen.getByTestId('route-surface')).toHaveTextContent('marketing')
@@ -58,7 +69,7 @@ describe('PerformanceModeProvider', () => {
     expect(document.documentElement.dataset.routeSurface).toBe('workspace')
   })
 
-  it('reads the saved lite mode from localStorage', async () => {
+  it('ignores saved lite mode on the marketing landing page', async () => {
     localStorage.setItem('novwr_perf_mode', 'lite')
 
     renderHarness('/')
@@ -68,8 +79,9 @@ describe('PerformanceModeProvider', () => {
     })
     expect(screen.getByTestId('is-lite')).toHaveTextContent('false')
     expect(screen.getByTestId('route-surface')).toHaveTextContent('marketing')
-    expect(screen.getByTestId('ambient-bg')).toHaveTextContent('true')
-    expect(screen.getByTestId('animated-background')).toBeInTheDocument()
+    // Landing uses the lattice stage — ambient blobs stay off even with stored lite.
+    expect(screen.getByTestId('ambient-bg')).toHaveTextContent('false')
+    expect(screen.queryByTestId('animated-background')).not.toBeInTheDocument()
     expect(document.documentElement.dataset.perfMode).toBeUndefined()
   })
 

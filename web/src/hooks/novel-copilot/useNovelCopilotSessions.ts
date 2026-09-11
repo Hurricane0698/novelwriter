@@ -11,6 +11,8 @@ import { trackHostedAnalyticsEvent } from '@/lib/hostedAnalytics'
 import { copilotApi } from '@/services/api'
 
 export interface NovelCopilotSessionsOnlyState {
+  composerDrafts: Record<string, string>
+  setComposerDraft: (sessionId: string, text: string) => void
   isOpen: boolean
   sessions: NovelCopilotSession[]
   focusedSessionId: string | null
@@ -58,6 +60,10 @@ export function useNovelCopilotSessionsState({
   interactionLocale,
 }: UseNovelCopilotSessionsStateParams): NovelCopilotSessionsOnlyState {
   const [isOpen, setIsOpen] = useState(false)
+  const [composerDrafts, setComposerDrafts] = useState<Record<string, string>>({})
+  const setComposerDraft = useCallback((sessionId: string, text: string) => {
+    setComposerDrafts(current => ({ ...current, [sessionId]: text }))
+  }, [])
   const [sessions, setSessions] = useState<NovelCopilotSession[]>([])
   const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null)
   const sessionsRef = useRef<NovelCopilotSession[]>([])
@@ -220,6 +226,11 @@ export function useNovelCopilotSessionsState({
 
     const nextSessions = currentSessions.filter((session) => session.sessionId !== sessionId)
     commitSessions(nextSessions)
+    setComposerDrafts(current => {
+      const next = { ...current }
+      delete next[sessionId]
+      return next
+    })
 
     setFocusedSessionId((prevFocusedSessionId) => {
       if (prevFocusedSessionId !== sessionId) return prevFocusedSessionId
@@ -248,6 +259,8 @@ export function useNovelCopilotSessionsState({
   }, [])
 
   return {
+    composerDrafts,
+    setComposerDraft,
     isOpen,
     sessions,
     focusedSessionId,

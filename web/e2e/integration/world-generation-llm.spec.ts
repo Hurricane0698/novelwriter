@@ -12,7 +12,7 @@ import {
 } from '../fixtures/api-helpers'
 import { waitForInitialNovelReady } from '../fixtures/novel-ready'
 
-const API = 'http://localhost:8000'
+const API = process.env.E2E_API_ORIGIN ?? 'http://localhost:8000'
 const AUTH_SCOPE = 'world-generation-llm'
 
 function envFlag(name: string): boolean {

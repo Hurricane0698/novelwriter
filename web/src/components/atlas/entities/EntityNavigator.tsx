@@ -1,4 +1,7 @@
+import { useOverlayPanelFocus } from '@/hooks/useOverlayPanelFocus'
 import { useEffect, useState, useMemo, type KeyboardEvent } from 'react'
+import { X } from 'lucide-react'
+import { PanelResizeHandle } from '@/components/novel-shell/PanelResizeHandle'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -7,13 +10,19 @@ import { LABELS } from '@/constants/labels'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import type { WorldEntity } from '@/types/api'
 
-export function EntityNavigator({ novelId, selectedEntityId, onSelectEntity, bottomSlot }: {
+export function EntityNavigator({ novelId, selectedEntityId, onSelectEntity, bottomSlot, width = 280, onResize, onClose, hidden = false, overlay = false }: {
+  width?: number
+  onResize?: (width: number) => void
+  onClose?: () => void
+  hidden?: boolean
+  overlay?: boolean
   novelId: number
   selectedEntityId: number | null
   onSelectEntity: (id: number) => void
   bottomSlot?: React.ReactNode
 }) {
   const { locale, t } = useUiLocale()
+  const panelRef = useOverlayPanelFocus(overlay && !hidden)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set())
   const { data: entities = [], isLoading } = useWorldEntities(novelId)
@@ -73,9 +82,17 @@ export function EntityNavigator({ novelId, selectedEntityId, onSelectEntity, bot
 
   return (
     <div
-      className="shrink-0 flex flex-col min-h-0 h-full w-[280px] overflow-hidden border-r border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-2xl"
+      className={cn('relative shrink-0 flex-col min-h-0 h-full border-r border-border/50 bg-background', hidden ? 'hidden' : 'flex', overlay && '!absolute left-0 top-12 bottom-0 !h-auto z-30 shadow-xl')}
+      style={{ width }} hidden={hidden}
+      ref={panelRef} tabIndex={-1} aria-label={t('worldModel.graph.toggleNavigator')}
+      onKeyDown={event => { if (overlay && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); onClose?.() } }}
       data-testid="entity-navigator"
     >
+      {onResize && <PanelResizeHandle side="right" width={width} min={200} max={400} onResize={onResize} label={t('worldModel.graph.resizeNavigator')} />}
+      {onClose && <header className="flex h-10 shrink-0 items-center justify-between px-4 pt-2">
+        <span className="text-xs text-muted-foreground">{t('worldModel.common.entities')}</span>
+        <button type="button" onClick={onClose} aria-label={t('worldModel.graph.closeNavigator')} className="rounded p-1.5 text-muted-foreground hover:bg-foreground/5"><X size={14} /></button>
+      </header>}
       <div className="shrink-0 p-4 space-y-2">
         <Input
           placeholder={t('worldModel.common.searchEntities')}

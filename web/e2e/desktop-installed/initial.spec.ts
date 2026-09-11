@@ -5,11 +5,10 @@ import {
   INSTALLED_EDITED_CHAPTER_CONTENT,
   INSTALLED_ORIGIN,
   INSTALLED_STORM_TIMEOUT_MS,
-  assertDesktopLanding,
+  assertDesktopProductEntry,
   assertDesktopLoginRouteRemoved,
   assertSeededDemoVisible,
   assertUploadedNovelVisible,
-  enterLibraryThroughDesktopLanding,
   installInstalledProductFailureGuard,
   saveDesktopLlmConfig,
   testDesktopLlmConnection,
@@ -25,9 +24,8 @@ test.afterEach(async ({ page }, testInfo) => {
 test('first installed launch imports a novel and verifies encrypted LLM config', async ({ page }) => {
   const failureGuard = installInstalledProductFailureGuard(page)
 
-  await assertDesktopLanding(page)
+  await assertDesktopProductEntry(page)
   await assertDesktopLoginRouteRemoved(page)
-  await enterLibraryThroughDesktopLanding(page)
   await assertSeededDemoVisible(page)
 
   await page.getByTestId('library-file-input').setInputFiles({

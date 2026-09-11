@@ -11,7 +11,9 @@ type SceneEntry = {
   windowLabelKey: UiMessageKey
   labelKey: UiMessageKey
   screenshot: string
-  accentHex: string
+  mobilePosition: string
+  mobileScale: number
+  tone: 'studio' | 'atlas' | 'copilot'
 }
 
 export const sceneManifest: Record<SceneId, SceneEntry> = {
@@ -19,35 +21,45 @@ export const sceneManifest: Record<SceneId, SceneEntry> = {
     id: 'import',
     windowLabelKey: 'home.stage.window.library',
     labelKey: 'home.stage.caption.import',
-    accentHex: '#5b6bf0',
+    tone: 'studio',
     screenshot: homeScreenshotAssets.library,
+    mobilePosition: 'left top',
+    mobileScale: 1.3,
   },
   settings: {
     id: 'settings',
     windowLabelKey: 'home.stage.window.atlas',
     labelKey: 'home.stage.caption.settings',
-    accentHex: '#4a7de8',
+    tone: 'atlas',
     screenshot: homeScreenshotAssets.settingsGenerate,
+    mobilePosition: 'center center',
+    mobileScale: 1.2,
   },
   governance: {
     id: 'governance',
     windowLabelKey: 'home.stage.window.atlas',
     labelKey: 'home.stage.caption.governance',
-    accentHex: '#4a7de8',
+    tone: 'atlas',
     screenshot: homeScreenshotAssets.atlasReview,
+    mobilePosition: 'right center',
+    mobileScale: 1.4,
   },
   copilot: {
     id: 'copilot',
     windowLabelKey: 'home.stage.window.copilot',
     labelKey: 'home.stage.caption.copilot',
-    accentHex: '#7a5cf0',
+    tone: 'copilot',
     screenshot: homeScreenshotAssets.copilotChat,
+    mobilePosition: 'right bottom',
+    mobileScale: 1.8,
   },
   continuation: {
     id: 'continuation',
     windowLabelKey: 'home.stage.window.studio',
     labelKey: 'home.stage.caption.continuation',
-    accentHex: '#5b6bf0',
+    tone: 'studio',
     screenshot: homeScreenshotAssets.studioWrite,
+    mobilePosition: 'right bottom',
+    mobileScale: 1.8,
   },
 }

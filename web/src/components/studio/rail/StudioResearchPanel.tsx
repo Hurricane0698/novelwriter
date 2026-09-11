@@ -29,10 +29,10 @@ export function StudioResearchPanel({
       <button
         type="button"
         onClick={onOpenWholeBookCopilot}
-        className="flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
+        className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
         data-testid="novel-copilot-trigger"
       >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[var(--nw-glass-border)] bg-background/20 text-muted-foreground">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground">
           <Search className="h-3.5 w-3.5" />
         </div>
         <div className="min-w-0 flex-1">
@@ -47,10 +47,10 @@ export function StudioResearchPanel({
         <button
           type="button"
           onClick={contextualCopilotAction.onClick}
-          className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-left transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-[var(--nw-glass-bg-hover)]"
           data-testid="studio-contextual-copilot-trigger"
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[var(--nw-glass-border)] bg-background/20 text-muted-foreground">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground">
             <Bot className="h-3.5 w-3.5" />
           </div>
           <div className="min-w-0">

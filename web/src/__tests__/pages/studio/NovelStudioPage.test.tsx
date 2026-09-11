@@ -271,11 +271,11 @@ vi.mock('@/components/world-model/shared/BootstrapPanel', () => ({
 }))
 
 vi.mock('@/components/studio/panels/InjectionSummaryPanel', () => ({
-  InjectionSummaryPanel: () => <div data-testid="injection-summary-panel" />,
+  InjectionSummaryPanel: ({ activeCategory, onClose }: { activeCategory: string; onClose: () => void }) => <div data-testid="injection-summary-panel" data-category={activeCategory}><button onClick={onClose}>关闭摘要</button></div>,
 }))
 
 vi.mock('@/components/studio/stages/ContinuationSetupStage', () => ({
-  ContinuationSetupStage: () => <div data-testid="continuation-setup" />,
+  ContinuationSetupStage: ({ onClose }: { onClose: () => void }) => <div data-testid="continuation-setup"><button onClick={onClose}>Close continuation</button></div>,
 }))
 
 vi.mock('@/components/studio/stages/StudioEntityStage', () => ({
@@ -307,7 +307,7 @@ vi.mock('@/components/studio/stages/ContinuationResultsStage', () => ({
 }))
 
 vi.mock('@/components/novel-copilot/NovelCopilotDrawer', () => ({
-  NovelCopilotDrawer: () => <div data-testid="novel-copilot-drawer" />,
+  NovelCopilotDrawer: ({ onBack }: { onBack: () => void }) => <div data-testid="novel-copilot-drawer"><button onClick={onBack}>返回辅助工具</button></div>,
 }))
 
 vi.mock('@/hooks/novel/useUpdateChapter', () => ({
@@ -353,6 +353,10 @@ vi.mock('@/components/atlas/workbench/atlasAssistWorkbenchLoader', () => ({
 }))
 
 vi.mock('@/services/api', () => ({
+  copilotApi: {
+    openSession: vi.fn().mockResolvedValue({ session_id: 'studio-test-session' }),
+    listRuns: vi.fn().mockResolvedValue([]),
+  },
   api: {
     getNovel: vi.fn(),
     listChaptersMeta: vi.fn(),
@@ -437,6 +441,7 @@ function renderWithStudioShell(
 describe('NovelStudioPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1280)
     mockScheduleAtlasAssistWorkbenchPrefetch.mockReturnValue(() => {})
 
     mockUseUpdateChapter.mockReturnValue({
@@ -525,6 +530,69 @@ describe('NovelStudioPage', () => {
       updated_at: null,
     }))
     mockReadGenerationResultsDebug.mockReturnValue(null)
+  })
+
+  it('lets chapters close and reopen without changing the active chapter', async () => {
+    const user = userEvent.setup()
+    renderWithStudioShell('/novel/7?chapter=3')
+    await screen.findByText('第三章内容')
+    const divider = screen.getByRole('separator', { name: '调整章节栏宽度' })
+    fireEvent.keyDown(divider, { key: 'ArrowRight' })
+    expect(divider).toHaveAttribute('aria-valuenow', '280')
+    await user.click(screen.getByRole('button', { name: '关闭章节栏' }))
+    expect(screen.getByTestId('studio-chapter-panel')).not.toBeVisible()
+    expect(screen.getByText('第三章内容')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '章节', exact: true }))
+    expect(screen.getByRole('separator', { name: '调整章节栏宽度' })).toHaveAttribute('aria-valuenow', '280')
+    expect(screen.getByTestId('studio-chapter-panel')).toBeVisible()
+  })
+
+  it('allows an attention panel to close and reopen without discarding its pending state', async () => {
+    const user = userEvent.setup()
+    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(ACTIVE_PENDING_NOW_MS)
+    renderWithStudioShell(`/novel/7?chapter=3&worldEntryPending=extract&worldEntryPendingAt=${ACTIVE_PENDING_STARTED_AT}`)
+    await screen.findByText('第三章内容')
+    expect(screen.getByTestId('studio-assistant-rail')).toHaveAttribute('data-world-entry-stage', 'attention')
+    await user.click(screen.getByRole('button', { name: '关闭助手' }))
+    expect(screen.queryByTestId('studio-assistant-rail')).toBeNull()
+    await user.click(screen.getByRole('button', { name: '切换 AI 侧栏' }))
+    expect(screen.getByTestId('studio-assistant-rail')).toHaveAttribute('data-world-entry-stage', 'attention')
+    dateNowSpy.mockRestore()
+  })
+
+  it('restores the last visible right panel after returning from Copilot to assist tools', async () => {
+    const user = userEvent.setup()
+    renderWithStudioShell('/novel/7?chapter=3')
+    await screen.findByText('第三章内容')
+    const toggle = screen.getByRole('button', { name: '切换 AI 侧栏' })
+    if (toggle.getAttribute('aria-expanded') !== 'true') await user.click(toggle)
+    await user.click(screen.getByTestId('novel-copilot-trigger'))
+    await screen.findByTestId('novel-copilot-drawer')
+    await user.click(toggle)
+    expect(screen.queryByTestId('novel-copilot-drawer')).toBeNull()
+    await user.click(toggle)
+    await screen.findByTestId('novel-copilot-drawer')
+    await user.click(screen.getByRole('button', { name: '返回辅助工具' }))
+    await screen.findByTestId('studio-assistant-rail')
+    await user.click(toggle)
+    await user.click(toggle)
+    expect(screen.getByTestId('studio-assistant-rail')).toBeInTheDocument()
+    expect(screen.queryByTestId('novel-copilot-drawer')).toBeNull()
+  })
+
+  it('returns to the same chapter when continuation closes from either control', async () => {
+    const user = userEvent.setup()
+    renderWithStudioShell('/novel/7?chapter=3')
+    await screen.findByText('第三章内容')
+    await user.click(screen.getByTestId('studio-rail-continuation'))
+    expect(await screen.findByTestId('continuation-setup')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close continuation' }))
+    expect(await screen.findByText('第三章内容')).toBeInTheDocument()
+    expect(screen.queryByText('第一章内容')).not.toBeInTheDocument()
+    await user.click(screen.getByTestId('studio-rail-continuation'))
+    expect(await screen.findByTestId('continuation-setup')).toBeInTheDocument()
+    await user.click(screen.getByTestId('studio-rail-continuation'))
+    expect(await screen.findByText('第三章内容')).toBeInTheDocument()
   })
 
   it('uses the requested chapter from the studio URL instead of falling back to chapter one', async () => {
@@ -1276,6 +1344,29 @@ describe('NovelStudioPage', () => {
     expect(screen.queryByTestId('studio-world-entry-panel')).not.toBeInTheDocument()
   })
 
+  it.each(['toolbar', 'scrim', 'escape', 'panel'])('closes and restores the visible summary using %s without losing its category', async (control) => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390)
+    mockReadGenerationResultsDebug.mockReturnValue({
+      context_chapters: 3, injected_entities: ['主角'], injected_relationships: ['师徒'],
+      injected_context_summaries: [], injected_systems: [], relevant_entity_ids: [1],
+      ambiguous_keywords_disabled: [], drift_warnings: [], prose_warnings: [],
+    })
+    renderWithStudioShell('/novel/7?stage=entity&entity=1&chapter=3&resultsChapter=3&resultsContinuations=0:101&artifactPanel=injection_summary&summaryCategory=relationships')
+    await screen.findByTestId('injection-summary-panel')
+    const toggle = screen.getByRole('button', { name: '切换 AI 侧栏' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    if (control === 'toolbar') fireEvent.click(toggle)
+    else if (control === 'scrim') fireEvent.click(screen.getByTestId('studio-overlay-scrim'))
+    else if (control === 'panel') fireEvent.click(screen.getByText('关闭摘要'))
+    else fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('injection-summary-panel')).toBeNull())
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByTestId('studio-support-panel')).toBeNull()
+    fireEvent.click(toggle)
+    await screen.findByTestId('injection-summary-panel')
+    expect(screen.getByTestId('injection-summary-panel')).toHaveAttribute('data-category', 'relationships')
+  })
+
   it('waits for chapter save success before navigating from studio to atlas', async () => {
     let resolveSave: (() => void) | null = null
     const saveNow = vi.fn().mockImplementation(() => new Promise<void>((resolve) => {
@@ -1772,6 +1863,7 @@ describe('NovelStudioPage', () => {
       expect(screen.getByText('第三章内容')).toBeInTheDocument()
     })
 
+    await user.click(screen.getByRole('button', { name: '切换 AI 侧栏' }))
     await user.click(screen.getByTestId('world-build-generate'))
     await user.click(screen.getByTestId('mock-world-gen-success'))
 
@@ -1830,6 +1922,7 @@ describe('NovelStudioPage', () => {
       expect(screen.getByText('第三章内容')).toBeInTheDocument()
     })
 
+    await user.click(screen.getByRole('button', { name: '切换 AI 侧栏' }))
     await user.click(screen.getByTestId('mock-bootstrap-start'))
 
     expect(screen.getByTestId('location-search')).toHaveTextContent('worldEntryPending=extract')
@@ -1956,8 +2049,8 @@ describe('NovelStudioPage', () => {
     renderWithStudioShell('/novel/7?chapter=3')
 
     expect(await screen.findByPlaceholderText('Search chapters...')).toBeInTheDocument()
-    expect(screen.getByText('Workspace')).toBeInTheDocument()
+    expect(screen.getByTestId('studio-workspace-toolbar')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /Atlas world model/i }).length).toBeGreaterThan(0)
-    expect(screen.getByText('Chapters')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Chapters', exact: true })).toBeInTheDocument()
   })
 })

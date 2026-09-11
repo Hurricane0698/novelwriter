@@ -47,9 +47,11 @@ export function PerformanceModeProvider({ children }: { children: ReactNode }) {
       mode,
       isLite: mode === 'lite',
       routeSurface,
-      showAmbientBackground: mode !== 'lite' && routeSurface === 'marketing',
+      // Landing (`/`) uses the lattice stage — no ambient blobs. Other marketing
+      // surfaces (login/legal) keep the ambient layer when performance allows.
+      showAmbientBackground: mode !== 'lite' && routeSurface === 'marketing' && location.pathname !== '/',
     }),
-    [mode, routeSurface],
+    [mode, routeSurface, location.pathname],
   )
 
   return (

@@ -32,7 +32,7 @@ export function Navbar({
     const navPositionClass =
         position === "fixed" ? "fixed inset-x-0 top-0 z-50" : "w-full"
     const heightClass = compact ? "h-14" : "h-16"
-    const paddingClass = compact ? "px-6" : "px-12"
+    const paddingClass = isLanding ? "max-w-[1376px] px-6 sm:px-8 lg:px-12" : compact ? "px-6" : "px-12"
     const brandSizeClass = compact ? "text-lg" : "text-xl"
 
     return (
@@ -40,19 +40,33 @@ export function Navbar({
             className={cn(
                 navPositionClass,
                 heightClass,
-                "border-b border-[var(--nw-glass-border)] bg-[hsl(var(--background)/0.60)] backdrop-blur-xl"
+                isLanding
+                    ? "border-b border-[hsl(var(--lp-ink)/0.08)] bg-[hsl(var(--lp-paper))]"
+                    : "border-b border-[var(--nw-glass-border)] bg-[hsl(var(--background)/0.60)] backdrop-blur-xl",
             )}
         >
             <div className={`mx-auto h-full flex items-center justify-between ${paddingClass}`}>
                 {leftContent ?? (
                     <div className="flex items-center gap-6">
-                        <Link to="/" className={`font-mono ${brandSizeClass} font-bold text-foreground hover:opacity-80 transition-opacity`}>
+                        <Link to="/" className={`font-mono ${brandSizeClass} font-bold ${isLanding ? 'text-[hsl(var(--lp-ink))] hover:opacity-70' : 'text-foreground hover:opacity-80'} transition-opacity`}>
                             NovWr
                         </Link>
                         {!hideLinks ? (
-                            <div className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
+                            <div className={`hidden md:flex items-center gap-6 text-sm font-medium ${isLanding ? 'text-[hsl(var(--lp-ink)/0.6)]' : 'text-muted-foreground'}`}>
                                 {isLanding ? (
-                                    <a href="#narrative" className="hover:text-foreground transition-colors">{t('navbar.features')}</a>
+                                    <>
+                                        <a href="#narrative" className={`${isLanding ? 'hover:text-[hsl(var(--lp-ink))]' : 'hover:text-foreground'} transition-colors`}>{t('navbar.features')}</a>
+                                        {isHosted ? (
+                                            <a
+                                                href="https://github.com/Hurricane0698/novelwriter#readme"
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="hover:text-[hsl(var(--lp-ink))] transition-colors"
+                                            >
+                                                {t('navbar.docs')}
+                                            </a>
+                                        ) : null}
+                                    </>
                                 ) : (
                                     <>
                                         <Link
@@ -82,20 +96,28 @@ export function Navbar({
                                 </Avatar>
                             </Link>
                         ) : (
-                            <NwButton
-                                asChild
-                                variant="glass"
-                                className="hidden md:inline-flex rounded-full bg-transparent px-5 py-1.5 text-sm font-medium backdrop-blur-none"
-                            >
-                                <Link to="/login">{t('navbar.login')}</Link>
-                            </NwButton>
+                            isLanding ? (
+                                <NwButton
+                                    asChild
+                                    className="lp-cta-primary hidden md:inline-flex h-9 rounded-full px-5 text-sm font-medium shadow-none"
+                                >
+                                    <Link to="/login">{t('navbar.login')}</Link>
+                                </NwButton>
+                            ) : (
+                                <NwButton
+                                    asChild
+                                    variant="glass"
+                                    className="hidden md:inline-flex rounded-full bg-transparent px-5 py-1.5 text-sm font-medium backdrop-blur-none"
+                                >
+                                    <Link to="/login">{t('navbar.login')}</Link>
+                                </NwButton>
+                            )
                         )) : isLanding ? (
                             <NwButton
                                 asChild
-                                variant="glass"
-                                className="hidden md:inline-flex rounded-full bg-transparent px-5 py-1.5 text-sm font-medium backdrop-blur-none"
+                                className="lp-cta-primary hidden md:inline-flex h-9 rounded-full px-5 text-sm font-medium shadow-none"
                             >
-                                <Link to="/library">{t('navbar.library')}</Link>
+                                <Link to="/library" data-testid="home-start-writing-nav">{t('navbar.library')}</Link>
                             </NwButton>
                         ) : null}
                     </div>
