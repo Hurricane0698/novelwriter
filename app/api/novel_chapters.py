@@ -274,10 +274,13 @@ def update_chapter(
 
     if req.content is not None:
         _validate_chapter_content(novel, req.content)
+        if req.expected_content_hash is not None:
+            from app.core.text_targets import stage_text_write
+            stage_text_write(db, chapter, req.content, req.expected_content_hash)
+        else:
+            chapter.content = req.content
     if req.title is not None:
         chapter.title = req.title
-    if req.content is not None:
-        chapter.content = req.content
     target_revision = mark_window_index_inputs_changed(novel)
     enqueue_window_index_rebuild_job(
         db,

@@ -13,7 +13,7 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.api.deps import verify_novel_access
 from app.core.auth import (
@@ -54,6 +54,7 @@ from app.schemas import (
     CopilotSuggestionResponse,
     CopilotSuggestionTargetResponse,
     CopilotTraceStepResponse,
+    CopilotTextApplyRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -281,6 +282,22 @@ def run_list(
 # ---------------------------------------------------------------------------
 
 
+@router.post("/sessions/{session_id}/runs/{run_id}/apply-text")
+def run_apply_text(
+    novel_id: int, session_id: str, run_id: str, body: CopilotTextApplyRequest,
+    novel: Novel = Depends(verify_novel_access),
+    user: User = Depends(get_current_user_or_default),
+    db: Session = Depends(get_db),
+):
+    from app.core.copilot.text_review_apply import apply_text_suggestions
+    try:
+        run = load_run(db, novel_id, user.id, session_id, run_id)
+    except CopilotError as exc:
+        _handle_copilot_error(exc)
+        return
+    return apply_text_suggestions(db, run, body.suggestion_ids, body.expected_content_hash)
+
+
 @router.post("/sessions/{session_id}/runs/{run_id}/apply", response_model=CopilotApplyResponse)
 def run_apply(
     novel_id: int,
@@ -365,6 +382,8 @@ def run_dismiss(
 
 
 def _run_to_response(run) -> CopilotRunResponse:
+    from app.core.copilot.text_review_apply import review_response
+    db = object_session(run)
     trace = [
         CopilotTraceStepResponse(**step)
         for step in (run.trace_json or [])
@@ -400,6 +419,7 @@ def _run_to_response(run) -> CopilotRunResponse:
         evidence=evidence,
         suggestions=suggestions,
         error=run.error,
+        text_review=review_response(run, db) if db is not None and run.quick_action_id in {"review_text", "propose_world_updates"} else None,
     )
 
 

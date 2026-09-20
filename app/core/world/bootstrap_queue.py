@@ -43,6 +43,7 @@ def ensure_ingest_bootstrap_job(
     *,
     session_factory: Callable[[], Session],
     settings: Settings | None = None,
+    after_index_build: bool = False,
 ) -> BootstrapJob | None:
     resolved_settings = settings or get_settings()
     db = session_factory()
@@ -55,6 +56,14 @@ def ensure_ingest_bootstrap_job(
             return None
 
         bootstrap_plan = (ingest_job.bootstrap_plan or "").strip()
+        # Only the import's first deferred index may finish its auto-bootstrap.
+        # Later rebuilds come from ordinary edits, saves and undo; they must
+        # never start (or retry) a paid extraction as a side effect.
+        if after_index_build and (
+            bootstrap_plan != "defer_until_index"
+            or int(novel.window_index_revision or 0) != 1
+        ):
+            return None
         if bootstrap_plan == "manual_only":
             return None
         if not _auto_bootstrap_llm_ready(resolved_settings):
@@ -72,6 +81,8 @@ def ensure_ingest_bootstrap_job(
             return None
 
         job = db.query(BootstrapJob).filter(BootstrapJob.novel_id == novel_id).first()
+        if after_index_build and job is not None:
+            return None
         if job and is_running_status(job.status):
             if is_stale_running_job(
                 job,

@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { MoreHorizontal, Pencil, Trash2, Upload } from 'lucide-react'
+import { FileSearch, MoreHorizontal, Pencil, Trash2, Upload } from 'lucide-react'
+import '@/lib/uiMessagePacks/copilot'
 import { GlassSurface } from '@/components/ui/glass-surface'
 import { NwButton } from '@/components/ui/nw-button'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
@@ -34,12 +35,14 @@ interface StudioChapterToolbarProps {
   }
   assistOpen: boolean
   onToggleAssist?: () => void
+  onReview?: () => void
+  reviewBusy?: boolean
 }
 
 /** Chapter metadata and commands; save ownership stays in the mounted Studio editor. */
 export function StudioChapterToolbar({
   currentMeta, currentChapterIdentity, updatedAt, content, canEdit, canDelete,
-  editor, actions,
+  editor, actions, onReview, reviewBusy,
 }: StudioChapterToolbarProps) {
   const { t } = useUiLocale()
   const { editMode, editingTitle, titleDraft, setTitleDraft, setEditingTitle, handleTitleSave, toggleEdit } = editor
@@ -116,13 +119,17 @@ export function StudioChapterToolbar({
           <div className="flex flex-wrap gap-2">
             <NwButton
               onClick={toggleEdit}
-              disabled={!canEdit}
+              disabled={!canEdit || reviewBusy}
               variant="accentOutline"
               className="rounded-[10px] px-4 py-2 text-sm font-medium disabled:cursor-not-allowed"
             >
               <Pencil size={14} />
               {editMode ? t('studio.chapter.finishEditing') : t('studio.chapter.edit')}
             </NwButton>
+
+            {onReview && <NwButton onClick={onReview} disabled={!canEdit || reviewBusy}
+              variant="glass" className="rounded-[10px] px-4 py-2 text-sm font-medium"
+              title={t('review.openHint')}><FileSearch size={14} />{t('review.chapter')}</NwButton>}
 
             <div className="relative">
               <NwButton

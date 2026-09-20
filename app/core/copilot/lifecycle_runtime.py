@@ -144,6 +144,12 @@ def create_run(
     settings = run_settings()
     reclaim_stale_runs(db)
     run_context = canonicalize_session_context(session.context_json)
+    from app.core.copilot.text_review_evidence import TEXT_REVIEW_ACTIONS, bind_text_target
+    if (run_context or {}).get("text_target"):
+        quick_action_id = quick_action_id if quick_action_id in TEXT_REVIEW_ACTIONS else "review_text"
+        run_context["text_target"] = bind_text_target(db, session.novel_id, run_context["text_target"])
+    elif quick_action_id in TEXT_REVIEW_ACTIONS:
+        raise hooks.copilot_error_factory("text_target_required", "请选择要核对的正文或候选。", 422)
 
     if (
         hooks.count_active_runs_in_session(db, session.id)

@@ -126,6 +126,7 @@ export interface ChapterMeta {
 }
 
 export interface Chapter {
+  content_hash?: string
   id: number
   novel_id: number
   chapter_number: number
@@ -147,6 +148,7 @@ export interface ChapterCreateRequest {
 export interface ChapterUpdateRequest {
   title?: string
   content?: string
+  expected_content_hash?: string
 }
 
 export interface ContinueRequest {
@@ -209,6 +211,8 @@ export interface Continuation {
   novel_id: number
   chapter_number: number
   content: string
+  edited_content?: string | null
+  content_hash?: string
   rating: number | null
   created_at: string
 }
@@ -226,6 +230,7 @@ export type LegacySystemDisplayType = SystemDisplayType | 'graph'
 export type WorldOrigin = 'manual' | 'bootstrap' | 'worldpack' | 'worldgen'
 
 export interface WorldEntity {
+  source_refs?: WorldSourceRef[]
   id: number
   novel_id: number
   name: string
@@ -241,6 +246,7 @@ export interface WorldEntity {
 }
 
 export interface WorldEntityAttribute {
+  source_refs?: WorldSourceRef[]
   id: number
   entity_id: number
   key: string
@@ -259,6 +265,7 @@ export interface WorldEntityDetail extends WorldEntity {
 }
 
 export interface WorldRelationship {
+  source_refs?: WorldSourceRef[]
   id: number
   novel_id: number
   source_id: number
@@ -274,6 +281,7 @@ export interface WorldRelationship {
 }
 
 export interface WorldSystem {
+  source_refs?: WorldSourceRef[]
   id: number
   novel_id: number
   name: string
@@ -287,6 +295,13 @@ export interface WorldSystem {
   status: EntityStatus
   created_at: string
   updated_at: string
+}
+
+export interface WorldSourceRef extends Record<string, unknown> {
+  chapter_id?: number
+  chapter_number?: number
+  quote?: string
+  status: 'current' | 'needs_review' | 'missing'
 }
 
 export interface WorldGenerateRequest {

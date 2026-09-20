@@ -176,6 +176,9 @@ def apply_suggestions(
     Each top-level suggestion is isolated from the others, but any same-run
     dependencies it requires are applied in the same transaction.
     """
+    if (run.context_json or {}).get("text_review"):
+        from app.core.copilot.text_review_apply import lock_review_run
+        lock_review_run(db, run)
     initial_suggestions = list(run.suggestions_json or [])
     suggestion_order = [s["suggestion_id"] for s in initial_suggestions if isinstance(s, dict) and "suggestion_id" in s]
     suggestions_by_id = {s["suggestion_id"]: s for s in initial_suggestions if isinstance(s, dict) and "suggestion_id" in s}
@@ -259,12 +262,22 @@ def apply_suggestions(
                 except _ApplyAbort:
                     raise _abort_result(suggestion_id, "dependency_apply_failed") from None
 
+            if suggestion["apply"].get("review_guards"):
+                from app.core.copilot.text_review_apply import validate_guards
+                from fastapi import HTTPException
+                try:
+                    validate_guards(db, run.novel_id, suggestion["apply"]["review_guards"])
+                except HTTPException:
+                    raise _abort_result(suggestion_id, "copilot_target_stale") from None
             action_result = _execute_apply_action(
                 db,
                 run.novel_id,
                 suggestion["apply"],
                 suggestions_by_id=suggestions_by_id,
             )
+            if suggestion["apply"].get("source_refs"):
+                from app.core.copilot.text_review_apply import attach_action_sources
+                attach_action_sources(db, suggestion["apply"], action_result)
             tx_state.staged_successes.append(
                 _StagedApplySuccess(
                     suggestion_id=suggestion_id,

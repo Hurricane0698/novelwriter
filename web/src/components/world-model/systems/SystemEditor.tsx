@@ -1,4 +1,6 @@
 import { useState, type ReactNode } from 'react'
+import { WorldModelHelp } from '@/components/world-model/shared/WorldModelHelp'
+import { WorldSourceRefs } from '@/components/world-model/shared/WorldSourceRefs'
 import '@/lib/uiMessagePacks/novel'
 import { InlineEdit } from '@/components/world-model/shared/InlineEdit'
 import { VisibilityDot } from '@/components/world-model/shared/VisibilityDot'
@@ -56,6 +58,8 @@ export function SystemEditor({ novelId, system, onBack }: {
       <button className="text-sm text-muted-foreground hover:text-foreground" onClick={onBack}>
         {t('worldModel.system.back')}
       </button>
+      <WorldModelHelp kind="system" />
+      <WorldSourceRefs novelId={novelId} sources={system.source_refs} />
       <div className="rounded-2xl border border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-2xl p-4 space-y-4">
         <div className="flex items-center gap-3">
           <InlineEdit

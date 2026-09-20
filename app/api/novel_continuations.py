@@ -17,12 +17,32 @@ from app.schemas import (
     ContinueRequest,
     ContinueResponse,
     ContinuationResponse,
+    TextEditRequest,
 )
 
 from . import novel_support
 from . import novel_continuation_runtime as continuation_runtime
 
 router = APIRouter(prefix="/api/novels", tags=["novels"])
+
+
+@router.put("/{novel_id}/continuations/{continuation_id}", response_model=ContinuationResponse)
+def update_continuation(
+    novel_id: int,
+    continuation_id: int,
+    req: TextEditRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_default),
+):
+    from app.api.novel_chapters import _validate_chapter_content
+    from app.core.text_targets import load_text_target, stage_text_write
+    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
+    row = load_text_target(db, novel_id, {"kind": "continuation", "id": continuation_id})
+    _validate_chapter_content(novel, req.content)
+    stage_text_write(db, row, req.content, req.expected_content_hash)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 @router.post("/{novel_id}/continue", response_model=ContinueResponse)

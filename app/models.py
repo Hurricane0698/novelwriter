@@ -14,12 +14,21 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import column_property, deferred, relationship, validates
+from sqlalchemy.orm import column_property, deferred, object_session, relationship, validates
 from sqlalchemy.sql import func
 from app.database import Base
 from app.content_formats import PLAIN_TEXT_CONTENT_FORMAT
 from app.language import DEFAULT_LANGUAGE
 from app.world_relationships import canonicalize_relationship_label
+
+
+class WorldSourceMixin:
+    source_metadata = Column(JSON, nullable=True)
+
+    @property
+    def source_refs(self) -> list[dict]:
+        from app.core.world.provenance import describe_sources
+        return describe_sources(self, object_session(self))
 
 
 class Novel(Base):
@@ -96,6 +105,11 @@ class Chapter(Base):
 
     novel = relationship("Novel", back_populates="chapters")
 
+    @property
+    def content_hash(self) -> str:
+        from app.core.text_targets import content_hash
+        return content_hash(self.content)
+
 
 
 class Continuation(Base):
@@ -105,11 +119,17 @@ class Continuation(Base):
     novel_id = Column(Integer, ForeignKey("novels.id"), nullable=False)
     chapter_number = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
+    edited_content = Column(Text, nullable=True)
     prompt_used = Column(Text, default="")
     rating = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.now())
 
     novel = relationship("Novel", back_populates="continuations")
+
+    @property
+    def content_hash(self) -> str:
+        from app.core.text_targets import content_hash, current_content
+        return content_hash(current_content(self))
 
 
 class NovelContextSummary(Base):
@@ -296,7 +316,7 @@ class TokenUsage(Base):
     )
 
 
-class WorldEntity(Base):
+class WorldEntity(WorldSourceMixin, Base):
     __tablename__ = "world_entities"
     __table_args__ = (
         UniqueConstraint("novel_id", "name", name="uq_world_entities_novel_name"),
@@ -332,7 +352,7 @@ class WorldEntity(Base):
     target_relationships = relationship("WorldRelationship", foreign_keys="WorldRelationship.target_id", cascade="all, delete-orphan")
 
 
-class WorldEntityAttribute(Base):
+class WorldEntityAttribute(WorldSourceMixin, Base):
     __tablename__ = "world_entity_attributes"
     __table_args__ = (
         UniqueConstraint("entity_id", "key", name="uq_world_entity_attributes_entity_key"),
@@ -353,7 +373,7 @@ class WorldEntityAttribute(Base):
     entity = relationship("WorldEntity", back_populates="attributes")
 
 
-class WorldRelationship(Base):
+class WorldRelationship(WorldSourceMixin, Base):
     __tablename__ = "world_relationships"
     __table_args__ = (
         Index("ix_world_relationships_novel_status", "novel_id", "status"),
@@ -386,7 +406,7 @@ class WorldRelationship(Base):
         return value
 
 
-class WorldSystem(Base):
+class WorldSystem(WorldSourceMixin, Base):
     __tablename__ = "world_systems"
     __table_args__ = (
         UniqueConstraint("novel_id", "name", name="uq_world_systems_novel_name"),

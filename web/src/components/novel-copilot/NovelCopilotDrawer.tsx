@@ -18,6 +18,7 @@ import { NovelCopilotComposer } from './NovelCopilotComposer'
 import { NovelCopilotQuickActions } from './NovelCopilotQuickActions'
 import { NovelCopilotResearchProcess } from './NovelCopilotResearchProcess'
 import { NovelCopilotSuggestionCard } from './NovelCopilotSuggestionCard'
+import { TextReviewResults } from './TextReviewResults'
 import { AiStatusPill } from './AiStatusPill'
 import { NovelCopilotSessionStrip } from './NovelCopilotSessionStrip'
 import { getCopilotWorkbenchMeta } from './novelCopilotWorkbench'
@@ -149,6 +150,10 @@ function ActiveNovelCopilotDrawer({
   dismissSuggestions: ReturnType<typeof useNovelCopilot>['dismissSuggestions']
 }) {
   const { locale, t } = useUiLocale()
+  const { getTextTarget } = useNovelCopilot()
+  const [reviewError, setReviewError] = useState('')
+  const [preparingReview, setPreparingReview] = useState(false)
+  const preparingReviewRef = useRef(false)
   const panelRef = useOverlayPanelFocus(presentation === 'overlay')
   const [fallbackDrawerWidth, setFallbackDrawerWidth] = useState(DEFAULT_NOVEL_SHELL_DRAWER_WIDTH)
   const [retryingRunId, setRetryingRunId] = useState<string | null>(null)
@@ -174,7 +179,27 @@ function ActiveNovelCopilotDrawer({
     workbenchMeta.quickActions.map((action) => [action.id, action.prompt]),
   )
 
+  const textTarget = session.prefill.context?.text_target
+  const submitReview = async (prompt: string, action = 'review_text') => {
+    if (!textTarget || preparingReviewRef.current) return
+    const binding = getTextTarget(textTarget)
+    if (!binding) { setReviewError(t('review.unavailable')); return }
+    preparingReviewRef.current = true
+    setPreparingReview(true)
+    setReviewError('')
+    try {
+      const target = await binding.prepare()
+      await submitPrompt(session.sessionId, prompt, session.prefill.scope,
+        { ...session.prefill.context, text_target: target }, action)
+    } catch { setReviewError(t('review.failed')) }
+    finally { preparingReviewRef.current = false; setPreparingReview(false) }
+  }
+
   const handleAction = (action: string) => {
+    if (textTarget) {
+      void submitReview(quickActionPrompts[action] ?? t('review.prompt'), action)
+      return
+    }
     void submitPrompt(
       session.sessionId,
       quickActionPrompts[action] ?? t('copilot.drawer.fallbackPrompt'),
@@ -185,6 +210,7 @@ function ActiveNovelCopilotDrawer({
   }
 
   const handleSubmit = (prompt: string) => {
+    if (textTarget) { void submitReview(prompt); return }
     void submitPrompt(session.sessionId, prompt, session.prefill.scope, session.prefill.context)
   }
 
@@ -274,16 +300,17 @@ function ActiveNovelCopilotDrawer({
           />
 
           <div className="nw-scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 py-5" data-testid="copilot-conversation">
-            {sessionRuns.length === 0 && (
+            {(sessionRuns.length === 0 || textTarget) && (
               <div>
                 <p className="text-sm leading-6 text-muted-foreground">{workbenchMeta.introTitle}</p>
                 <NovelCopilotQuickActions
                   actions={workbenchMeta.quickActions}
                   onAction={handleAction}
-                  disabled={isFocusedSessionBusy}
+                  disabled={isFocusedSessionBusy || preparingReview}
                 />
               </div>
             )}
+            {reviewError && <p role="alert" className="py-2 text-xs text-destructive">{reviewError}</p>}
 
             {sessionRuns.length > 0 && (
               <div className="animate-in flex flex-col justify-end space-y-4 fade-in slide-in-from-bottom-2 duration-500">
@@ -322,7 +349,7 @@ function ActiveNovelCopilotDrawer({
                                   {run.error ?? t('copilot.drawer.interruptedFallback')}
                                 </div>
                               </div>
-                              {isLatestRun && (
+                              {isLatestRun && !textTarget && (
                                 <button
                                   type="button"
                                   onClick={() => handleRetryInterruptedRun(run.run_id)}
@@ -337,7 +364,7 @@ function ActiveNovelCopilotDrawer({
                                 </button>
                               )}
                             </div>
-                            {isLatestRun && (
+                            {isLatestRun && !textTarget && (
                               <div className="flex items-start justify-between gap-3 text-[11px] leading-relaxed text-muted-foreground/72">
                                 <span>
                                   {t('copilot.drawer.retryHint')}
@@ -367,7 +394,9 @@ function ActiveNovelCopilotDrawer({
                         <NovelCopilotResearchProcess trace={run.trace} evidence={run.evidence} />
                       )}
 
-                      {run.status === 'completed' && pendingSuggestions.length > 0 && (
+                      {run.status === 'completed' && run.text_review && <TextReviewResults run={run} session={session} onLocateTarget={onLocateTarget} />}
+
+                      {run.status === 'completed' && !run.text_review && pendingSuggestions.length > 0 && (
                         <section className={sectionPanelClassName}>
                           <div className="mb-3 flex items-center justify-between gap-3 px-1">
                             <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground/80">
@@ -390,7 +419,7 @@ function ActiveNovelCopilotDrawer({
                         </section>
                       )}
 
-                      {run.status === 'completed' && appliedSuggestions.length > 0 && (
+                      {run.status === 'completed' && !run.text_review && appliedSuggestions.length > 0 && (
                         <section className={sectionPanelClassName}>
                           <div className="mb-3 flex items-center justify-between gap-3 px-1">
                             <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-foreground/70">
@@ -433,7 +462,7 @@ function ActiveNovelCopilotDrawer({
             <NovelCopilotComposer
               sessionId={session.sessionId}
               onSubmit={handleSubmit}
-              disabled={isFocusedSessionBusy}
+              disabled={isFocusedSessionBusy || preparingReview}
               label={workbenchMeta.composerLabel}
               placeholder={workbenchMeta.composerPlaceholder}
             />

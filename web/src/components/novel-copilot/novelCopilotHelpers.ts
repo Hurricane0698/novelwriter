@@ -16,6 +16,7 @@ export function getCopilotScenario(prefill: CopilotPrefill): CopilotScenario {
 }
 
 export function getCopilotScopeLabel(prefill: CopilotPrefill, locale?: UiLocale) {
+  if (prefill.context?.text_target) return prefill.context.text_target.label ?? translateUiMessage(readLocale(locale), 'review.title')
   const effectiveLocale = readLocale(locale)
   const scenario = getCopilotScenario(prefill)
   if (scenario === 'whole_book') return translateUiMessage(effectiveLocale, 'copilot.scope.wholeBook')
@@ -25,6 +26,7 @@ export function getCopilotScopeLabel(prefill: CopilotPrefill, locale?: UiLocale)
 }
 
 export function getDefaultCopilotSessionTitle(prefill: CopilotPrefill, locale?: UiLocale) {
+  if (prefill.context?.text_target) return prefill.context.text_target.label ?? translateUiMessage(readLocale(locale), 'review.title')
   const effectiveLocale = readLocale(locale)
   if (prefill.scope === 'whole_book') return translateUiMessage(effectiveLocale, 'copilot.session.title.wholeBook')
   if (prefill.mode === 'draft_cleanup') return translateUiMessage(effectiveLocale, 'copilot.session.title.draftCleanup')

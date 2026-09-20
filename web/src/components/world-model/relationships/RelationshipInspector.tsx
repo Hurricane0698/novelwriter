@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { WorldModelHelp } from '@/components/world-model/shared/WorldModelHelp'
+import { WorldSourceRefs } from '@/components/world-model/shared/WorldSourceRefs'
 import { Link2, Trash2, X } from 'lucide-react'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { cn } from '@/lib/utils'
@@ -88,6 +90,8 @@ export function RelationshipInspector({
         </div>
 
         <div className="min-w-[160px] flex-1 space-y-2">
+          <WorldModelHelp kind="relationship" />
+          {rel && <WorldSourceRefs novelId={rel.novel_id} sources={rel.source_refs} />}
           <div className="text-[11px] font-semibold tracking-wider text-muted-foreground">
             {LABELS.REL_DESCRIPTION}
           </div>

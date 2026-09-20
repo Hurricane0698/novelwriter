@@ -290,6 +290,7 @@ def run_next_window_index_rebuild_job(
         novel_id,
         session_factory=session_factory,
         settings=resolved_settings,
+        after_index_build=True,
     )
     return True
 

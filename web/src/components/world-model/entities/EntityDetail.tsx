@@ -14,6 +14,8 @@ import { useNovelCopilot } from '@/components/novel-copilot/NovelCopilotContext'
 import { buildCurrentEntityCopilotLaunchArgs } from '@/components/novel-copilot/novelCopilotLauncher'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { Sparkles } from 'lucide-react'
+import { WorldModelHelp } from '@/components/world-model/shared/WorldModelHelp'
+import { WorldSourceRefs } from '@/components/world-model/shared/WorldSourceRefs'
 
 function SortableAttributeRow({ novelId, entityId, attribute }: {
   novelId: number
@@ -54,8 +56,8 @@ export function EntityDetail({ novelId, entityId, onDeleted, allowDelete = true,
 
   if (!entityId || !entity) {
     return (
-        <div className="flex-1 flex items-center justify-center text-muted-foreground">
-        {t('worldModel.entity.empty')}
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-muted-foreground">
+        <p>{t('worldModel.entity.empty')}</p><WorldModelHelp kind="entity" empty />
         </div>
       )
   }
@@ -113,6 +115,8 @@ export function EntityDetail({ novelId, entityId, onDeleted, allowDelete = true,
   return (
     <div className="flex-1 min-h-0 h-full overflow-y-auto" data-testid="entity-detail">
       <div className="max-w-5xl mx-auto px-8 py-8">
+        <WorldModelHelp kind="entity" />
+        <WorldSourceRefs novelId={novelId} sources={entity.source_refs} />
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 space-y-2">

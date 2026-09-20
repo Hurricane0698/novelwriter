@@ -23,7 +23,13 @@ export function useUpdateChapter(
     scope: { id: `novel:${novelId}:chapter:${chapterNum}:update` },
     mutationFn: async (data: ChapterUpdateRequest) => {
       await cancelChapterReadQueries()
-      return api.updateChapter(novelId, chapterNum, data)
+      const current = qc.getQueryData<Chapter>(novelKeys.chapter(novelId, chapterNum))
+      return api.updateChapter(novelId, chapterNum, {
+        ...data,
+        ...(data.content !== undefined && (data.expected_content_hash || current?.content_hash)
+          ? { expected_content_hash: data.expected_content_hash ?? current?.content_hash }
+          : {}),
+      })
     },
     onSuccess: async (updated) => {
       await cancelChapterReadQueries()

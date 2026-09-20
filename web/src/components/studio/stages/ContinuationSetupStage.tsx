@@ -261,7 +261,7 @@ export function ContinuationSetupStage({
                     {t('continuation.setup.contextSummary.title')}
                   </div>
                   <p className="mb-2 text-[11px] leading-relaxed text-muted-foreground">
-                    {t('continuation.setup.contextSummary.description')}
+                    {t('review.recapsHelp')}
                   </p>
                   <div className="flex gap-2">
                     <input

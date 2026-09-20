@@ -17,6 +17,7 @@ interface ContinuationResultsHeaderProps {
   isDone: boolean
   currentContent: string
   allDone: boolean
+  adoptEdited?: boolean
   createPending: boolean
   adoptErrorCode: ContinuationAdoptErrorCode | null
   onAdopt: () => void
@@ -35,6 +36,7 @@ export function ContinuationResultsHeader({
   isDone,
   currentContent,
   allDone,
+  adoptEdited,
   createPending,
   adoptErrorCode,
   onAdopt,
@@ -84,7 +86,7 @@ export function ContinuationResultsHeader({
             className="rounded-[10px] px-5 py-2.5 text-sm font-semibold shadow-[0_0_18px_hsl(var(--accent)/0.25)] disabled:cursor-default"
           >
             <Check size={16} />
-            {t('continuation.results.adopt')}
+            {t(adoptEdited ? 'review.adopt' : 'continuation.results.adopt')}
           </NwButton>
 
           <NwButton

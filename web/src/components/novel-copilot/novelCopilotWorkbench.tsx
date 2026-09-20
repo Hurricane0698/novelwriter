@@ -135,6 +135,17 @@ function draftCleanupActions(locale: UiLocale): CopilotQuickActionSpec[] {
 }
 
 export function getCopilotWorkbenchMeta(prefill: CopilotPrefill, displayTitle: string, locale: UiLocale = resolveCurrentUiLocale()): CopilotWorkbenchMeta {
+  if (prefill.context?.text_target) return {
+    introTitle: t(locale, 'review.cost'),
+    composerLabel: t(locale, 'review.focus'),
+    composerPlaceholder: t(locale, 'review.focusPlaceholder'),
+    quickActions: [
+      { id: 'review_text', label: t(locale, 'review.check'), description: t(locale, 'review.checkHint'), prompt: t(locale, 'review.prompt'), icon: FileSearch },
+      ...(prefill.context.text_target.kind === 'chapter' ? [
+        { id: 'propose_world_updates', label: t(locale, 'review.update'), description: t(locale, 'review.updateHint'), prompt: t(locale, 'review.updatePrompt'), icon: Sparkles },
+      ] : []),
+    ],
+  }
   const scenario = getCopilotScenario(prefill)
   const subject = displayTitle || translateUiMessage(locale, 'copilot.session.title.currentContext')
 

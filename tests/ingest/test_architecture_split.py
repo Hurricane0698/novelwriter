@@ -759,6 +759,44 @@ def test_deferred_window_index_build_waits_until_ingest_queue_is_idle(db, tmp_pa
     assert bootstrap_job.result["_queued_user_id"] == user.id
 
 
+@pytest.mark.parametrize("plan,revision,existing_status", [
+    ("immediate", 1, None),
+    ("immediate", 2, "failed"),
+    ("defer_until_index", 2, None),
+    ("defer_until_index", 2, "failed"),
+    ("defer_until_index", 1, "failed"),
+])
+def test_edit_index_rebuild_does_not_start_or_retry_ai_extraction(
+    db, tmp_path, user, plan, revision, existing_status,
+):
+    from app.core.indexing.lifecycle import enqueue_window_index_rebuild_job
+
+    novel = Novel(
+        title="Edit", owner_id=user.id, language="zh", total_chapters=1,
+        file_path=_write_source(tmp_path, "edit.txt", "第一章\n保存后的正文。"),
+        window_index_revision=revision, window_index_status="stale",
+    )
+    db.add(novel)
+    db.flush()
+    db.add_all([
+        Chapter(novel_id=novel.id, chapter_number=1, content="保存后的正文。"),
+        NovelIngestJob(novel_id=novel.id, status="completed", stage="completed",
+                       bootstrap_plan=plan, source_bytes=20),
+    ])
+    if existing_status:
+        db.add(BootstrapJob(novel_id=novel.id, mode="initial", status=existing_status))
+    enqueue_window_index_rebuild_job(db, novel_id=novel.id, target_revision=revision)
+    db.commit()
+
+    assert run_next_window_index_rebuild_job(
+        session_factory=TestingSessionLocal, settings=_selfhost_llm_ready_settings(),
+    ) is True
+    db.expire_all()
+    assert db.get(Novel, novel.id).window_index_status == "fresh"
+    job = db.query(BootstrapJob).filter_by(novel_id=novel.id).first()
+    assert (job.status if job else None) == existing_status
+
+
 def test_deferred_window_index_build_requeues_failed_job_row(db, tmp_path, user):
     deferred_file = _write_source(
         tmp_path,

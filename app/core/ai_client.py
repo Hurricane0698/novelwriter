@@ -237,10 +237,13 @@ class AIClient:
         temperature: float = 0.8,
         role: AgentRole = "default",
         user_id: int | None = None,
+        provider_retries: int | None = None,
     ) -> str:
         usage_billing_source = llm_config.billing_source_hint
         ensure_ai_available_fresh_session(billing_source=usage_billing_source)
         async with _openai_client(llm_config) as client:
+            if provider_retries is not None:
+                client = client.with_options(max_retries=provider_retries)
             response = await _create_completion(
                 client,
                 operation="generate",

@@ -75,6 +75,7 @@ export interface NovelCopilotRunControllerState {
   retryInterruptedRun: (sessionId: string, runId: string) => Promise<boolean>
   applySuggestions: (sessionId: string, runId: string, suggestionIds: string[]) => Promise<boolean>
   dismissSuggestions: (sessionId: string, runId: string, suggestionIds: string[]) => Promise<void>
+  refreshRun: (sessionId: string, runId: string) => Promise<void>
 }
 
 const POLL_INTERVAL_MS = 1500
@@ -477,6 +478,15 @@ export function useNovelCopilotRuns({
         const backendSessionId = await resolveBackendSessionId(sessionId)
         if (!sessionsByIdRef.current.has(sessionId)) return false
 
+        if (_context?.text_target) {
+          // Refresh the capture for each explicit action, without changing session identity.
+          await copilotApi.openSession(session.novelId, {
+            mode: session.prefill.mode, scope: session.prefill.scope,
+            context: _context, interaction_locale: session.interactionLocale,
+            display_title: session.displayTitle,
+          })
+        }
+
         const resp = await copilotApi.createRun(session.novelId, backendSessionId, {
           prompt,
           quick_action_id: quickAction ?? undefined,
@@ -631,5 +641,13 @@ export function useNovelCopilotRuns({
     retryInterruptedRun,
     applySuggestions,
     dismissSuggestions,
+    refreshRun: async (sessionId, runId) => {
+      const session = sessionsByIdRef.current.get(sessionId)
+      if (!session?.backendSessionId) return
+      const run = await copilotApi.pollRun(session.novelId, session.backendSessionId, runId)
+      if (sessionsByIdRef.current.has(sessionId)) {
+        setRunsBySessionId((prev) => replaceSessionRun(prev, sessionId, runId, run))
+      }
+    },
   }
 }

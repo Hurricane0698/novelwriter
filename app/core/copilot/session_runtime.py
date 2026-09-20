@@ -60,6 +60,10 @@ def normalize_session_identity_context(
     del mode
     context = canonicalize_session_context(context) or {}
 
+    if context.get("text_target"):
+        target = context["text_target"]
+        return {"text_target": {"kind": target["kind"], "id": target["id"]}}
+
     if scope == "whole_book":
         return None
 
@@ -98,6 +102,7 @@ def build_session_signature(
             "entity_id": (normalized_context or {}).get("entity_id"),
             "tab": (normalized_context or {}).get("tab"),
             "locale": normalized_interaction_locale,
+            **({"text_target": normalized_context["text_target"]} if (normalized_context or {}).get("text_target") else {}),
         },
         sort_keys=True,
     )

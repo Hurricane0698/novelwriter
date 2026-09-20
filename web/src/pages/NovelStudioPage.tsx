@@ -36,8 +36,9 @@ import {
   serializeChapterToNativeFormat,
   serializeChaptersToNativeFormat,
 } from '@/lib/chaptersNativeFormat'
-import type { Novel } from '@/types/api'
+import type { Chapter, Novel } from '@/types/api'
 import { useStudioChapterEditor } from '@/hooks/novel/useStudioChapterEditor'
+import { useTextReviewTarget } from '@/hooks/novel-copilot/useTextReviewTarget'
 import { useStudioNavigation } from '@/hooks/novel/useStudioNavigation'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -406,7 +407,7 @@ export function NovelStudioPage() {
   const {
     editMode, setEditMode, editorContent, editorSaveErrorCode, autoSaveStatus,
     handleEditorChange, handleSave, handleCancelEdit, saveCurrentEditorNow,
-    resetEditor, toggleEdit,
+    resetEditor, toggleEdit, flushPendingSaves,
   } = useStudioChapterEditor({
     novelId, chapterNumber: activeChapterNum, locationKey: location.key,
     chapterContent: chapter?.content ?? '', saveChapter: updateChapter.mutateAsync,
@@ -524,6 +525,57 @@ export function NovelStudioPage() {
   }
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const chapterReview = useTextReviewTarget({
+    target: chapter && activeStage === 'chapter' ? {
+      kind: 'chapter', id: chapter.id, chapter_number: chapter.chapter_number,
+      label: formatChapterBadgeLabel(chapter),
+    } : null,
+    content: editMode ? editorContent : (chapter?.content ?? ''),
+    flush: async () => {
+      if (editMode) return saveCurrentEditorNow()
+      await flushPendingSaves()
+      return true
+    },
+    accept: (change) => {
+      if (!chapter) return
+      resetEditor(change.content, editMode)
+      queryClient.setQueryData(novelKeys.chapter(novelId, chapter.chapter_number), {
+        ...chapter,
+        ...queryClient.getQueryData<Chapter>(novelKeys.chapter(novelId, chapter.chapter_number)),
+        content: change.content, content_hash: change.content_hash,
+        ...(change.updated_at ? { updated_at: change.updated_at } : {}),
+      })
+      void queryClient.invalidateQueries({ queryKey: novelKeys.contextSummaries(novelId) })
+    },
+    save: async (content, expectedHash) => {
+      await updateChapter.mutateAsync({ content, expected_content_hash: expectedHash })
+    },
+    selection: () => {
+      const area = textareaRef.current
+      if (!editMode || !area || area.selectionEnd <= area.selectionStart) return {}
+      return { start: Array.from(area.value.slice(0, area.selectionStart)).length,
+        end: Array.from(area.value.slice(0, area.selectionEnd)).length }
+    },
+  })
+  const locatedSourceRef = useRef<string | null>(null)
+  useEffect(() => {
+    const start = searchParams.get('sourceStart')
+    const expectedHash = searchParams.get('sourceHash')
+    if (!chapter || start === null || locatedSourceRef.current === location.key ||
+      (expectedHash && expectedHash !== chapter.content_hash)) return
+    locatedSourceRef.current = location.key
+    resetEditor(chapter.content, true)
+    const frame = requestAnimationFrame(() => {
+      const area = textareaRef.current
+      if (!area) return
+      const chars = Array.from(chapter.content)
+      const begin = chars.slice(0, Math.max(0, Number(start))).join('').length
+      const finish = chars.slice(0, Number(searchParams.get('sourceEnd') ?? start)).join('').length
+      area.focus()
+      area.setSelectionRange(begin, Math.max(begin, finish))
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [chapter, location.key, resetEditor, searchParams])
   const [cursorInfo, setCursorInfo] = useState({ para: 1, col: 1 })
   const handleSelectionChange = () => {
     const ta = textareaRef.current; if (!ta) return
@@ -1091,6 +1143,8 @@ export function NovelStudioPage() {
               /* ── Chapter Stage ── */
               <div className="flex-1 min-h-0 min-w-0 flex flex-col gap-4 px-5 py-5 sm:px-8 overflow-hidden">
                 <StudioChapterToolbar
+                  onReview={chapterReview.openReview}
+                  reviewBusy={chapterReview.busy}
                   currentMeta={currentMeta}
                   currentChapterIdentity={currentChapterIdentity}
                   updatedAt={chapter?.updated_at ?? chapter?.created_at ?? currentMeta?.created_at}
@@ -1110,7 +1164,8 @@ export function NovelStudioPage() {
                     <ChapterEditor
                       textareaRef={textareaRef}
                       value={editorContent}
-                      onChange={handleEditorChange}
+                      readOnly={chapterReview.busy}
+                      onChange={(value) => { if (!chapterReview.isLocked()) handleEditorChange(value) }}
                       onSelectionChange={handleSelectionChange}
                       cursorInfo={cursorInfo}
                       autoSaveStatus={autoSaveStatus}

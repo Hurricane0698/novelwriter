@@ -123,8 +123,7 @@ export function parseRetryAfterSeconds(res: Response): number {
   return raw
 }
 
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const maxRetries = 2
+export async function request<T>(path: string, init?: RequestInit, maxRetries = 2): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(`${BASE_URL}${path}`, {
       ...init,
@@ -154,8 +153,9 @@ export async function requestParsed<T>(
   path: string,
   parser: (value: unknown) => T,
   init?: RequestInit,
+  maxRetries = 2,
 ): Promise<T> {
-  return parser(await request<unknown>(path, init))
+  return parser(await request<unknown>(path, init, maxRetries))
 }
 
 export async function authFetch<T>(url: string): Promise<T> {

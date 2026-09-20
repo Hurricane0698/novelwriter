@@ -8,6 +8,9 @@ import { ChevronDown, ChevronRight, Info } from 'lucide-react'
 import { DriftWarningPopover } from '@/components/generation/DriftWarningPopover'
 import type { TextAnnotation } from '@/components/ui/annotated-text'
 import { useCreateChapter } from '@/hooks/novel/useCreateChapter'
+import { useCandidateDraft } from '@/hooks/novel/useCandidateDraft'
+import { NwButton } from '@/components/ui/nw-button'
+import '@/lib/uiMessagePacks/copilot'
 import { useAuth } from '@/contexts/AuthContext'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { addToWhitelist, getWhitelist } from '@/lib/postcheckWhitelistStorage'
@@ -180,8 +183,13 @@ export function ContinuationResultsStage({
   const currentLegacyVersion = isFallbackMode
     ? fallbackVersions[activeTab]
     : (isLegacyMode ? nonStreamVersions[activeTab] : undefined)
-  const currentContent = currentVariant?.content ?? currentLegacyVersion?.content ?? ''
   const currentCandidateId = currentVariant?.continuationId ?? currentLegacyVersion?.id ?? null
+  const allDone = isLegacyMode || isFallbackMode || isDone
+  const draft = useCandidateDraft({ novelId, candidateId: currentCandidateId,
+    original: currentVariant?.content ?? currentLegacyVersion?.content ?? '', initial: currentLegacyVersion,
+    enabled: isActive && allDone,
+  })
+  const currentContent = draft.content
   const currentCandidateIdentity = `${semanticSourceIdentity}:${activeTab}:${currentCandidateId ?? 'pending'}`
   const currentCandidateIdentityRef = useRef(currentCandidateIdentity)
   useLayoutEffect(() => {
@@ -196,7 +204,6 @@ export function ContinuationResultsStage({
   )
     ? adoptError.code
     : null
-  const allDone = isLegacyMode || isFallbackMode || isDone
   const tabCount = isStreamMode && !isFallbackMode ? variants.length : (isFallbackMode ? fallbackVersions.length : nonStreamVersions.length)
 
   const debug = resolveResultsDebug({
@@ -415,9 +422,17 @@ export function ContinuationResultsStage({
         isDone={isDone}
         currentContent={currentContent}
         allDone={allDone}
-        createPending={createChapter.isPending}
+        adoptEdited={draft.edited}
+        createPending={createChapter.isPending || draft.busy}
         adoptErrorCode={adoptErrorCode}
-        onAdopt={handleAdopt}
+        onAdopt={() => {
+          if (draft.busy) return
+          if (!draft.ready) { handleAdopt(); return }
+          const identity = currentCandidateIdentity
+          void draft.flush().then(() => {
+            if (currentCandidateIdentityRef.current === identity && sourceSessionRef.current.isActive) handleAdopt()
+          }).catch(() => undefined)
+        }}
         onBackToWrite={() => leaveResults(`/novel/${novelId}?stage=write`)}
         onExportAll={handleExportAll}
         assistOpen={assistOpen}
@@ -440,17 +455,34 @@ export function ContinuationResultsStage({
         t={t}
       />
 
-      <ContinuationResultsPane
+      {draft.ready && <div className="flex flex-wrap items-center gap-2 border-b border-border/50 pb-3">
+        {(['original', 'current'] as const).map((view) => <NwButton key={view} variant={draft.view === view ? 'accentOutline' : 'ghost'}
+          className="rounded-lg px-3 py-1.5 text-xs" disabled={draft.busy} onClick={() => draft.setView(view)}>
+          {t(view === 'original' ? 'review.original' : 'review.current')}</NwButton>)}
+        <NwButton variant="glass" className="rounded-lg px-3 py-1.5 text-xs" disabled={draft.busy}
+          onClick={() => draft.setView('edit')}>{t('review.edit')}</NwButton>
+        {draft.view === 'edit' && <NwButton variant="accentOutline" className="rounded-lg px-3 py-1.5 text-xs"
+          disabled={draft.busy} onClick={() => void draft.flush().then(() => draft.setView('current')).catch(() => undefined)}>
+          {t(draft.saving ? 'review.saving' : 'review.save')}</NwButton>}
+        <NwButton variant="glass" className="ml-auto rounded-lg px-3 py-1.5 text-xs" disabled={draft.busy}
+          title={t('review.openHint')} onClick={draft.openReview}>{t('review.candidate')}</NwButton>
+      </div>}
+      {draft.error && <p role="alert" className="text-xs text-destructive">{draft.error}</p>}
+      {draft.edited && <p className="text-xs text-muted-foreground">{t(draft.unsaved ? 'review.unsaved' : 'review.saved')}</p>}
+
+      {draft.view === 'edit' && draft.ready ? <textarea aria-label={t('review.current')} data-testid="candidate-draft-editor"
+        value={currentContent} onChange={(event) => draft.change(event.target.value)} readOnly={draft.busy}
+        className="min-h-0 flex-1 w-full resize-none bg-transparent px-4 py-4 text-[15px] leading-[2] outline-none nw-scrollbar-thin" /> : <ContinuationResultsPane
         contentFormat={contentFormat}
         isStreamMode={isStreamMode}
         isFallbackMode={isFallbackMode}
-        currentVariant={currentVariant}
-        currentLegacyVersion={currentLegacyVersion}
+        currentVariant={currentVariant ? { ...currentVariant, content: draft.view === 'original' ? draft.original : currentContent } : undefined}
+        currentLegacyVersion={currentLegacyVersion ? { ...currentLegacyVersion, content: draft.view === 'original' ? draft.original : currentContent } : undefined}
         driftAnnotations={driftAnnotations}
         proseWarnings={proseWarnings}
         onRetryStream={retryStream}
         t={t}
-      />
+      />}
 
       {summary ? (
         <button

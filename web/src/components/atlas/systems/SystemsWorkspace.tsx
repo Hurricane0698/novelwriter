@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { WorldModelHelp } from '@/components/world-model/shared/WorldModelHelp'
 import { SystemNavigator } from '@/components/atlas/systems/SystemNavigator'
 import { SystemEditor } from '@/components/world-model/systems/SystemEditor'
 import { useWorldSystem } from '@/hooks/world/useSystems'
@@ -44,8 +45,9 @@ export function SystemsWorkspace({
         {selectedId && system ? (
           <SystemEditor novelId={novelId} system={system} onBack={() => setSelectedIdInternal(null)} />
         ) : (
-          <div className="h-full flex items-center justify-center text-muted-foreground">
-            {t('worldModel.atlas.startEditingSystem')}
+          <div className="h-full flex flex-col items-center justify-center gap-3 p-8 text-muted-foreground">
+            <p>{t('worldModel.atlas.startEditingSystem')}</p>
+            <WorldModelHelp kind="system" empty />
           </div>
         )}
       </div>

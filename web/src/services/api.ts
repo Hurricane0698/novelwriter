@@ -211,6 +211,10 @@ export const api = {
   getChapters: listChapters,
   getChapter: (novelId: number, num: number) =>
     request<Chapter>(`/api/novels/${novelId}/chapters/${num}`),
+  updateContinuation: (novelId: number, id: number, content: string, expectedHash: string) =>
+    request<Continuation>(`/api/novels/${novelId}/continuations/${id}`, {
+      method: 'PUT', body: JSON.stringify({ content, expected_content_hash: expectedHash }),
+    }),
   createChapter: (novelId: number, data: ChapterCreateRequest) =>
     request<Chapter>(`/api/novels/${novelId}/chapters`, {
       method: 'POST',
