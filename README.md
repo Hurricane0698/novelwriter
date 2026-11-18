@@ -79,7 +79,7 @@ docker compose up -d   # 访问 http://localhost:8000
 - Compose 同时启动 Web 服务与后台 worker（导入、索引、自动提取由 worker 处理）
 - 首次启动自动创建管理员账号，并内置《西游记》示例项目
 - 需要一个 OpenAI 接口兼容的 LLM API Key；设置页有「测试连接」做连通性与 JSON Mode 预检
-- 官方镜像：`ghcr.io/hurricane0698/novelwriter:latest`
+- 官方镜像（Linux amd64）可固定为 `ghcr.io/hurricane0698/novelwriter:v0.7.0`。默认的 `latest` 跟随最新稳定版，一键安装用户可运行 `novwr upgrade` 更新。
 
 ## 核心概念
 
