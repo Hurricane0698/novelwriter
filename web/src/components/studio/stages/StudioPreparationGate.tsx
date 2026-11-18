@@ -1,32 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { EmptyWorldOnboarding } from '@/components/detail/EmptyWorldOnboarding'
 import { GlassSurface } from '@/components/ui/glass-surface'
 import { NwButton } from '@/components/ui/nw-button'
-import type { StudioPreparationGateState } from '@/hooks/novel/useStudioOnboardingState'
+import type { StudioPreparationGateState } from '@/hooks/novel/studioOnboardingPreparation'
 
-function StudioPreparationGate({
+export function StudioPreparationGate({
   title,
   description,
   detail,
   error,
   primaryActionLabel,
-  onPrimaryAction,
+  onRetry, onReturn, retryable,
   primaryActionPending,
   secondaryActionLabel,
-  onSecondaryAction,
-}: {
-  title: string
-  description: string
-  detail?: string | null
-  error?: string | null
-  primaryActionLabel?: string
-  onPrimaryAction?: () => void
-  primaryActionPending?: boolean
-  secondaryActionLabel?: string
-  onSecondaryAction?: () => void
-}) {
+}: StudioPreparationGateState & { primaryActionPending: boolean; onRetry: () => void; onReturn: () => void }) {
   return (
     <div className="flex flex-1 items-center justify-center px-8 py-10" data-testid="studio-preparation-gate">
       <GlassSurface
@@ -55,24 +43,24 @@ function StudioPreparationGate({
               {error}
             </div>
           ) : null}
-          {(primaryActionLabel && onPrimaryAction) || (secondaryActionLabel && onSecondaryAction) ? (
+          {primaryActionLabel || secondaryActionLabel ? (
             <div className="flex flex-wrap items-center justify-center gap-3">
-              {primaryActionLabel && onPrimaryAction ? (
+              {primaryActionLabel ? (
                 <NwButton
                   variant="accent"
                   className="rounded-full px-5 py-2.5 text-sm font-semibold"
-                  onClick={onPrimaryAction}
+                  onClick={retryable ? onRetry : onReturn}
                   disabled={primaryActionPending}
                   data-testid="studio-preparation-primary-action"
                 >
                   {primaryActionLabel}
                 </NwButton>
               ) : null}
-              {secondaryActionLabel && onSecondaryAction ? (
+              {secondaryActionLabel ? (
                 <NwButton
                   variant="glass"
                   className="rounded-full px-5 py-2.5 text-sm font-semibold"
-                  onClick={onSecondaryAction}
+                  onClick={onReturn}
                   disabled={primaryActionPending}
                   data-testid="studio-preparation-secondary-action"
                 >
@@ -84,56 +72,5 @@ function StudioPreparationGate({
         </div>
       </GlassSurface>
     </div>
-  )
-}
-
-export function StudioOnboardingStage({
-  preparationGate,
-  showWorldOnboarding,
-  bootstrapPending,
-  preparationActionPending,
-  bootstrapError,
-  chaptersAvailable,
-  onWorldGenOpenChange,
-  onTriggerBootstrap,
-  onDismissWorldOnboarding,
-}: {
-  preparationGate: StudioPreparationGateState | null
-  showWorldOnboarding: boolean
-  bootstrapPending: boolean
-  preparationActionPending: boolean
-  bootstrapError: string | null
-  chaptersAvailable: boolean
-  onWorldGenOpenChange: (open: boolean) => void
-  onTriggerBootstrap: () => void
-  onDismissWorldOnboarding: () => void
-}) {
-  if (preparationGate) {
-    return (
-      <StudioPreparationGate
-        title={preparationGate.title}
-        description={preparationGate.description}
-        detail={preparationGate.detail}
-        error={preparationGate.error}
-        primaryActionLabel={preparationGate.primaryActionLabel}
-        onPrimaryAction={preparationGate.onPrimaryAction}
-        primaryActionPending={preparationActionPending}
-        secondaryActionLabel={preparationGate.secondaryActionLabel}
-        onSecondaryAction={preparationGate.onSecondaryAction}
-      />
-    )
-  }
-
-  if (!showWorldOnboarding) return null
-
-  return (
-    <EmptyWorldOnboarding
-      onGenerate={() => onWorldGenOpenChange(true)}
-      onBootstrap={onTriggerBootstrap}
-      onDismiss={onDismissWorldOnboarding}
-      bootstrapPending={bootstrapPending}
-      bootstrapError={bootstrapError}
-      chaptersAvailable={chaptersAvailable}
-    />
   )
 }

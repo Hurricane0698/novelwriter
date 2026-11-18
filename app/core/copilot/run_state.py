@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Run-state, lease, quota, and LLM parsing helpers for copilot."""
+"""Run-state, lease, and LLM parsing helpers for copilot."""
 
 from __future__ import annotations
 
@@ -10,11 +10,10 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy.orm import Session, object_session
+from sqlalchemy.orm import Session
 
 from app.core.ai_client import AIClient
 from app.core.llm_config import ResolvedLlmConfig
-from app.core.auth import settle_quota_reservation
 from app.core.copilot.messages import CopilotTextKey, get_copilot_text
 from app.core.copilot.sync_runtime import check_sync_cancelled
 from app.core.job_runtime import (
@@ -41,13 +40,6 @@ def resolve_run_interaction_locale(run: CopilotRun | None) -> str:
     session = getattr(run, "session", None)
     return normalize_copilot_interaction_locale(
         str(getattr(session, "interaction_locale", "zh") or "zh"),
-    )
-
-
-def copilot_run_failed_message(interaction_locale: str) -> str:
-    return get_copilot_text(
-        CopilotTextKey.RUN_FAILED,
-        locale=interaction_locale,
     )
 
 
@@ -112,31 +104,6 @@ def mark_run_error(
     run.finished_at = now
 
 
-def settle_run_quota(
-    db: Session,
-    run: CopilotRun,
-    *,
-    charge_count: int = 0,
-) -> None:
-    reservation_id = getattr(run, "quota_reservation_id", None)
-    if reservation_id is None:
-        return
-    settle_quota_reservation(
-        db, reservation_id, charge_count=charge_count, commit=False
-    )
-
-
-def settle_attached_run_quota(
-    run: CopilotRun,
-    *,
-    charge_count: int = 0,
-) -> None:
-    db = object_session(run)
-    if db is None:
-        return
-    settle_run_quota(db, run, charge_count=charge_count)
-
-
 def is_stale_run(
     run: CopilotRun,
     *,
@@ -196,7 +163,6 @@ def reclaim_stale_runs(
             or copilot_run_interrupted_message(resolve_run_interaction_locale(run)),
             now=now,
         )
-        settle_run_quota(db, run)
         reclaimed.append(run.run_id)
 
     if reclaimed:
@@ -226,7 +192,6 @@ def claim_run_for_execution(
             message=copilot_run_interrupted_message(interaction_locale),
             now=utcnow_naive(),
         )
-        settle_run_quota(db, run)
         check_sync_cancelled()
         db.commit()
         return None
@@ -284,7 +249,6 @@ def check_stale_run(run: CopilotRun) -> bool:
         message=copilot_run_interrupted_message(resolve_run_interaction_locale(run)),
         now=utcnow_naive(),
     )
-    settle_attached_run_quota(run)
     return True
 
 
@@ -302,7 +266,6 @@ def fail_run(
         return
     check_sync_cancelled()
     mark_run_error(run, message=message, now=utcnow_naive())
-    settle_run_quota(db, run)
     check_sync_cancelled()
     db.commit()
 

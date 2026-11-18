@@ -7,25 +7,17 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.database import get_db
-from app.models import TokenUsage, User
+from app.models import TokenUsage
 from app.core.auth import get_current_user_or_default
 
 router = APIRouter(prefix="/api/usage", tags=["usage"], dependencies=[Depends(get_current_user_or_default)])
 
 
-def _usage_query(db: Session, user: User):
-    q = db.query(TokenUsage)
-    if get_settings().deploy_mode == "hosted":
-        q = q.filter(TokenUsage.user_id == user.id)
-    return q
-
-
 @router.get("/summary")
-async def usage_summary(db: Session = Depends(get_db), current_user: User = Depends(get_current_user_or_default)):
+async def usage_summary(db: Session = Depends(get_db)):
     """Total tokens, total cost, breakdown by model and node."""
-    totals = _usage_query(db, current_user).with_entities(
+    totals = db.query(TokenUsage).with_entities(
         func.coalesce(func.sum(TokenUsage.prompt_tokens), 0),
         func.coalesce(func.sum(TokenUsage.completion_tokens), 0),
         func.coalesce(func.sum(TokenUsage.total_tokens), 0),
@@ -33,7 +25,7 @@ async def usage_summary(db: Session = Depends(get_db), current_user: User = Depe
     ).first()
 
     by_model = (
-        _usage_query(db, current_user)
+        db.query(TokenUsage)
         .with_entities(
             TokenUsage.model,
             func.sum(TokenUsage.total_tokens),
@@ -44,7 +36,7 @@ async def usage_summary(db: Session = Depends(get_db), current_user: User = Depe
     )
 
     by_node = (
-        _usage_query(db, current_user)
+        db.query(TokenUsage)
         .with_entities(
             TokenUsage.node_name,
             func.sum(TokenUsage.total_tokens),
@@ -74,11 +66,10 @@ async def usage_summary(db: Session = Depends(get_db), current_user: User = Depe
 async def recent_usage(
     limit: int = 50,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
     """Recent usage records."""
     records = (
-        _usage_query(db, current_user)
+        db.query(TokenUsage)
         .order_by(TokenUsage.created_at.desc())
         .limit(min(limit, 200))
         .all()

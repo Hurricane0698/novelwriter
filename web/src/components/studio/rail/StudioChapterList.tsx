@@ -55,7 +55,6 @@ function WindowedChapterRows({ chapters, selectedChapterNumber, isChapterStage, 
   const buttonsRef = useRef(new Map<number, HTMLButtonElement>())
   const pendingFocusRef = useRef<number | null>(null)
   const previousRef = useRef<{ selection: number | null; chapters: StudioChapterListItem[] } | null>(null)
-  const anchorRef = useRef({ index: 0, offset: 0 })
   const [focusedChapter, setFocusedChapter] = useState<number | null>(null)
   const [tabStop, setTabStop] = useState<{ selection: number | null; chapter: number } | null>(null)
   const chapterIndices = useMemo(() => new Map(chapters.map((chapter, index) => [chapter.chapterNumber, index])), [chapters])
@@ -69,7 +68,6 @@ function WindowedChapterRows({ chapters, selectedChapterNumber, isChapterStage, 
   const syncWindow = useCallback((viewport: HTMLDivElement) => {
     const height = viewport.clientHeight || DEFAULT_VIEWPORT_HEIGHT
     const { start, end } = chapterWindow(chapters.length, viewport.scrollTop, height)
-    anchorRef.current = { index: Math.floor(viewport.scrollTop / ROW_STRIDE), offset: viewport.scrollTop % ROW_STRIDE }
     setWindow(previous => previous.start === start && previous.end === end ? previous : { start, end })
   }, [chapters.length])
 
@@ -90,7 +88,7 @@ function WindowedChapterRows({ chapters, selectedChapterNumber, isChapterStage, 
       revealChapter(selectedIndex)
     } else if (viewport && previous) {
       if (previous.chapters !== chapters) {
-        const top = restoreChapterAnchor(previous.chapters, chapterIndices, anchorRef.current)
+        const top = restoreChapterAnchor(previous.chapters, chapterIndices, viewport.scrollTop)
         const maxTop = Math.max(0, chapters.length * ROW_STRIDE - 4 - (viewport.clientHeight || DEFAULT_VIEWPORT_HEIGHT))
         viewport.scrollTop = Math.min(top, maxTop)
       }

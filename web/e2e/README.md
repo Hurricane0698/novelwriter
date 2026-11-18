@@ -40,25 +40,3 @@ The real-backend `llm-probe.spec.ts` supplies only the external provider respons
 locally. It covers bounded reasoning-budget retries and UI classification, not
 live-provider availability. `E2E_PROBE_PROVIDER_PORT` optionally fixes the provider
 port for a reverse SSH tunnel when browser and backend run on different hosts.
-
-## Hosted Credential Profiles
-
-Integration E2E must not hardcode personal hosted accounts.
-
-Supported resolution order:
-
-1. explicit `LoginOptions`
-2. optional env-selected profile via `E2E_HOSTED_PROFILE`
-3. default hosted env vars
-
-Example local profile for a machine-only account:
-
-```bash
-E2E_HOSTED_PROFILE=OMEGA_LOCAL_VERIFY
-E2E_HOSTED_OMEGA_LOCAL_VERIFY_NICKNAME=...
-E2E_HOSTED_OMEGA_LOCAL_VERIFY_PASSWORD=...
-E2E_HOSTED_OMEGA_LOCAL_VERIFY_USERNAME=...
-E2E_HOSTED_OMEGA_LOCAL_VERIFY_INVITE_CODE=...
-```
-
-Use profile env only in local/private config such as untracked `.env`, never in repo-tracked tests.

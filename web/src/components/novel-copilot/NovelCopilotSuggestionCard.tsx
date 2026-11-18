@@ -17,6 +17,7 @@ export function NovelCopilotSuggestionCard({
   onDismiss,
   onLocateTarget,
   selection,
+  showEvidence = false,
 }: {
   suggestion: CopilotSuggestion
   mode?: 'pending' | 'applied'
@@ -24,12 +25,13 @@ export function NovelCopilotSuggestionCard({
   onApply: (id: string) => void
   onDismiss: (id: string) => void
   onLocateTarget?: (target: CopilotSuggestionTarget) => void
+  showEvidence?: boolean
   selection?: { checked: boolean; disabled: boolean; onChange: () => void }
 }) {
   const { locale, t } = useUiLocale()
   const isApplied = mode === 'applied'
   const kindMeta = getCopilotSuggestionKindMeta(suggestion.kind, locale)
-  const [isExpanded, setIsExpanded] = useState(Boolean(selection))
+  const [isExpanded, setIsExpanded] = useState(showEvidence || Boolean(selection))
 
   return (
     <div

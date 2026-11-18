@@ -1,13 +1,8 @@
-import { BookOpen, Plus } from 'lucide-react'
+import { BookOpen } from 'lucide-react'
 import { GlassCard } from '@/components/GlassCard'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
-import { NwButton } from '@/components/ui/nw-button'
 
-export function EmptyState({
-  onCreate,
-}: {
-  onCreate: () => void
-}) {
+export function EmptyState() {
   const { t } = useUiLocale()
 
   return (
@@ -16,14 +11,6 @@ export function EmptyState({
       <p className="m-0 text-[15px] text-muted-foreground">
         {t('library.empty.title')}
       </p>
-      <NwButton
-        onClick={onCreate}
-        variant="accent"
-        className="rounded-full px-6 py-2.5 text-sm font-semibold shadow-[0_0_24px_hsl(var(--accent)/0.35)]"
-      >
-        <Plus size={18} />
-        {t('library.create')}
-      </NwButton>
     </GlassCard>
   )
 }

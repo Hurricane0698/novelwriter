@@ -5,7 +5,6 @@ import { useBootstrapStatus, useTriggerBootstrap } from '@/hooks/world/useBootst
 import { useNovelWindowIndex } from '@/hooks/novel/useNovelWindowIndex'
 import { useToast } from '@/components/world-model/shared/useToast'
 import { isBootstrapInitialized, isBootstrapStatusRunning } from '@/lib/bootstrapStatus'
-import { trackHostedAnalyticsEvent } from '@/lib/hostedAnalytics'
 import { getLlmApiErrorMessage } from '@/lib/llmErrorMessages'
 import { getWindowIndexBootstrapStatusMeta } from '@/lib/windowIndexStatus'
 import { Button } from '@/components/ui/button'
@@ -54,7 +53,6 @@ function bootstrapResultRequiresReview(job: BootstrapJobResponse): boolean {
 export function BootstrapPanel({
   novelId,
   variant = 'sidebar',
-  analyticsSource = 'unknown',
   onLifecycleChange,
   onTriggerStart,
   onTriggerError,
@@ -62,7 +60,6 @@ export function BootstrapPanel({
 }: {
   novelId: number
   variant?: BootstrapPanelVariant
-  analyticsSource?: string
   onLifecycleChange?: (state: BootstrapLifecycleState) => void
   onTriggerStart?: (startedAtMs: number) => void
   onTriggerError?: () => void
@@ -156,28 +153,12 @@ export function BootstrapPanel({
   const handleTrigger = (payload: BootstrapTriggerRequest) => {
     const startedAtMs = Date.now()
     onTriggerStart?.(startedAtMs)
-    void trackHostedAnalyticsEvent('bootstrap_trigger', {
-      novelId,
-      meta: {
-        mode: payload.mode ?? (isInitialized ? 'index_refresh' : 'initial'),
-        source_surface: analyticsSource,
-      },
-    })
     void trigger.mutateAsync(payload)
       .then((job) => {
         onJobAccepted?.(job, startedAtMs)
       })
       .catch((err) => {
         onTriggerError?.()
-        void trackHostedAnalyticsEvent('bootstrap_failed', {
-          novelId,
-          meta: {
-            mode: payload.mode ?? (isInitialized ? 'index_refresh' : 'initial'),
-            source_surface: analyticsSource,
-            status: err instanceof ApiError ? err.status : null,
-            error_code: err instanceof ApiError ? err.code ?? null : 'bootstrap_failed',
-          },
-        })
         if (err instanceof ApiError) {
           const llmMessage = getLlmApiErrorMessage(err, locale)
           if (llmMessage) {

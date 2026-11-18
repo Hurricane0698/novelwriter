@@ -9,16 +9,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_user_or_default
-from app.core.world.application import (
-    batch_confirm_relationships as confirm_relationship_drafts,
-    batch_reject_relationships as reject_relationship_drafts,
-    create_relationship as create_relationship_use_case,
-    delete_relationship as delete_relationship_use_case,
-    update_relationship as update_relationship_use_case,
-)
+from app.core.world import crud
 from app.database import get_db
-from app.models import User, WorldRelationship
+from app.models import WorldRelationship
 from app.schemas import (
     BatchConfirmRequest,
     BatchConfirmResponse,
@@ -36,8 +29,6 @@ from app.api.world_support import (
     get_entity,
     get_novel,
     parse_visibility_filter,
-    run_user_batch_operation,
-    run_user_payload_operation,
     run_world_operation,
 )
 
@@ -56,9 +47,7 @@ def list_relationships(
     visibility: Optional[str] = None,
     status: Optional[WorldModelRowStatus] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    _ = current_user
     get_novel(novel_id, db)
     query = db.query(WorldRelationship).filter(WorldRelationship.novel_id == novel_id)
     query = apply_ilike_search(query, q, WorldRelationship.label, WorldRelationship.description)
@@ -92,13 +81,11 @@ def create_relationship(
     novel_id: int,
     body: WorldRelationshipCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    return run_user_payload_operation(
-        create_relationship_use_case,
+    return run_world_operation(
+        crud.create_relationship,
         novel_id,
-        body=body,
-        current_user_id=current_user.id,
+        body.model_dump(),
         db=db,
     )
 
@@ -109,16 +96,13 @@ def update_relationship(
     relationship_id: int,
     body: WorldRelationshipUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    return run_user_payload_operation(
-        update_relationship_use_case,
+    return run_world_operation(
+        crud.update_relationship,
         novel_id,
         relationship_id,
-        body=body,
-        current_user_id=current_user.id,
+        body.model_dump(exclude_none=True),
         db=db,
-        exclude_none=True,
     )
 
 
@@ -127,10 +111,8 @@ def delete_relationship(
     novel_id: int,
     relationship_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    _ = current_user
-    run_world_operation(delete_relationship_use_case, novel_id, relationship_id, db=db)
+    run_world_operation(crud.delete_relationship, novel_id, relationship_id, db=db)
     return {"message": "Relationship deleted"}
 
 
@@ -139,13 +121,11 @@ def batch_confirm_relationships(
     novel_id: int,
     body: BatchConfirmRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    count = run_user_batch_operation(
-        confirm_relationship_drafts,
+    count = run_world_operation(
+        crud.batch_confirm_relationships,
         novel_id,
         body.ids,
-        current_user_id=current_user.id,
         db=db,
     )
     return BatchConfirmResponse(confirmed=count)
@@ -156,13 +136,11 @@ def batch_reject_relationships(
     novel_id: int,
     body: BatchRejectRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    count = run_user_batch_operation(
-        reject_relationship_drafts,
+    count = run_world_operation(
+        crud.batch_reject_relationships,
         novel_id,
         body.ids,
-        current_user_id=current_user.id,
         db=db,
     )
     return BatchRejectResponse(rejected=count)

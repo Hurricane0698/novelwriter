@@ -181,48 +181,27 @@ def _structural_headings(tokens: list[Token]) -> list[_StructuralHeading]:
 
 def parse_markdown_novel(file_path: str) -> ParsedMarkdownNovel:
     source = _read_utf8_markdown(file_path)
-    tokens = _parse_block_structure(source)
-    headings = _structural_headings(tokens)
-    del tokens
-    if not any(heading.level == 2 for heading in headings):
-        raise MarkdownStructureInvalidError(
-            "Markdown novels require at least one H2 chapter heading"
-        )
+    headings = _structural_headings(_parse_block_structure(source))
+    if not headings:
+        raise MarkdownStructureInvalidError("Markdown novels need a # or ## chapter heading")
 
     lines = source.splitlines(keepends=True)
+    if "".join(lines[:headings[0].start_line]).strip():
+        raise MarkdownStructureInvalidError("Markdown body content cannot appear before the first chapter")
+
+    chapter_level = max(heading.level for heading in headings)
     current_volume: str | None = None
-    volume_has_chapter = True
     chapters: list[ParsedChapter] = []
-    previous_structure_end = 0
-
     for index, heading in enumerate(headings):
-        between = "".join(lines[previous_structure_end:heading.start_line])
-        if not chapters and between.strip():
-            raise MarkdownStructureInvalidError(
-                "Markdown body content cannot appear before the first chapter"
-            )
-        if current_volume is not None and not volume_has_chapter and between.strip():
-            raise MarkdownStructureInvalidError(
-                "Markdown body content cannot appear before a volume's first chapter"
-            )
-
-        if heading.level == 1:
-            if current_volume is not None and not volume_has_chapter:
-                raise MarkdownStructureInvalidError(
-                    "Every Markdown volume must contain at least one chapter"
-                )
+        following = headings[index + 1] if index + 1 < len(headings) else None
+        end_line = following.start_line if following else len(lines)
+        chapter_content = "".join(lines[heading.end_line:end_line])
+        if heading.level < chapter_level:
+            if not following or following.level != chapter_level or chapter_content.strip():
+                raise MarkdownStructureInvalidError("A Markdown volume must be followed by its first chapter")
             current_volume = heading.title
-            volume_has_chapter = False
-            previous_structure_end = heading.end_line
             continue
 
-        if current_volume is not None:
-            volume_has_chapter = True
-
-        next_structure_start = (
-            headings[index + 1].start_line if index + 1 < len(headings) else len(lines)
-        )
-        chapter_content = "".join(lines[heading.end_line:next_structure_start])
         validate_markdown_chapter_body(chapter_content)
         chapters.append(
             build_parsed_chapter(
@@ -230,12 +209,6 @@ def parse_markdown_novel(file_path: str) -> ParsedMarkdownNovel:
                 chapter_content=chapter_content,
                 source_volume_title=current_volume,
             )
-        )
-        previous_structure_end = next_structure_start
-
-    if current_volume is not None and not volume_has_chapter:
-        raise MarkdownStructureInvalidError(
-            "Every Markdown volume must contain at least one chapter"
         )
 
     return ParsedMarkdownNovel(source_chars=len(source), chapters=chapters)

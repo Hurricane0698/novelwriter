@@ -118,19 +118,6 @@ def test_world_gen_template_has_expected_placeholders() -> None:
     assert "directive" in formatted
 
 
-def test_world_gen_prompts_describe_supported_system_shapes() -> None:
-    system_tpl = get_prompt(PromptKey.WORLD_GEN_SYSTEM)
-    user_tpl = get_prompt(PromptKey.WORLD_GEN)
-
-    assert "display_type" in system_tpl
-    assert "hierarchy" in system_tpl
-    assert "timeline" in system_tpl
-    assert "不要输出 graph" in system_tpl
-    assert "display_type" in user_tpl
-    assert "children" in user_tpl
-    assert "time" in user_tpl
-
-
 # -----------------------------------------------------------------------
 # 7. Provider parameter accepted (forward compat, no dispatch yet)
 # -----------------------------------------------------------------------

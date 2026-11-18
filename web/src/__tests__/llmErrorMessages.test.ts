@@ -18,17 +18,6 @@ describe('llmErrorMessages', () => {
     expect(getLlmApiErrorMessage(err, 'en')).toBe('Configure an AI model in Settings before trying again.')
   })
 
-  it('does not send hosted users to local model settings', () => {
-    vi.stubEnv('VITE_DEPLOY_MODE', 'hosted')
-    const err = new ApiError(400, 'HTTP 400', {
-      code: 'llm_config_missing',
-      detail: { code: 'llm_config_missing' },
-    })
-
-    expect(getLlmApiErrorMessage(err)).toContain('平台 AI 服务尚未配置')
-    expect(getLlmApiErrorMessage(err)).not.toContain('设置中配置')
-  })
-
   it('maps incomplete BYOK config to actionable copy', () => {
     vi.stubEnv('VITE_DEPLOY_MODE', 'selfhost')
     const err = new ApiError(400, 'HTTP 400', {
@@ -69,15 +58,6 @@ describe('llmErrorMessages', () => {
     expect(getLlmApiErrorMessage(err, 'en')).toBe(
       'API key format is invalid. Enter a valid key without whitespace or control characters.',
     )
-  })
-
-  it('maps operator disable to explicit copy', () => {
-    const err = new ApiError(503, 'HTTP 503', {
-      code: 'ai_manually_disabled',
-      detail: { code: 'ai_manually_disabled' },
-    })
-
-    expect(getLlmApiErrorMessage(err)).toContain('已关闭 AI 功能')
   })
 
   it('maps duplicate-click admission errors to actionable copy', () => {

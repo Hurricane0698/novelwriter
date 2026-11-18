@@ -4,7 +4,7 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { Plus, Upload } from 'lucide-react'
 import { EmptyState } from '@/components/library/EmptyState'
 import { WorkCard } from '@/components/library/WorkCard'
 import { PageShell } from '@/components/layout/PageShell'
@@ -15,16 +15,15 @@ import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { ApiError, api } from '@/services/api'
 import { novelKeys } from '@/hooks/novel/keys'
-import { trackHostedAnalyticsEvent } from '@/lib/hostedAnalytics'
 import { buildNovelListQueryOptions } from '@/lib/novelListQuery'
-import { clearWorldOnboardingDismissed } from '@/lib/worldOnboardingStorage'
+
+const libraryActionClass = 'h-10 rounded-full px-6 text-sm font-semibold'
 
 export function LibraryPage() {
-  const { t } = useUiLocale()
+  const { locale, t } = useUiLocale()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const pendingUploadSourceRef = useRef<string | null>(null)
   const [uploadingFileName, setUploadingFileName] = useState<string | null>(null)
   const { confirm, alert: showAlert, dialogProps } = useConfirmDialog()
 
@@ -33,12 +32,18 @@ export function LibraryPage() {
   })
 
   const deleteNovel = useMutation({
-    mutationFn: (vars: { id: number, created_at?: string | null }) => api.deleteNovel(vars.id),
-    onSuccess: (_data, vars) => {
-      clearWorldOnboardingDismissed(vars.id, vars.created_at)
-      queryClient.invalidateQueries({ queryKey: novelKeys.all })
-    },
+    mutationFn: api.deleteNovel,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: novelKeys.all }),
   })
+  const createNovel = useMutation({
+    mutationFn: () => api.createNovel(t('library.untitled'), locale),
+    onSuccess: (novel) => {
+      void queryClient.invalidateQueries({ queryKey: novelKeys.all })
+      navigate(`/novel/${novel.id}`)
+    },
+    onError: () => { void showAlert({ title: t('library.error.create') }) },
+  })
+  const busy = uploadingFileName !== null || createNovel.isPending
 
   async function handleDelete(id: number) {
     const confirmed = await confirm({
@@ -48,31 +53,18 @@ export function LibraryPage() {
       tone: 'destructive',
     })
     if (!confirmed) return
-    const novel = novels.find((n) => n.id === id)
-    deleteNovel.mutate({ id, created_at: novel?.created_at })
-  }
-
-  function handleCreate(sourceSurface: string) {
-    if (uploadingFileName) return
-    pendingUploadSourceRef.current = sourceSurface
-    void trackHostedAnalyticsEvent('upload_cta_click', {
-      meta: {
-        source_surface: sourceSurface,
-      },
-    })
-    fileInputRef.current?.click()
+    deleteNovel.mutate(id)
   }
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     const title = file.name.replace(/\.(?:txt|md)$/i, '')
-    const sourceSurface = pendingUploadSourceRef.current ?? 'unknown'
     setUploadingFileName(file.name)
     try {
-      const result = await api.uploadNovel(file, title, '', { sourceSurface })
+      const result = await api.uploadNovel(file, title)
       queryClient.invalidateQueries({ queryKey: novelKeys.all })
-      navigate(`/novel/${result.novel_id}`, { state: { novwrEntry: 'upload' } })
+      navigate(`/novel/${result.novel_id}`)
     } catch (err) {
       let description: string | undefined
       if (err instanceof ApiError) {
@@ -90,22 +82,8 @@ export function LibraryPage() {
       void showAlert({ title: t('library.error.uploadFailed'), description })
       setUploadingFileName(null)
     }
-    pendingUploadSourceRef.current = null
     e.target.value = ''
   }
-
-  const createButton = (
-    <NwButton
-      data-testid="library-create-novel"
-      onClick={() => handleCreate('library_header')}
-      variant="accent"
-      disabled={uploadingFileName !== null}
-      className="rounded-full px-6 py-2.5 text-sm font-semibold shadow-[0_0_24px_hsl(var(--accent)/0.35)]"
-    >
-      <Plus size={18} />
-      {t('library.create')}
-    </NwButton>
-  )
 
   return (
     <PageShell className="h-screen" navbarProps={{ position: 'static' }} mainClassName="overflow-hidden">
@@ -115,7 +93,7 @@ export function LibraryPage() {
         type="file"
         accept=".txt,.md"
         className="hidden"
-        disabled={uploadingFileName !== null}
+        disabled={busy}
         onChange={handleFileSelected}
       />
       {uploadingFileName ? (
@@ -139,9 +117,8 @@ export function LibraryPage() {
           </div>
         </div>
       ) : null}
-      <div className="flex flex-col flex-1 px-12 py-10 gap-8 overflow-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-6">
+      <div className="flex flex-col flex-1 px-4 sm:px-12 py-10 gap-8 overflow-auto">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-col gap-1">
             <h1 className="m-0 font-mono text-2xl font-bold text-foreground">
               {t('library.title')}
@@ -150,10 +127,30 @@ export function LibraryPage() {
               {t('library.description')}
             </p>
           </div>
-          {createButton}
+          <div className="flex flex-wrap items-center gap-2">
+            <NwButton
+              variant="glass"
+              className={libraryActionClass}
+              data-testid="library-import-novel"
+              disabled={busy}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload size={18} />
+              {t('library.import')}
+            </NwButton>
+            <NwButton
+              variant="accent"
+              className={`${libraryActionClass} shadow-[0_0_24px_hsl(var(--accent)/0.35)]`}
+              data-testid="library-create-novel"
+              disabled={busy}
+              onClick={() => createNovel.mutate()}
+            >
+              <Plus size={18} />
+              {t('library.create')}
+            </NwButton>
+          </div>
         </div>
 
-        {/* Loading */}
         {loading && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {[0, 1, 2, 3].map((i) => (
@@ -165,19 +162,16 @@ export function LibraryPage() {
           </div>
         )}
 
-        {/* Error */}
         {error && (
           <p className="text-sm text-[hsl(var(--color-warning))]">
             {t('library.error.load')}: {error instanceof Error ? error.message : t('library.error.unknown')}
           </p>
         )}
 
-        {/* Empty */}
         {!loading && !error && novels.length === 0 && (
-          <EmptyState onCreate={() => handleCreate('library_empty_state')} />
+          <EmptyState />
         )}
 
-        {/* Card Grid */}
         {!loading && !error && novels.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {novels.map((novel) => (

@@ -7,7 +7,6 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.core.world.use_case_errors import WorldUseCaseError
 from app.models import Novel, WorldEntity, WorldEntityAttribute, WorldRelationship, WorldSystem
 
@@ -18,13 +17,13 @@ class GenerationSnapshot:
     fingerprint: str
 
 
-def generation_snapshot(db: Session, novel_id: int, user_id: int | None, *, lock: bool = False) -> GenerationSnapshot:
+def generation_snapshot(db: Session, novel_id: int, *, lock: bool = False) -> GenerationSnapshot:
     if lock and db.get_bind().dialect.name == "sqlite":
         # Own this short write transaction before validating its read snapshot.
         db.connection().exec_driver_sql("BEGIN IMMEDIATE")
     query = select(Novel.title, Novel.language, Novel.owner_id, Novel.updated_at, Novel.window_index_revision).where(Novel.id == novel_id)
     novel = db.execute(query.with_for_update() if lock else query).first()
-    if novel is None or (get_settings().deploy_mode == "hosted" and novel.owner_id != user_id):
+    if novel is None:
         raise WorldUseCaseError(code="novel_not_found", message="Novel no longer available", status_code=404)
     digest = sha256()
 
@@ -50,8 +49,8 @@ def generation_snapshot(db: Session, novel_id: int, user_id: int | None, *, lock
     return GenerationSnapshot(language=novel.language, fingerprint=digest.hexdigest())
 
 
-def check_generation_snapshot(db: Session, novel_id: int, user_id: int | None, expected: GenerationSnapshot) -> None:
-    if generation_snapshot(db, novel_id, user_id, lock=True) != expected:
+def check_generation_snapshot(db: Session, novel_id: int, expected: GenerationSnapshot) -> None:
+    if generation_snapshot(db, novel_id, lock=True) != expected:
         raise WorldUseCaseError(
             code="world_generate_conflict", message="The novel or world changed during generation. Please retry.", status_code=409,
         )

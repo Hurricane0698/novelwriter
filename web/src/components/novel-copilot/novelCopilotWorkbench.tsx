@@ -142,7 +142,7 @@ export function getCopilotWorkbenchMeta(prefill: CopilotPrefill, displayTitle: s
     quickActions: [
       { id: 'review_text', label: t(locale, 'review.check'), description: t(locale, 'review.checkHint'), prompt: t(locale, 'review.prompt'), icon: FileSearch },
       ...(prefill.context.text_target.kind === 'chapter' ? [
-        { id: 'propose_world_updates', label: t(locale, 'review.update'), description: t(locale, 'review.updateHint'), prompt: t(locale, 'review.updatePrompt'), icon: Sparkles },
+        { id: 'propose_world_updates', label: t(locale, 'review.update'), description: t(locale, 'review.updateHint'), prompt: t(locale, 'review.update'), icon: Sparkles },
       ] : []),
     ],
   }

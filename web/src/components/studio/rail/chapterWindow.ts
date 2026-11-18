@@ -17,14 +17,15 @@ export function shouldRevealChapter(previous: { selection: number | null } | nul
 export function restoreChapterAnchor(
   previous: { chapterNumber: number }[],
   indices: Map<number, number>,
-  anchor: { index: number; offset: number },
+  scrollTop: number,
 ) {
+  const anchorIndex = Math.floor(scrollTop / ROW_STRIDE)
   // If the anchor itself was deleted/filtered, retain its closest surviving
   // neighbour (prefer the following row). Chapter numbers are stable identities.
   for (let distance = 0; distance < previous.length; distance += 1) {
-    for (const index of [anchor.index + distance, anchor.index - distance]) {
+    for (const index of [anchorIndex + distance, anchorIndex - distance]) {
       const next = indices.get(previous[index]?.chapterNumber)
-      if (next !== undefined) return next * ROW_STRIDE + anchor.offset
+      if (next !== undefined) return next * ROW_STRIDE + scrollTop % ROW_STRIDE
     }
   }
   return 0

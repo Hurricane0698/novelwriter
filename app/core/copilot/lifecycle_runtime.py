@@ -138,7 +138,6 @@ def create_run(
     prompt: str,
     quick_action_id: str | None = None,
     resume_run_id: str | None = None,
-    quota_reservation_id: int | None = None,
 ) -> CopilotRun:
     """Create a new run while enforcing active-run admission limits."""
     settings = run_settings()
@@ -227,7 +226,6 @@ def create_run(
         copilot_session_id=session.id,
         novel_id=session.novel_id,
         user_id=user_id,
-        quota_reservation_id=quota_reservation_id,
         quick_action_id=quick_action_id,
         status="queued",
         prompt=prompt,

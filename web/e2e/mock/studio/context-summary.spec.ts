@@ -3,9 +3,6 @@ import { mockAllApiRoutes } from '../../fixtures/api-helpers'
 
 test('reviews and confirms a distant chapter recap before continuation uses it', async ({ page }, testInfo) => {
   await mockAllApiRoutes(page)
-  await page.addInitScript(() => {
-    localStorage.setItem('novwr_world_onboarding_dismissed_1_2026-01-01T00:00:00Z', '1')
-  })
 
   const summaries: Array<Record<string, unknown>> = []
   let continuationPayload: Record<string, unknown> | null = null

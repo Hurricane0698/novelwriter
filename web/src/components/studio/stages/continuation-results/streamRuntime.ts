@@ -20,7 +20,6 @@ interface StreamRuntimeSetters {
   setFallbackNotice: Dispatch<SetStateAction<string | null>>
   setFallbackResponse: Dispatch<SetStateAction<ContinueResponse | null>>
   setIsDone: Dispatch<SetStateAction<boolean>>
-  setIsQuotaExhausted: Dispatch<SetStateAction<boolean>>
   setStreamDebug: Dispatch<SetStateAction<ContinueDebugSummary | null>>
   setStreamError: Dispatch<SetStateAction<string | null>>
   setVariants: Dispatch<SetStateAction<VariantState[]>>
@@ -62,7 +61,6 @@ export function resetStreamRuntime(
   setters.setIsDone(false)
   setters.setStreamError(null)
   setters.setStreamDebug(null)
-  setters.setIsQuotaExhausted(false)
   setters.setFallbackResponse(null)
   setters.setFallbackNotice(null)
 }
@@ -155,7 +153,6 @@ export async function resolveStreamTransportFailure(
         streamCtx.novelId,
         streamCtx.params,
         {
-          deliveryMode: 'stream-fallback',
           continuationRequestId: streamCtx.continuationRequestId,
         },
       )

@@ -1,5 +1,4 @@
 """Bounded review, explicit adoption and stale-result protection contracts."""
-import json
 import uuid
 from unittest.mock import AsyncMock
 
@@ -8,16 +7,16 @@ import pytest
 from fastapi import HTTPException
 from openai import AsyncOpenAI
 
-from app.core.ai_client import AIClient
+from app.core.ai_client import LLMUnavailableError
 from app.core.copilot.apply import apply_suggestions
 from app.core.copilot.service import create_run, open_or_reuse_session
 from app.core.copilot.suggestions import serialize_compiled_suggestions
 from app.core.copilot.text_review import (
-    SYSTEM_PROMPT, ReviewResult, build_review_prompt, compile_review_result, execute_review,
+    ReviewResult, build_review_prompt, compile_review_result, execute_review,
 )
 from app.core.copilot.text_review_apply import apply_text_suggestions, review_response
 from app.core.copilot.text_review_evidence import (
-    estimate_tokens, prepare_text_review, persist_review_context,
+    prepare_text_review, persist_review_context,
 )
 from app.core.text_targets import content_hash, stage_text_write
 from app.models import Chapter, Continuation, CopilotRun, CopilotSession, WorldEntityAttribute
@@ -63,7 +62,7 @@ def test_historical_evidence_and_budget(db, novel, chapters, entities, attribute
     assert "绝不可混入的未来正文" not in work.prompt
     assert all(item.source_ref["chapter_number"] < 2 for item in work.evidence if item.source_type == "chapter")
     assert "作者保留的隐藏解释" in work.prompt
-    assert work.estimated_input_tokens == estimate_tokens(SYSTEM_PROMPT + work.prompt) <= 8000
+    assert work.estimated_input_tokens <= 8000
     assert "实际核对" in work.coverage
     assert len(work.excerpt) < len(chapters[1].content)
 
@@ -247,38 +246,24 @@ def test_new_review_reuses_session_but_captures_current_text(db, novel, chapters
 
 
 @pytest.mark.asyncio
-async def test_malformed_review_calls_model_once_without_fallback(db, novel, chapters, monkeypatch):
+async def test_failed_chapter_review_makes_one_provider_request(db, novel, chapters, monkeypatch):
     run, work = review_work(db, novel, {"kind": "chapter", "id": chapters[2].id})
     run.status = "running"
     run.lease_owner = "review-worker"
     db.commit()
-    generate = AsyncMock(return_value="truncated JSON {")
-    monkeypatch.setattr(AIClient, "generate", generate)
-    monkeypatch.setattr("app.core.copilot.text_review.acquire_llm_slot", AsyncMock())
-    monkeypatch.setattr("app.core.copilot.text_review.release_llm_slot", lambda: None)
-    with pytest.raises(json.JSONDecodeError):
-        await execute_review(work, db_factory=TestingSessionLocal, run_id=run.run_id,
-            worker_id="review-worker", llm_config=TEST_LLM_CONFIG, user_id=1)
-    generate.assert_awaited_once()
-    assert generate.call_args.kwargs["provider_retries"] == 0
-    assert generate.call_args.kwargs["max_tokens"] == 2000
-
-
-@pytest.mark.asyncio
-async def test_provider_failure_really_sends_only_one_http_request(monkeypatch):
-    from contextlib import asynccontextmanager
-    import app.core.ai_client as module
     requests = []
+
     def provider(request):
         requests.append(request)
         return httpx.Response(500, json={"error": {"message": "temporary failure"}})
-    @asynccontextmanager
-    async def client(_config):
-        async with AsyncOpenAI(api_key="synthetic-key", base_url="https://test.invalid/v1",
-            http_client=httpx.AsyncClient(transport=httpx.MockTransport(provider))) as sdk:
-            yield sdk
-    monkeypatch.setattr(module, "_openai_client", client)
-    monkeypatch.setattr(module, "ensure_ai_available_fresh_session", lambda **kwargs: None)
-    with pytest.raises(Exception):
-        await AIClient().generate("核对", llm_config=TEST_LLM_CONFIG, provider_retries=0)
+
+    def client(**kwargs):
+        return AsyncOpenAI(**kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(provider)))
+
+    monkeypatch.setattr("app.core.ai_client.AsyncOpenAI", client)
+    monkeypatch.setattr("app.core.copilot.text_review.acquire_llm_slot", AsyncMock())
+    monkeypatch.setattr("app.core.copilot.text_review.release_llm_slot", lambda: None)
+    with pytest.raises(LLMUnavailableError):
+        await execute_review(work, db_factory=TestingSessionLocal, run_id=run.run_id,
+            worker_id="review-worker", llm_config=TEST_LLM_CONFIG, user_id=1)
     assert len(requests) == 1

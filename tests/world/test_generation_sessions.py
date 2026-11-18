@@ -61,12 +61,12 @@ async def test_generation_releases_connections_during_model_wait_and_checks_snap
 
     task = asyncio.create_task(generation_application.generate_world_from_text(
         novel_id, text="A sufficiently detailed world setting.", session_factory=factory, user_id=user_id,
-        llm_config=ResolvedLlmConfig(base_url="https://example.invalid/v1", api_key="unused", model="test", billing_source_hint="selfhost", source="selfhost_settings"),
+        llm_config=ResolvedLlmConfig(base_url="https://example.invalid/v1", api_key="unused", model="test", source="selfhost_settings"),
     ))
     try:
         await asyncio.wait_for(entered.wait(), timeout=3)
         assert checkouts > 0
-        assert active == 0, "generation must not retain auth/quota/read connections while waiting"
+        assert active == 0, "generation must release the database connection while waiting for the model"
         with factory() as db:
             if change == "novel":
                 db.get(Novel, novel_id).title = "Edited during generation"

@@ -356,19 +356,6 @@ def prepare_text_review(db: Session, run: CopilotRun, novel: Novel) -> TextRevie
     )
 
 
-def evidence_payload(evidence: list[EvidenceItem]) -> list[dict]:
-    return [
-        {
-            "id": item.evidence_id,
-            "source": item.source_type,
-            "title": item.title,
-            "text": item.excerpt,
-            "note": item.why_relevant,
-        }
-        for item in evidence
-    ]
-
-
 def persist_review_context(db: Session, run: CopilotRun, work: TextReviewWork) -> None:
     run.context_json = {
         **(run.context_json or {}),

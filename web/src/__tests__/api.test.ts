@@ -33,63 +33,6 @@ describe('api service', () => {
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('special%2Fid'), expect.any(Object))
   })
 
-  it('getAuthOptions fetches public auth options', async () => {
-    const payload = {
-      deploy_mode: 'hosted',
-      invite_login_enabled: true,
-      github_login_enabled: false,
-    }
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }))
-
-    await expect(api.getAuthOptions()).resolves.toEqual(payload)
-    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/auth/options'), expect.any(Object))
-  })
-
-  it('activateInvite includes analytics payload when provided', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ access_token: 't', token_type: 'bearer' }), { status: 201 }))
-
-    await api.activateInvite('CODE', 'writer', 'password123!', {
-      anonymous_id: 'anon-1',
-      attribution: { channel: 'longkong', invite_batch: 'batch-a' },
-    })
-
-    expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/auth/invite'),
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          invite_code: 'CODE',
-          nickname: 'writer',
-          password: 'password123!',
-          anonymous_id: 'anon-1',
-          attribution: { channel: 'longkong', invite_batch: 'batch-a' },
-        }),
-      }),
-    )
-  })
-
-  it('recordAnalyticsEvent posts hosted analytics payloads', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 202 }))
-
-    await expect(api.recordAnalyticsEvent({
-      event: 'invite_gate_view',
-      anonymous_id: 'anon-1',
-      meta: { channel: 'longkong' },
-    })).resolves.toEqual({ ok: true })
-
-    expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/auth/events'),
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          event: 'invite_gate_view',
-          anonymous_id: 'anon-1',
-          meta: { channel: 'longkong' },
-        }),
-      }),
-    )
-  })
-
   it('deleteNovel sends DELETE and handles 204', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204, headers: { 'content-length': '0' } }))
 
@@ -134,11 +77,11 @@ describe('api service', () => {
   })
 
   it('does not retry structured 503 domain errors for request endpoints', async () => {
-    const payload = { detail: { code: 'ai_manually_disabled', message: 'disabled' } }
+    const payload = { detail: { code: 'world_generate_llm_unavailable', message: 'disabled' } }
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(payload), {
         status: 503,
-        headers: { 'content-type': 'application/json', 'Retry-After': '300', 'X-Request-ID': 'req_llm_1' },
+        headers: { 'content-type': 'application/json', 'X-Request-ID': 'req_llm_1' },
       }),
     )
 
@@ -148,7 +91,7 @@ describe('api service', () => {
     } catch (e) {
       const err = e as ApiError
       expect(err).toBeInstanceOf(ApiError)
-      expect(err.code).toBe('ai_manually_disabled')
+      expect(err.code).toBe('world_generate_llm_unavailable')
       expect(err.requestId).toBe('req_llm_1')
       expect(fetchSpy).toHaveBeenCalledTimes(1)
     }
@@ -214,11 +157,11 @@ describe('api service', () => {
   })
 
   it('streamContinuation does not retry structured 503 domain errors and preserves error code', async () => {
-    const payload = { detail: { code: 'ai_manually_disabled', message: 'disabled' } }
+    const payload = { detail: { code: 'world_generate_llm_unavailable', message: 'disabled' } }
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(payload), {
         status: 503,
-        headers: { 'content-type': 'application/json', 'Retry-After': '300', 'X-Request-ID': 'req_stream_1' },
+        headers: { 'content-type': 'application/json', 'X-Request-ID': 'req_stream_1' },
       }),
     )
 
@@ -230,7 +173,7 @@ describe('api service', () => {
     } catch (e) {
       const err = e as ApiError
       expect(err).toBeInstanceOf(ApiError)
-      expect(err.code).toBe('ai_manually_disabled')
+      expect(err.code).toBe('world_generate_llm_unavailable')
       expect(err.requestId).toBe('req_stream_1')
       expect(fetchSpy).toHaveBeenCalledTimes(1)
     }
@@ -260,7 +203,7 @@ describe('api service', () => {
     expect(headers2['X-LLM-Model']).toBeUndefined()
   })
 
-  it.each(['hosted', 'desktop'] as const)('omits selfhost BYOK headers on %s LLM endpoints', async (runtimeMode) => {
+  it.each(['desktop'] as const)('omits selfhost BYOK headers on %s LLM endpoints', async (runtimeMode) => {
     vi.stubEnv('VITE_DEPLOY_MODE', runtimeMode)
     setSelfhostLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
 
@@ -396,23 +339,21 @@ describe('api service', () => {
     expect(configured).not.toHaveProperty('api_key')
   })
 
-  it('tags non-stream continuation fallback requests for backend analytics', async () => {
+  it('passes the continuation request ID to the non-stream endpoint', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ continuations: [], debug: {} }), { status: 200 }),
     )
 
     await api.continueNovel(1, { num_versions: 1 }, {
-      deliveryMode: 'stream-fallback',
       continuationRequestId: 'req-123',
     })
 
     const init = (fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0][1]
     const headers = init.headers as Record<string, string>
-    expect(headers['X-Novwr-Delivery-Mode']).toBe('stream-fallback')
     expect(headers['X-Novwr-Continuation-Request-ID']).toBe('req-123')
   })
 
-  it.each(['hosted', 'desktop'] as const)('streamContinuation omits BYOK LLM headers in %s mode', async (runtimeMode) => {
+  it.each(['desktop'] as const)('streamContinuation omits BYOK LLM headers in %s mode', async (runtimeMode) => {
     vi.stubEnv('VITE_DEPLOY_MODE', runtimeMode)
     setSelfhostLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
 
@@ -441,7 +382,7 @@ describe('api service', () => {
     expect(headers['X-Novwr-Continuation-Request-ID']).toBe('req-456')
   })
 
-  it.each(['hosted', 'desktop'] as const)('triggerBootstrap omits BYOK LLM headers in %s mode', async (runtimeMode) => {
+  it.each(['desktop'] as const)('triggerBootstrap omits BYOK LLM headers in %s mode', async (runtimeMode) => {
     vi.stubEnv('VITE_DEPLOY_MODE', runtimeMode)
     setSelfhostLlmConfig({ baseUrl: 'http://example.com/v1', apiKey: 'sk-test', model: 'm' })
 

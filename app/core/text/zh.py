@@ -8,44 +8,13 @@ from __future__ import annotations
 from app.core.text.catalog import PromptKey, register_templates
 
 _TEMPLATES: dict[PromptKey, str] = {
-    # ------------------------------------------------------------------
-    # Continuation: writer system prompt
-    # ------------------------------------------------------------------
-    PromptKey.SYSTEM: """你是一位专业的小说续写作家。
+    PromptKey.SYSTEM: """接着前文写小说正文。沿用作品的语言、叙述视角和节奏，从上一场尚未解决的行动、选择或后果写起。遵循作者在 <user_instruction> 中对下一场的安排。
 
-【核心规则】
-1. 保持角色性格一致
-2. 情节自然推进，避免突兀转折
-3. 不要重复已有章节的内容
-4. 适当设置悬念与冲突
-5. 与上文展示的角色状态和人物关系保持一致
+<world_knowledge> 记录与本场有关的设定。人物按自己见过、听过或能推断的信息行动，可以误解别人。保持已有称呼、物品归属、承诺和 <narrative_constraints> 中的规则一致。作者引入新人物或新地点时，让他们在场景中自然出现。
 
-【视角纪律 — 最高优先级】
-<world_knowledge> 给予你（作者）全知视角，但角色并不共享这些知识。
-在写任何角色的心理活动或对话之前，先问自己：「这个角色在故事中是否亲眼目睹或被明确告知过这件事？」
-如果没有，该角色绝不能想到、说出或据此行动——即使这件事出现在 <world_knowledge> 中。
-角色可能持有错误信念，你必须忠实保留这些错误信念。
+直接写故事，不加章节标题、提纲或创作说明。""",
 
-【反幻觉规则】
-- 不要引入 <world_knowledge> 或 <recent_chapters> 中未出现的专有名词（地名、门派、功法、法宝、位阶等）；拿不准时用描述性语言代替，不要命名
-- 不要发明新的称号或外号；只使用 <world_knowledge> 和 <recent_chapters> 中已出现的角色名与别名；拿不准时用本名
-
-【风格纪律 — 必须遵守】
-- 语体、叙事口吻、句式节奏、用词层级必须与 <recent_chapters> 完全一致
-- 不得发生语体跳变：续写的每一句话都应与 <recent_chapters> 处于相同的语言风格
-- 用与 <recent_chapters> 相同的语言写作
-- 若 <user_instruction> 的措辞风格与 <recent_chapters> 不同，仍以 <recent_chapters> 的风格为准
-- 开篇第一句就要与 <recent_chapters> 的语体无缝衔接
-
-【格式规则】
-- 不要输出章节标题（如「第X章 ...」），直接从正文开始；章节标题由系统管理
-- 不要输出分析、规划、思维链或元评论，只输出故事正文
-- 若存在 <narrative_constraints>，必须严格遵守其中每一条规则；与其他规则冲突时，<narrative_constraints> 优先""",
-
-    # ------------------------------------------------------------------
-    # Continuation: user message template
-    # ------------------------------------------------------------------
-PromptKey.CONTINUATION: """<novel_info>
+    PromptKey.CONTINUATION: """<novel_info>
 书名：{title}
 待续章节：{next_chapter_reference}
 </novel_info>
@@ -53,54 +22,15 @@ PromptKey.CONTINUATION: """<novel_info>
 {world_context}
 {narrative_constraints}""",
 
-    # ------------------------------------------------------------------
-    # World generation: system prompt
-    # ------------------------------------------------------------------
-    PromptKey.WORLD_GEN_SYSTEM: """你是一名资深的小说世界观整理编辑。
+    PromptKey.WORLD_GEN_SYSTEM: """把作者提供的设定整理成供后续写作使用的草稿。留下会改变下一场写法的事实，例如谁拿着钥匙、谁欠谁什么、谁知道一个秘密、某条规则会阻止什么行动。用一句话保留事实成立的条件。传闻归于说话者；没有依据的推断留给作者。只要原文支持，三类条目都可以为空。""",
 
-你的任务是：从用户提供的"世界观设定文本"中提取结构化信息，用于构建世界模型草稿。
+    PromptKey.WORLD_GEN: """从下文提取 entities、relationships 和 systems。实体沿用原名，entity_type 用 Character、Location、Item、Faction 等英文类别。关系用 source、target 指向已提取的实体，label 写清双方的具体关系。
+体系只收录能一起使用的规则。display_type 为 list、hierarchy 或 timeline，items 用 label 和 description 表达具体内容，层级用 children，时间线用 time。constraints 放写下一场时需要遵守的规则。相同信息只记一次。
 
-原则：
-1) 以明确、稳定、可复用为先；不确定就不要写，但对已经明确的设定要尽量覆盖，不要把大量设定压缩成极少量条目。
-2) 不要编造文本中不存在的实体、关系或体系。
-3) 关系有方向：source 表示主动方 / 上位方 / 拥有者 / 发起动作的一方；target 表示被动方 / 下位方 / 被拥有者 / 承受动作的一方。
-4) 仅输出 schema 允许的字段，不要输出任何元数据（例如 id、origin、status、visibility 等）。
-5) systems 应优先承载世界规则、组织制度、修炼体系、历史分期、地理结构、阵营原则、禁忌规则等成组设定；当文本信息充分时，请拆成多个 items，而不是只写一句笼统概括。
-6) systems.display_type 只能使用三种：
-   - list：默认类型，适合平铺要点；items 只写 label/description。
-   - hierarchy：存在上下级、层级、树状归属时使用；items 用 children 表达嵌套结构。
-   - timeline：存在明确时间顺序、历史阶段、大事件年表时使用；items 必须提供 time。
-7) 不要输出 graph，也不要尝试生成坐标、边或布局信息。""",
-
-    # ------------------------------------------------------------------
-    # World generation: user message template
-    # ------------------------------------------------------------------
-    PromptKey.WORLD_GEN: """请阅读下面的世界观设定文本，并提取：
-- entities: 角色/地点/势力/组织/物品/概念/修炼体系中的"实体"
-- relationships: 实体之间的关系（必须给出 source/target/label）
-- systems: 世界规则/设定集合（必须给出 display_type；constraints 可用于必须遵守的写作规则）
-
-要求：
-1) 实体名称尽量使用文本原文，保持简短且唯一。
-2) entity_type 使用简洁英文类别（例如 Character/Location/Faction/Item/Concept/Organization/Vehicle），不需要枚举完整；如果不确定，使用 Concept。
-3) 关系 label 用简短中文短语表达，不要在 label 末尾添加"关系"二字（例如用"师父"而不是"师徒关系"）。
-4) 如果关系引用了未出现在 entities 中的实体，请宁可不输出该关系。
-5) systems.display_type 选择规则：
-   - list：默认；适合修炼资源种类、阵营原则、禁忌规则、制度要点等平铺信息。
-   - hierarchy：适合修炼等级体系、组织架构、权力金字塔、地域层级等树状结构；items 需用 children 嵌套。
-   - timeline：适合历史分期、大事件年表、王朝更替、灾变顺序等时间结构；items 需填写 time。
-6) systems 要尽量细化：当文本提供了规则、等级、阵营、地域、制度、历史阶段、禁忌、资源、技术路线等要点时，应拆成 items，而不是只写一条模糊 summary。
-7) 若文本信息量很大，请优先保证覆盖率，不要把几万字设定压缩成寥寥几个条目。
-
-{chunk_directive}
-
-【世界观设定文本】
-{text}
-""",
-    # ------------------------------------------------------------------
-    # Bootstrap: candidate refinement
-    # ------------------------------------------------------------------
+【设定原文】{chunk_directive}
+{text}""",
     PromptKey.BOOTSTRAP_REFINEMENT: """你正在从一部小说的候选词中提炼出世界观实体和关系。
+从原文支持的候选中优先留下会影响人物选择、行动或后果的设定。同现本身不能证明两者有关系。
 
 ## 输入
 

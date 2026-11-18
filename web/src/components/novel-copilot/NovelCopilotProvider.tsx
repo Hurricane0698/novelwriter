@@ -31,6 +31,7 @@ export function NovelCopilotProvider({
   const runsState = useNovelCopilotRunsState(sessionsState.sessions)
   const controllerState = useNovelCopilotRuns({
     sessions: sessionsState.sessions,
+    getLocalSession: sessionsState.getLocalSession,
     focusedSessionId: sessionsState.focusedSessionId,
     runsBySessionId: runsState.runsBySessionId,
     setRunsBySessionId: runsState.setRunsBySessionId,

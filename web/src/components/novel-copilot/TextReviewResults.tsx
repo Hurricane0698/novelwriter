@@ -81,7 +81,7 @@ export function TextReviewResults({ run, session, onLocateTarget }: {
     {run.suggestions.filter((s) => s.status !== 'dismissed').map((suggestion) => <NovelCopilotSuggestionCard
       key={suggestion.suggestion_id} suggestion={suggestion}
       mode={suggestion.status === 'applied' ? 'applied' : 'pending'}
-      isApplying={Boolean(blocked)}
+      isApplying={Boolean(blocked)} showEvidence={metadata.action === 'propose_world_updates'}
       selection={metadata.action === 'review_text' ? {
         checked: selected.includes(suggestion.suggestion_id), disabled: Boolean(blocked) ||
           (!selected.includes(suggestion.suggestion_id) && editsOverlap(run, [...selected, suggestion.suggestion_id])),

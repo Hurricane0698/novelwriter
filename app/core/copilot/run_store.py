@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from app.core.copilot.run_state import (
     resolve_running_lease_expiry,
     run_settings,
-    settle_run_quota,
     utcnow_naive,
 )
 from app.core.copilot.scope import EvidenceItem, serialize_evidence
@@ -152,7 +151,6 @@ def persist_completed_run(
         store_run.finished_at = utcnow_naive()
         if workspace:
             store_run.workspace_json = workspace_to_storage(workspace)
-        settle_run_quota(db, store_run, charge_count=1)
         check_sync_cancelled()
         db.commit()
         return True

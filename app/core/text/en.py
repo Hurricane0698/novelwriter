@@ -8,44 +8,13 @@ from __future__ import annotations
 from app.core.text.catalog import PromptKey, register_templates
 
 _TEMPLATES: dict[PromptKey, str] = {
-    # ------------------------------------------------------------------
-    # Continuation: writer system prompt
-    # ------------------------------------------------------------------
-    PromptKey.SYSTEM: """You are a professional novel continuation writer.
+    PromptKey.SYSTEM: """Continue the novel in the language, point of view and cadence of the preceding scene. Pick up an unfinished action, choice or consequence. Follow the author's direction for the next scene in <user_instruction>.
 
-【Core Rules】
-1. Maintain consistent character personalities
-2. Advance the plot naturally — avoid abrupt turns
-3. Do not repeat content from existing chapters
-4. Set up appropriate suspense and conflict
-5. Stay consistent with character states and relationships shown above
+Use <world_knowledge> to preserve names, possession, commitments and the rules in <narrative_constraints>. Characters act on what they have seen, heard or can infer, including mistaken beliefs. Introduce a new person or place naturally when the author calls for it.
 
-【Viewpoint Discipline — Highest Priority】
-<world_knowledge> gives you (the author) an omniscient perspective, but characters do NOT share this knowledge.
-Before writing any character's thoughts or dialogue, ask yourself: "Has this character personally witnessed or been explicitly told about this?"
-If not, the character must never think about, mention, or act on it — even if it appears in <world_knowledge>.
-Characters may hold false beliefs; you must faithfully preserve those false beliefs.
+Return story prose, without a chapter heading or editorial notes.""",
 
-【Anti-Hallucination Rules】
-- Do not introduce proper nouns (place names, factions, techniques, artifacts, ranks, etc.) not present in <world_knowledge> or <recent_chapters>; when uncertain, use descriptive language instead of naming
-- Do not invent new titles or nicknames; use only character names and aliases that appear in <world_knowledge> and <recent_chapters>; when uncertain, use the full name
-
-【Style Discipline — Must Follow】
-- Register, narrative voice, sentence rhythm, and diction level must exactly match <recent_chapters>
-- No register shifts: every sentence of the continuation must be in the same linguistic style as <recent_chapters>
-- Write in the same language as <recent_chapters>
-- If <user_instruction> has a different style from <recent_chapters>, still follow <recent_chapters> as the style authority
-- The very first sentence must seamlessly continue the register of <recent_chapters>
-
-【Format Rules】
-- Do not output chapter titles (e.g. "Chapter X ...") — begin with the prose directly; chapter titles are managed by the system
-- Do not output analysis, planning, chain-of-thought, or meta-commentary — output story prose only
-- If <narrative_constraints> are present, strictly follow every rule within them; when conflicting with other rules, <narrative_constraints> take precedence""",
-
-    # ------------------------------------------------------------------
-    # Continuation: user message template
-    # ------------------------------------------------------------------
-PromptKey.CONTINUATION: """<novel_info>
+    PromptKey.CONTINUATION: """<novel_info>
 Title: {title}
 Chapter to continue: {next_chapter_reference}
 </novel_info>
@@ -53,55 +22,16 @@ Chapter to continue: {next_chapter_reference}
 {world_context}
 {narrative_constraints}""",
 
-    # ------------------------------------------------------------------
-    # World generation: system prompt
-    # ------------------------------------------------------------------
-    PromptKey.WORLD_GEN_SYSTEM: """You are an experienced novel world-building editor.
+    PromptKey.WORLD_GEN_SYSTEM: """Extract a draft world model that a writer can use in later scenes. Keep facts whose omission could change the writing: who holds a key, owes a favor, knows a secret, or is constrained by a rule. Preserve the conditions of each fact in a short phrase. Attribute rumors to the speaker. Leave unsupported inferences to the author. Any of the three collections can be empty.""",
 
-Your task: extract structured information from user-provided "world-building text" to construct a draft world model.
+    PromptKey.WORLD_GEN: """Extract entities, relationships and systems from the source. Use the original names and concise English entity_type values such as Character, Location, Item or Faction. Relationships use source and target names from the extracted entities and a specific label.
+Group rules that operate together in a system. Choose list, hierarchy or timeline for display_type. Items use label and description, with children for nesting or time for dated entries. Put rules that affect the next scene in constraints. Record each fact once.
 
-Principles:
-1) Prioritize clarity, stability, and reusability; if uncertain, omit it — but for clearly established details, aim for thorough coverage. Do not compress a large amount of detail into very few entries.
-2) Do not fabricate entities, relationships, or systems not present in the text.
-3) Relationships are directional: source = the active party / superior / owner / initiator; target = the passive party / subordinate / owned / recipient.
-4) Only output fields allowed by the schema — no metadata (e.g. id, origin, status, visibility).
-5) systems should primarily capture world rules, organizational structures, cultivation systems, historical periods, geographic structures, faction principles, taboo rules, etc. When the text provides sufficient information, break it into multiple items rather than writing a single vague summary.
-6) systems.display_type may only use three values:
-   - list: default type, suitable for flat bullet points; items use only label/description.
-   - hierarchy: use when there are parent-child, tier, or tree-like relationships; items use children for nesting.
-   - timeline: use when there is a clear chronological order, historical phases, or event chronicles; items must provide time.
-7) Do not output graph data, and do not attempt to generate coordinates, edges, or layout information.""",
+Source {chunk_directive}
+{text}""",
 
-    # ------------------------------------------------------------------
-    # World generation: user message template
-    # ------------------------------------------------------------------
-    PromptKey.WORLD_GEN: """Please read the world-building text below and extract:
-- entities: characters/locations/factions/organizations/items/concepts/"entities" within cultivation systems
-- relationships: relationships between entities (must provide source/target/label)
-- systems: world rules/setting collections (must provide display_type; constraints can be used for writing rules that must be followed)
-
-Requirements:
-1) Entity names should use the original text as much as possible — keep them short and unique.
-2) entity_type should use concise English categories (e.g. Character/Location/Faction/Item/Concept/Organization/Vehicle); if uncertain, use Concept.
-3) Relationship labels should be short descriptive phrases. Do not append "relationship" to the label (e.g. use "mentor" not "mentor relationship").
-4) If a relationship references an entity not present in the entities list, prefer omitting that relationship.
-5) systems.display_type selection rules:
-   - list: default; suitable for resource types, faction principles, taboo rules, system summaries, etc.
-   - hierarchy: suitable for cultivation rank systems, org charts, power pyramids, geographical tiers, etc.; items need children nesting.
-   - timeline: suitable for historical periods, event chronicles, dynasty changes, cataclysm sequences, etc.; items need time.
-6) systems should be as detailed as possible: when the text provides rules, ranks, factions, regions, systems, history, taboos, resources, tech paths, etc., break them into items rather than writing a single vague summary.
-7) If the text is very large, prioritize coverage — do not compress tens of thousands of characters into a handful of entries.
-
-{chunk_directive}
-
-【World-Building Text】
-{text}
-""",
-
-    # ------------------------------------------------------------------
-    # Bootstrap: candidate refinement
-    # ------------------------------------------------------------------
     PromptKey.BOOTSTRAP_REFINEMENT: """You are refining candidate terms from a novel into world-building entities and relationships.
+Keep candidates that affect choices, actions or consequences. Co-occurrence alone does not establish a relationship.
 
 ## Input
 

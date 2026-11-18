@@ -56,7 +56,7 @@ async def test_failed_later_chunk_preserves_previous_drafts(db, novel, monkeypat
             text="x" * 24,
             llm_config=ResolvedLlmConfig(
                 base_url="https://example.com/v1", api_key="key", model="model",
-                billing_source_hint="selfhost", source="selfhost_settings",
+                source="selfhost_settings",
             ),
         )
     assert generate.await_count == 2
@@ -106,7 +106,7 @@ def novel(db):
 @pytest.fixture
 def client(db):
     from app.api import world
-    from app.core.auth import get_current_user_or_default, check_generation_quota
+    from app.core.auth import get_current_user_or_default
 
     test_app = FastAPI()
     test_app.include_router(world.router)
@@ -129,7 +129,6 @@ def client(db):
 
     test_app.dependency_overrides[get_db] = override_get_db
     test_app.dependency_overrides[get_current_user_or_default] = lambda: fake_user
-    test_app.dependency_overrides[check_generation_quota] = lambda: fake_user
 
     with TestClient(test_app) as c:
         yield c
@@ -233,7 +232,6 @@ async def test_generate_world_drafts_uses_novel_language_for_prompt_locale(db, n
             base_url="https://example.com/v1",
             api_key="key",
             model="model",
-            billing_source_hint="selfhost",
             source="selfhost_settings",
         ),
     )
@@ -481,7 +479,6 @@ def test_generate_world_forwards_byok_headers(client, novel, monkeypatch):
         base_url="https://example.com/v1",
         api_key="test-key",
         model="test-model",
-        billing_source_hint="selfhost",
         source="selfhost_request",
     )
 

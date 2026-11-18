@@ -35,7 +35,6 @@ interface UseContinuationResultsSourceResult {
   streamDebug: ContinueDebugSummary | null
   streamError: string | null
   isDone: boolean
-  isQuotaExhausted: boolean
   isStreamMode: boolean
   isFallbackMode: boolean
   isLegacyMode: boolean
@@ -71,7 +70,6 @@ export function useContinuationResultsSource({
     streamDebug,
     streamError,
     isDone,
-    isQuotaExhausted,
     isStreamMode,
     isFallbackMode,
     retryStream,
@@ -122,7 +120,6 @@ export function useContinuationResultsSource({
     streamDebug,
     streamError,
     isDone,
-    isQuotaExhausted,
     isStreamMode,
     isFallbackMode,
     isLegacyMode,

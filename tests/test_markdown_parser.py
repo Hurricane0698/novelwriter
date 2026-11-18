@@ -119,13 +119,13 @@ def test_markdown_parser_rejects_decoded_heading_above_storage_limit(
         parse_markdown_novel(str(_write_markdown(tmp_path, f"## {title}\n正文")))
 
 
-@pytest.mark.parametrize("heading", ["序章", "Prologue"])
+@pytest.mark.parametrize(("marker", "heading"), [("#", "序章"), ("##", "Prologue")])
 def test_markdown_parser_preserves_standalone_special_heading_as_title(
     tmp_path: Path,
-    heading: str,
+    marker: str, heading: str,
 ):
     parsed = parse_markdown_novel(
-        str(_write_markdown(tmp_path, f"## {heading}\n正文"))
+        str(_write_markdown(tmp_path, f"{marker} {heading}\n正文"))
     )
 
     assert parsed.chapters[0].title == heading
@@ -255,7 +255,7 @@ def test_markdown_parser_enforces_block_token_budget(
 @pytest.mark.parametrize(
     "source",
     [
-        "# 只有卷\n正文",
+        "只有正文，没有章节标题",
         "前置正文\n## 第一章\n正文",
         "# 空卷\n# 下一卷\n## 第一章\n正文",
         "## **第一章**\n正文",

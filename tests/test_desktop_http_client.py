@@ -34,7 +34,7 @@ async def test_application_factory_accepts_ipv6_bypass_networks(monkeypatch, pro
     monkeypatch.setattr(ai_client, "get_settings", lambda: SimpleNamespace(runtime_mode="desktop"))
     config = ResolvedLlmConfig(
         base_url="http://127.0.0.1:9/v1", api_key="synthetic-key", model="test-model",
-        billing_source_hint="selfhost", source="desktop_store",
+        source="desktop_store",
     )
     client = ai_client._create_openai_client(config)
     await client.close()
@@ -144,10 +144,9 @@ async def test_explicit_proxy_and_disabled_environment_keep_httpx_semantics(prox
 async def test_generation_uses_real_desktop_provider_transport(monkeypatch, local_provider_and_proxy, stream):
     provider_url, requests = local_provider_and_proxy
     monkeypatch.setattr(ai_client, "get_settings", lambda: SimpleNamespace(runtime_mode="desktop"))
-    monkeypatch.setattr(ai_client, "ensure_ai_available_fresh_session", lambda **_kwargs: None)
     config = ResolvedLlmConfig(
         base_url=provider_url + "/v1", api_key="synthetic-key", model="test-model",
-        billing_source_hint="selfhost", source="desktop_store",
+        source="desktop_store",
     )
     if stream:
         assert [part async for part in ai_client.AIClient().generate_stream("hi", llm_config=config)] == ["ok"]
@@ -163,9 +162,8 @@ async def test_probe_uses_same_real_desktop_transport(monkeypatch, local_provide
     monkeypatch.setattr(llm, "get_settings", lambda: SimpleNamespace(runtime_mode="desktop"))
     monkeypatch.setattr(llm, "get_llm_config", lambda _request: ResolvedLlmConfig(
         base_url=provider_url + "/v1", api_key="synthetic-key", model="test-model",
-        billing_source_hint="selfhost", source="desktop_store",
+        source="desktop_store",
     ))
-    monkeypatch.setattr(llm, "ensure_ai_available", lambda *_args, **_kwargs: None)
     app = FastAPI()
     app.include_router(llm.router)
     app.dependency_overrides[get_db] = lambda: None

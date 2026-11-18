@@ -166,7 +166,6 @@ export function StudioWorldEntryPanel({
           <BootstrapPanel
             novelId={novelId}
             variant="sidebar"
-            analyticsSource="studio_world_entry_panel"
             onLifecycleChange={handleBootstrapLifecycleChange}
             onTriggerStart={handleBootstrapTriggerStart}
             onTriggerError={handleBootstrapTriggerError}
@@ -179,7 +178,6 @@ export function StudioWorldEntryPanel({
         novelId={novelId}
         open={worldGenOpen}
         onOpenChange={setWorldGenOpen}
-        analyticsSource="studio_world_entry_panel"
         onGenerateSuccess={handleGenerateSuccess}
         onImportSuccess={handleImportSuccess}
         navigateOnGenerateSuccess={false}

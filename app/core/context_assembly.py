@@ -1,37 +1,24 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""
-Context Assembly — visibility-driven prompt injection for WorldModel.
-
-Implements the "Prompt Assembly Visibility Contract" from:
-  /mnt/d/nov_wr-context/spec/backend/context-assembly.md
-
-Primary callers:
-- /api/novels/{novel_id}/continue (writer context)
-- future consistency checker (checker context)
-
-This module is intentionally DB-read-only.
-"""
+"""Select confirmed world details for a continuation scene."""
 
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass
-import json
-import logging
-from typing import Any, Dict, Iterable, Mapping, Sequence, Set
+from collections import defaultdict
+from typing import Any, Iterable, Mapping, Sequence
 
 import ahocorasick
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, load_only
 
+from app.core.continuation_text import extract_narrative_constraints, format_world_context_for_prompt
+from app.core.indexing.builder import get_tokenizer, load_common_words
 from app.language_policy import LanguagePolicy, get_language_policy
 from app.models import Novel, WorldEntity, WorldRelationship, WorldSystem
-from app.world_visibility import VIS_ACTIVE, VIS_HIDDEN, VIS_REFERENCE
+from app.world_visibility import VIS_ACTIVE, VIS_HIDDEN
 
-logger = logging.getLogger(__name__)
-
-DEFAULT_WORLD_CONTEXT_TOKEN_BUDGET = 100_000
+WORLD_CONTEXT_MAX_CHARS = 12_000
 
 
 @dataclass(frozen=True)
@@ -44,9 +31,7 @@ class _SpanMatch:
 
 @dataclass
 class _EntityMatchAgg:
-    """Aggregated match info for sorting + debug."""
-
-    terms: Set[str]
+    terms: set[str]
     count: int = 0
 
 
@@ -103,37 +88,14 @@ def _build_keyword_index(
 
 
 def _find_relevant_entities(
-    db: Session,
-    novel_id: int,
-    chapter_text: str,
-) -> tuple[Set[int], Mapping[int, _EntityMatchAgg], Set[str]]:
-    """
-    Relevance detection via Aho-Corasick scan over confirmed entity names/aliases.
-
-    Noise rules (MVP):
-    - ambiguous alias/name (keyword maps to multiple entities) does not trigger
-    - longest match priority: drop matches fully contained within a longer match span
-    """
-    raw_text = chapter_text or ""
-
-    confirmed_entities = (
-        db.query(WorldEntity)
-        .filter(WorldEntity.novel_id == novel_id, WorldEntity.status == "confirmed")
-        .all()
-    )
-    if not confirmed_entities or not raw_text.strip():
-        return set(), {}, set()
-
-    novel_language = db.query(Novel.language).filter(Novel.id == novel_id).scalar()
-    policy = get_language_policy(novel_language, sample_text=raw_text)
-    text = policy.normalize_for_matching(raw_text)
-
+    entities: Sequence[WorldEntity], policy: LanguagePolicy, text: str,
+) -> tuple[dict[int, _EntityMatchAgg], set[str]]:
     keyword_to_entity_id, ambiguous_keywords, keyword_display = _build_keyword_index(
-        confirmed_entities,
+        entities,
         policy=policy,
     )
     if not keyword_to_entity_id:
-        return set(), {}, ambiguous_keywords
+        return {}, ambiguous_keywords
 
     automaton = ahocorasick.Automaton()
     for keyword, entity_id in keyword_to_entity_id.items():
@@ -150,18 +112,7 @@ def _find_relevant_entities(
             continue
         matches.append(_SpanMatch(start=start, end=end_idx + 1, entity_id=entity_id, keyword=display_keyword))
 
-    if not matches:
-        return set(), {}, ambiguous_keywords
-
-    # Deduplicate identical spans (can happen when data contains duplicate aliases).
-    deduped: dict[tuple[int, int, int], _SpanMatch] = {}
-    for m in matches:
-        deduped[(m.start, m.end, m.entity_id)] = m
-    matches = list(deduped.values())
-
-    # Longest-match priority: drop any match span fully contained in a previously
-    # kept match with an earlier (or equal) start and later (or equal) end.
-    # Sorting by (start asc, end desc) ensures containers are seen first.
+    # Ignore short aliases contained inside a longer name at the same position.
     matches.sort(key=lambda m: (m.start, -(m.end - m.start), -m.end, m.entity_id))
     kept: list[_SpanMatch] = []
     max_end = -1
@@ -171,10 +122,8 @@ def _find_relevant_entities(
         kept.append(m)
         max_end = m.end
 
-    relevant_ids: set[int] = set()
     agg: dict[int, _EntityMatchAgg] = {}
     for m in kept:
-        relevant_ids.add(int(m.entity_id))
         bucket = agg.get(int(m.entity_id))
         if bucket is None:
             bucket = _EntityMatchAgg(terms=set(), count=0)
@@ -182,330 +131,199 @@ def _find_relevant_entities(
         bucket.count += 1
         bucket.terms.add(m.keyword)
 
-    return relevant_ids, agg, ambiguous_keywords
+    return agg, ambiguous_keywords
 
 
-def _filter_system_data_for_writer(display_type: str, data: Any) -> Any:
-    """Filter per-element visibility inside WorldSystem.data for writer context."""
-    if not isinstance(data, dict):
-        return data
+def _scene_system_data(system, includes, relevant_ids, *, whole):
+    """Keep matching entries and their ancestors; hidden branches never enter the prompt."""
+    key = {"hierarchy": "nodes", "timeline": "events", "list": "items", "graph": "nodes"}.get(system.display_type)
+    if not key:
+        return {}
 
-    def keep(vis: str | None) -> bool:
-        if not vis:
-            return True
-        return vis != VIS_HIDDEN
-
-    if display_type == "hierarchy":
-        nodes = data.get("nodes")
-        if not isinstance(nodes, list):
-            return data
-
-        def filter_node(node: Any) -> Any | None:
-            if not isinstance(node, dict):
-                return None
-            if not keep(node.get("visibility")):
-                return None
-            children = node.get("children")
-            if isinstance(children, list):
-                filtered_children = [c for c in (filter_node(x) for x in children) if c is not None]
-                node = {**node, "children": filtered_children}
-            return node
-
-        filtered = [n for n in (filter_node(x) for x in nodes) if n is not None]
-        return {**data, "nodes": filtered}
-
-    if display_type == "timeline":
-        events = data.get("events")
-        if isinstance(events, list):
-            return {**data, "events": [e for e in events if isinstance(e, dict) and keep(e.get("visibility"))]}
-        return data
-
-    if display_type == "list":
-        items = data.get("items")
-        if isinstance(items, list):
-            return {**data, "items": [i for i in items if isinstance(i, dict) and keep(i.get("visibility"))]}
-        return data
-
-    return data
-
-
-def _estimate_writer_context_tokens(writer_ctx: Mapping[str, Any]) -> int:
-    """
-    Rough token estimator for writer prompt injection.
-
-    We intentionally use a cheap, deterministic character-count heuristic instead of
-    a tokenizer. The budget is a safety fuse (100k) and doesn't need precision.
-    """
-
-    def s(value: Any) -> str:
-        return str(value) if value is not None else ""
-
-    total = 0
-    systems = writer_ctx.get("systems") or []
-    if isinstance(systems, list):
-        for sys in systems:
-            if not isinstance(sys, dict):
+    def select(entries):
+        selected = []
+        for entry in entries:
+            if entry.get("visibility") == VIS_HIDDEN:
                 continue
-            total += len(s(sys.get("name")))
-            total += len(s(sys.get("display_type")))
-            total += len(s(sys.get("description")))
-            constraints = sys.get("constraints") or []
-            if isinstance(constraints, list):
-                for c in constraints:
-                    total += len(s(c))
-            data = sys.get("data")
-            if data is not None:
-                try:
-                    total += len(json.dumps(data, ensure_ascii=False, sort_keys=True))
-                except TypeError:
-                    total += len(s(data))
+            children = select(entry.get("children") or [])
+            if whole or children or entry.get("entity_id") in relevant_ids or includes(entry.get("label", "")):
+                selected.append({**entry, **({"children": children} if "children" in entry else {})})
+        return selected
 
-    entities = writer_ctx.get("entities") or []
-    if isinstance(entities, list):
-        for ent in entities:
-            if not isinstance(ent, dict):
-                continue
-            total += len(s(ent.get("name")))
-            aliases = ent.get("aliases") or []
-            if isinstance(aliases, list):
-                for a in aliases:
-                    total += len(s(a))
-            total += len(s(ent.get("entity_type")))
-            total += len(s(ent.get("description")))
-            attrs = ent.get("attributes") or []
-            if isinstance(attrs, list):
-                for attr in attrs:
-                    if not isinstance(attr, dict):
-                        continue
-                    total += len(s(attr.get("key")))
-                    total += len(s(attr.get("surface")))
-
-    rels = writer_ctx.get("relationships") or []
-    if isinstance(rels, list):
-        for rel in rels:
-            if not isinstance(rel, dict):
-                continue
-            total += len(s(rel.get("label")))
-            total += len(s(rel.get("description")))
-
-    return total
+    data = system.data or {}
+    entries = select(data.get(key, []))
+    if system.display_type == "graph":
+        node_ids = {node.get("id") for node in entries}
+        edges = [edge for edge in data.get("edges", []) if edge.get("visibility") != VIS_HIDDEN
+                 and edge.get("from") in node_ids and edge.get("to") in node_ids]
+        return {"nodes": entries, "edges": edges}
+    return {key: entries}
 
 
 def apply_writer_context_budget(
-    writer_ctx: Mapping[str, Any],
-    *,
-    max_estimated_tokens: int = DEFAULT_WORLD_CONTEXT_TOKEN_BUDGET,
-) -> Dict[str, Any]:
-    """
-    Enforce a hard budget on writer context injection.
+    writer_ctx: Mapping[str, Any], *, max_chars: int = WORLD_CONTEXT_MAX_CHARS, locale: str | None = None,
+) -> dict[str, Any]:
+    """Limit the rendered world material, including its separate narrative rules section."""
+    def size(ctx):
+        return len(format_world_context_for_prompt(ctx, locale=locale)) + len(extract_narrative_constraints(ctx))
 
-    Truncation order (deterministic, testable):
-      1) drop reference relationships
-      2) drop reference attributes
-      3) drop tail entities (and any relationships connected to them)
+    if size(writer_ctx) <= max_chars:
+        return dict(writer_ctx)
 
-    The budget uses a rough token estimate (character-count heuristic).
-    """
-    if max_estimated_tokens <= 0:
-        raise ValueError("max_estimated_tokens must be > 0")
+    result = {**writer_ctx, "entities": [], "relationships": [], "systems": []}
+    remaining = max_chars
+    names = {}
 
-    ctx: Dict[str, Any] = copy.deepcopy(dict(writer_ctx))
-    ctx.setdefault("systems", [])
-    ctx.setdefault("entities", [])
-    ctx.setdefault("relationships", [])
+    def add(kind, item):
+        nonlocal remaining
+        # Counting the section heading per item slightly underfills an overflowing prompt.
+        cost = len(format_world_context_for_prompt({kind: [item]}, locale=locale, entity_names=names)) + 1
+        if cost > remaining:
+            return False
+        remaining -= cost
+        result[kind].append(item)
+        return True
 
-    if _estimate_writer_context_tokens(ctx) <= max_estimated_tokens:
-        return ctx
+    for entity in writer_ctx["entities"]:
+        identity = {**entity, "description": "", "aliases": [], "attributes": []}
+        if add("entities", identity):
+            names[entity["id"]] = entity["name"]
 
-    # 1) Drop reference relationships.
-    rels = ctx.get("relationships")
-    if isinstance(rels, list):
-        ctx["relationships"] = [r for r in rels if isinstance(r, dict) and (r.get("visibility") != VIS_REFERENCE)]
+    for rel in writer_ctx["relationships"]:
+        if rel["source_id"] in names and rel["target_id"] in names:
+            if not add("relationships", rel):
+                add("relationships", {**rel, "description": ""})
 
-    if _estimate_writer_context_tokens(ctx) <= max_estimated_tokens:
-        return ctx
-
-    # 2) Drop reference attributes (keep active only).
-    entities = ctx.get("entities")
-    if isinstance(entities, list):
-        for ent in entities:
-            if not isinstance(ent, dict):
+    rule_count = 0
+    for system in writer_ctx["systems"]:
+        core = {**system, "data": {}, "constraints": []}
+        if not add("systems", core):
+            continue
+        for raw in system["constraints"]:
+            rule = raw.strip()
+            if not rule:
                 continue
-            attrs = ent.get("attributes")
-            if not isinstance(attrs, list):
+            if rule_count:
+                cost = len(f"\n{rule_count + 1}. {rule}")
+            else:
+                cost = len(extract_narrative_constraints({"systems": [{"constraints": [rule]}]}))
+            if cost <= remaining:
+                core["constraints"].append(rule)
+                remaining -= cost
+                rule_count += 1
+
+    by_id = {entity["id"]: entity for entity in writer_ctx["entities"]}
+    for entity in result["entities"]:
+        full = by_id[entity["id"]]
+        for field in ("description", "attributes", "aliases"):
+            cost = size({"entities": [{**entity, field: full[field]}]}) - size({"entities": [entity]})
+            if cost <= remaining:
+                entity[field] = full[field]
+                remaining -= cost
+
+    systems = {system["id"]: system for system in writer_ctx["systems"]}
+    for core in result["systems"]:
+        data = systems[core["id"]]["data"]
+        cost = size({"systems": [{**core, "data": data}]}) - size({"systems": [core]})
+        if cost <= remaining:
+            core["data"] = data
+            remaining -= cost
+
+    result["debug"] = {**writer_ctx.get("debug", {}), "relevant_entity_ids": sorted(names)}
+    return result
+
+
+def assemble_writer_context(db: Session, novel_id: int, chapter_text: str) -> dict[str, Any]:
+    language = db.query(Novel.language).filter_by(id=novel_id).scalar()
+    policy = get_language_policy(language, sample_text=chapter_text)
+    text = policy.normalize_for_matching(chapter_text)
+    confirmed = db.query(WorldEntity).filter_by(novel_id=novel_id, status="confirmed")
+    identities = confirmed.options(load_only(WorldEntity.name, WorldEntity.aliases)).all()
+    matches, ambiguous = _find_relevant_entities(identities, policy, text)
+    by_id = {entity.id: entity for entity in identities}
+
+    tokenizer = get_tokenizer(policy.language)
+    common_words = load_common_words(policy.language)
+
+    def terms(value):
+        words = {policy.normalize_token(word) for word in tokenizer.tokenize(policy.normalize_for_matching(value))}
+        return {word for word in words - common_words if len(word) > 1 and word.isalpha()}
+
+    scene_terms = terms(text)
+
+    def includes(value):
+        return bool(scene_terms & terms(value))
+
+    selected = set(matches)
+    relationships = []
+    indirect = defaultdict(list)
+    if matches:
+        nearby = db.query(WorldRelationship).filter(
+            WorldRelationship.novel_id == novel_id, WorldRelationship.status == "confirmed",
+            WorldRelationship.visibility != VIS_HIDDEN,
+            WorldRelationship.source_id.in_(matches) | WorldRelationship.target_id.in_(matches),
+        ).order_by(WorldRelationship.id)
+        for rel in nearby:
+            src, dst = rel.source_id, rel.target_id
+            if src not in by_id or dst not in by_id:
                 continue
-            ent["attributes"] = [
-                a
-                for a in attrs
-                if isinstance(a, dict) and (a.get("visibility") != VIS_REFERENCE)
-            ]
+            if src in matches and dst in matches:
+                relationships.append(rel)
+                continue
+            anchor, other = (src, dst) if src in matches else (dst, src)
+            description = policy.normalize_for_matching(rel.description)
+            for keyword in _iter_entity_keywords(by_id[anchor]):
+                description = description.replace(policy.normalize_for_matching(keyword), " ")
+            for cue in scene_terms & (terms(rel.label) | terms(description)):
+                indirect[anchor, cue].append((other, rel))
 
-    estimated_tokens = _estimate_writer_context_tokens(ctx)
-    if estimated_tokens <= max_estimated_tokens:
-        return ctx
+    chosen = {rel.id: rel for rel in relationships}
+    for candidates in indirect.values():
+        if len({other for other, _ in candidates}) == 1:
+            for other, rel in candidates:
+                selected.add(other)
+                chosen[rel.id] = rel
+    relationships_out = [
+        {"id": rel.id, "source_id": rel.source_id, "target_id": rel.target_id, "label": rel.label,
+         "description": rel.description or "", "visibility": rel.visibility}
+        for rel in chosen.values()
+    ]
 
-    # 3) Drop tail entities until within budget; also remove dangling relationships.
-    if isinstance(entities, list):
-        # Each item contributes independently to the estimate. Index incident
-        # relationships once so pruning a tail does not repeatedly rescan and
-        # re-estimate the entire world (including unchanged system JSON).
-        rels = ctx.get("relationships")
-        relationships_by_entity: dict[int, list[int]] = {}
-        if isinstance(rels, list):
-            for index, relationship in enumerate(rels):
-                if not isinstance(relationship, dict):
-                    continue
-                try:
-                    source_id = int(relationship.get("source_id"))
-                    target_id = int(relationship.get("target_id"))
-                except Exception:
-                    # Preserve relationships with malformed endpoints, as before.
-                    continue
-                for entity_id in {source_id, target_id}:
-                    relationships_by_entity.setdefault(entity_id, []).append(index)
-
-        removed_relationships: set[int] = set()
-        while entities and estimated_tokens > max_estimated_tokens:
-            dropped = entities.pop()
-            estimated_tokens -= _estimate_writer_context_tokens({"entities": [dropped]})
-            dropped_id = dropped.get("id") if isinstance(dropped, dict) else None
-            try:
-                dropped_id_int = int(dropped_id) if dropped_id is not None else None
-            except Exception:
-                dropped_id_int = None
-
-            if dropped_id_int is not None and isinstance(rels, list):
-                for index in relationships_by_entity.pop(dropped_id_int, []):
-                    if index in removed_relationships:
-                        continue
-                    removed_relationships.add(index)
-                    estimated_tokens -= _estimate_writer_context_tokens(
-                        {"relationships": [rels[index]]}
-                    )
-        if removed_relationships:
-            ctx["relationships"] = [
-                relationship
-                for index, relationship in enumerate(rels)
-                if index not in removed_relationships
-            ]
-
-    return ctx
-
-
-def assemble_writer_context(db: Session, novel_id: int, chapter_text: str) -> Dict[str, Any]:
-    """
-    Assemble writer-facing context: confirmed + visible, relevance-gated.
-
-    Visibility rules:
-    - active: included by default (for attributes/relationships within relevant entities)
-    - reference: included only when directly relevant (same as entity relevance in MVP)
-    - hidden: never included
-    """
-    relevant_ids, agg, ambiguous_keywords = _find_relevant_entities(db, novel_id, chapter_text)
-
-    entities_out: list[dict[str, Any]] = []
-    if relevant_ids:
-        entities = (
-            db.query(WorldEntity)
-            .options(joinedload(WorldEntity.attributes))
-            .filter(
-                WorldEntity.novel_id == novel_id,
-                WorldEntity.status == "confirmed",
-                WorldEntity.id.in_(sorted(relevant_ids)),
-            )
-            .all()
-        )
-
-        entities.sort(key=lambda e: (-agg.get(int(e.id), _EntityMatchAgg(set(), 0)).count, e.name))
+    entities_out = []
+    if selected:
+        entities = confirmed.filter(WorldEntity.id.in_(selected)).options(joinedload(WorldEntity.attributes)).all()
         for entity in entities:
-            attrs = []
-            for attr in sorted(entity.attributes, key=lambda a: (a.sort_order, a.key)):
-                if attr.visibility == VIS_HIDDEN:
-                    continue
-                attrs.append(
-                    {
-                        "id": int(attr.id),
-                        "key": attr.key,
-                        "surface": attr.surface,
-                        "visibility": attr.visibility,
-                        "sort_order": int(attr.sort_order or 0),
-                    }
-                )
+            match = matches.get(entity.id)
+            # An indirect mention needs an identity for the relationship, not the other character's biography.
+            attrs = sorted(entity.attributes, key=lambda attr: (attr.sort_order, attr.key)) if match else []
+            entities_out.append({
+                "id": entity.id, "name": entity.name, "entity_type": entity.entity_type,
+                "aliases": list(entity.aliases or []) if match else [],
+                "description": (entity.description or "") if match else "",
+                "attributes": [
+                    {"id": attr.id, "key": attr.key, "surface": attr.surface,
+                     "visibility": attr.visibility, "sort_order": attr.sort_order}
+                    for attr in attrs if attr.visibility == VIS_ACTIVE
+                    or (attr.visibility != VIS_HIDDEN and (includes(attr.key) or includes(attr.surface)))
+                ],
+                "match_count": match.count if match else 0, "matched_terms": sorted(match.terms) if match else [],
+            })
+    entities_out.sort(key=lambda ent: (-ent["match_count"], ent["name"]))
 
-            entities_out.append(
-                {
-                    "id": int(entity.id),
-                    "name": entity.name,
-                    "aliases": list(entity.aliases or []),
-                    "entity_type": entity.entity_type,
-                    "description": entity.description or "",
-                    "attributes": attrs,
-                    "match_count": agg.get(int(entity.id), _EntityMatchAgg(set(), 0)).count,
-                    "matched_terms": sorted(agg.get(int(entity.id), _EntityMatchAgg(set(), 0)).terms),
-                }
-            )
-
-    # Relationships: only between selected (relevant) entities.
-    relationships_out: list[dict[str, Any]] = []
-    if relevant_ids:
-        rels = (
-            db.query(WorldRelationship)
-            .filter(
-                WorldRelationship.novel_id == novel_id,
-                WorldRelationship.status == "confirmed",
-                WorldRelationship.source_id.in_(sorted(relevant_ids)),
-                WorldRelationship.target_id.in_(sorted(relevant_ids)),
-            )
-            .all()
-        )
-        for rel in rels:
-            if rel.visibility == VIS_HIDDEN:
-                continue
-            relationships_out.append(
-                {
-                    "id": int(rel.id),
-                    "source_id": int(rel.source_id),
-                    "target_id": int(rel.target_id),
-                    "label": rel.label,
-                    "description": rel.description or "",
-                    "visibility": rel.visibility,
-                }
-            )
-
-        relationships_out.sort(key=lambda r: (r["source_id"], r["target_id"], r["label"]))
-
-    # Systems: confirmed + visibility=active are always injected for writer.
-    systems_out: list[dict[str, Any]] = []
-    systems = (
-        db.query(WorldSystem)
-        .filter(
-            WorldSystem.novel_id == novel_id,
-            WorldSystem.status == "confirmed",
-            WorldSystem.visibility == VIS_ACTIVE,
-        )
-        .all()
-    )
-    systems.sort(key=lambda s: s.name)
+    systems_out = []
+    systems = db.query(WorldSystem).filter(
+        WorldSystem.novel_id == novel_id, WorldSystem.status == "confirmed", WorldSystem.visibility != VIS_HIDDEN,
+    ).order_by(WorldSystem.visibility, WorldSystem.name)
     for system in systems:
-        systems_out.append(
-            {
-                "id": int(system.id),
-                "name": system.name,
-                "display_type": system.display_type,
-                "description": system.description or "",
-                "data": _filter_system_data_for_writer(system.display_type, system.data),
-                "constraints": list(system.constraints or []),
-                "visibility": system.visibility,
-                "status": system.status,
-            }
-        )
+        whole = system.visibility == VIS_ACTIVE or includes(system.name)
+        data = _scene_system_data(system, includes, matches, whole=whole)
+        rules = [rule for rule in system.constraints or [] if whole or includes(rule)]
+        if whole or rules or any(data.values()) or includes(system.description):
+            systems_out.append({
+                "id": system.id, "name": system.name, "display_type": system.display_type,
+                "description": system.description or "", "data": data, "constraints": rules,
+                "visibility": system.visibility, "status": system.status,
+            })
 
-    return {
-        "entities": entities_out,
-        "relationships": relationships_out,
-        "systems": systems_out,
-        "debug": {
-            "relevant_entity_ids": sorted(relevant_ids),
-            "ambiguous_keywords_disabled": sorted(ambiguous_keywords),
-        },
-    }
+    return {"entities": entities_out, "relationships": relationships_out, "systems": systems_out,
+            "debug": {"relevant_entity_ids": sorted(selected), "ambiguous_keywords_disabled": sorted(ambiguous)}}

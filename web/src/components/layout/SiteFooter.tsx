@@ -1,6 +1,5 @@
-import { Link, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
-import { isHostedRuntime } from '@/lib/runtimeMode'
 import { cn } from '@/lib/utils'
 
 type SiteFooterProps = {
@@ -12,15 +11,6 @@ export function SiteFooter({ compact, className }: SiteFooterProps) {
   const { t } = useUiLocale()
   const { pathname } = useLocation()
   const isLanding = pathname === '/'
-  // Legal pages cover the official hosted entry only; local runtimes keep a clean footer.
-  const links = isHostedRuntime()
-    ? [
-        { to: '/terms', label: t('footer.link.terms') },
-        { to: '/privacy', label: t('footer.link.privacy') },
-        { to: '/copyright', label: t('footer.link.copyright') },
-      ]
-    : []
-
   return (
     <footer
       className={cn(
@@ -51,27 +41,6 @@ export function SiteFooter({ compact, className }: SiteFooterProps) {
           </p>
         </div>
 
-        {links.length > 0 ? (
-          <nav
-            className={cn(
-              'flex flex-wrap items-center gap-x-5 gap-y-2 text-sm',
-              isLanding ? 'text-[hsl(var(--lp-ink)/0.6)]' : 'text-muted-foreground',
-            )}
-          >
-            {links.map((link) => (
-              <Link
-                key={link.to}
-                to={link.to}
-                className={cn(
-                  'transition-colors',
-                  isLanding ? 'hover:text-[hsl(var(--lp-ink))]' : 'hover:text-foreground',
-                )}
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
-        ) : null}
       </div>
     </footer>
   )

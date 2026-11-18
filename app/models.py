@@ -419,7 +419,7 @@ class WorldSystem(WorldSourceMixin, Base):
     description = Column(Text, default="")
     data = Column(JSON, nullable=False, default=dict)
     constraints = Column(JSON, default=list)
-    visibility = Column(String(20), nullable=False, default="active")
+    visibility = Column(String(20), nullable=False, default="reference")
     origin = Column(String(20), nullable=False, default="manual")
     worldpack_pack_id = Column(String(255), nullable=True)
     status = Column(String(20), default="draft")

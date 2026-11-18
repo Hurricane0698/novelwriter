@@ -16,6 +16,7 @@ from app.language import DEFAULT_LANGUAGE, get_language_fallback_chain
 
 
 class CopilotTextKey(str, Enum):
+    INVALID_MODEL_OUTPUT = "invalid_model_output"
     RUN_FAILED = "run_failed"
     RUN_INTERRUPTED = "run_interrupted"
     RUN_RESEARCHING = "run_researching"
@@ -148,6 +149,7 @@ def get_copilot_text(
 
 
 _ZH: dict[CopilotTextKey, str] = {
+    CopilotTextKey.INVALID_MODEL_OUTPUT: "模型返回的审读结果格式不完整。可以缩短选段，或在设置中切换模型后再试。",
     CopilotTextKey.RUN_FAILED: "Copilot 本轮运行失败，请稍后重试。",
     CopilotTextKey.RUN_INTERRUPTED: "本轮 Copilot 失去了后台活跃租约，请稍后重试。",
     CopilotTextKey.RUN_RESEARCHING: "正在研究，等待模型决定是否调用工具...",
@@ -258,6 +260,7 @@ _ZH: dict[CopilotTextKey, str] = {
 }
 
 _EN: dict[CopilotTextKey, str] = {
+    CopilotTextKey.INVALID_MODEL_OUTPUT: "The model returned an unreadable review. Try a shorter passage or choose another model in Settings.",
     CopilotTextKey.RUN_FAILED: "Copilot run failed. Please try again.",
     CopilotTextKey.RUN_INTERRUPTED: "The copilot run lost its active background lease. Please try again.",
     CopilotTextKey.RUN_RESEARCHING: "Research in progress. Waiting for the model to decide whether tools are needed...",
@@ -368,6 +371,7 @@ _EN: dict[CopilotTextKey, str] = {
 }
 
 _JA: dict[CopilotTextKey, str] = {
+    CopilotTextKey.INVALID_MODEL_OUTPUT: "モデルが返した確認結果を読み取れませんでした。選択範囲を短くするか、設定でモデルを切り替えてください。",
     CopilotTextKey.RUN_FAILED: "Copilot の実行に失敗しました。しばらくしてからもう一度お試しください。",
     CopilotTextKey.RUN_INTERRUPTED: "Copilot の実行でバックグラウンドのアクティブリースが失われました。もう一度お試しください。",
     CopilotTextKey.RUN_RESEARCHING: "調査中です。モデルがツールを使うかどうか判断するのを待っています...",
@@ -401,6 +405,7 @@ _JA: dict[CopilotTextKey, str] = {
 }
 
 _KO: dict[CopilotTextKey, str] = {
+    CopilotTextKey.INVALID_MODEL_OUTPUT: "모델의 검토 결과를 읽을 수 없습니다. 선택한 구절을 줄이거나 설정에서 모델을 변경해 보세요.",
     CopilotTextKey.RUN_FAILED: "Copilot 실행에 실패했습니다. 잠시 후 다시 시도해 주세요.",
     CopilotTextKey.RUN_INTERRUPTED: "Copilot 실행에서 백그라운드 활성 리스가 끊어졌습니다. 다시 시도해 주세요.",
     CopilotTextKey.RUN_RESEARCHING: "조사 중입니다. 모델이 도구를 사용할지 결정하는 중입니다...",

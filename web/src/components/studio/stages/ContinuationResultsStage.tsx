@@ -11,14 +11,12 @@ import { useCreateChapter } from '@/hooks/novel/useCreateChapter'
 import { useCandidateDraft } from '@/hooks/novel/useCandidateDraft'
 import { NwButton } from '@/components/ui/nw-button'
 import '@/lib/uiMessagePacks/copilot'
-import { useAuth } from '@/contexts/AuthContext'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { addToWhitelist, getWhitelist } from '@/lib/postcheckWhitelistStorage'
 import { setActiveWarnings } from '@/lib/postcheckActiveWarningsStorage'
 import { downloadTextFile } from '@/lib/downloadTextFile'
 import { isMarkdownChapterBodyInvalidError } from '@/lib/chapterMutationError'
 import { cn } from '@/lib/utils'
-import { api } from '@/services/api'
 import type { ContinueDebugSummary, NovelContentFormat } from '@/types/api'
 import {
   ContinuationResultsHeader,
@@ -29,7 +27,6 @@ import {
   ContinuationResultsEmptyState,
   ContinuationResultsLoadingState,
   ContinuationResultsReloadErrorState,
-  ContinuationResultsStreamErrorState,
 } from './continuation-results/ContinuationResultsStates'
 import { ContinuationResultsTabs } from './continuation-results/ContinuationResultsTabs'
 import {
@@ -64,18 +61,14 @@ export function ContinuationResultsStage({
 }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, refreshQuota } = useAuth()
   const { locale, t } = useUiLocale()
   const [activeTab, setActiveTab] = useState(0)
-  const [showFeedbackForm, setShowFeedbackForm] = useState(false)
-  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
   const [whitelist, setWhitelist] = useState<string[]>(() => getWhitelist(novelId))
   const [adoptError, setAdoptError] = useState<{
     sourceIdentity: string
     activeTab: number
     candidateId: number | null
     content: string
-    requestGeneration: number
     code: ContinuationAdoptErrorCode
   } | null>(null)
   const adoptRequestGenerationRef = useRef(0)
@@ -95,7 +88,6 @@ export function ContinuationResultsStage({
     streamDebug,
     streamError,
     isDone,
-    isQuotaExhausted,
     isStreamMode,
     isFallbackMode,
     isLegacyMode,
@@ -169,15 +161,16 @@ export function ContinuationResultsStage({
       }))
   }, [activeTab, driftWarnings, handleDismissTerm, whitelist])
 
-  useEffect(() => {
-    adoptRequestGenerationRef.current += 1
+  const resultsKey = [semanticSourceIdentity, isFallbackMode, isStreamMode, isLegacyMode, isReloadMode, variants.length].join(':')
+  const [previous, setPrevious] = useState({ resultsKey, isActive })
+  if (previous.resultsKey !== resultsKey || previous.isActive !== isActive) {
+    setPrevious({ resultsKey, isActive })
     setAdoptError(null)
-    setActiveTab(0)
-  }, [isFallbackMode, isLegacyMode, isReloadMode, isStreamMode, semanticSourceIdentity, variants.length])
-
-  useEffect(() => {
-    if (!isActive) setAdoptError(null)
-  }, [isActive])
+    if (previous.resultsKey !== resultsKey) setActiveTab(0)
+  }
+  useLayoutEffect(() => {
+    adoptRequestGenerationRef.current += 1
+  }, [resultsKey])
 
   const currentVariant = isStreamMode && !isFallbackMode ? variants[activeTab] : undefined
   const currentLegacyVersion = isFallbackMode
@@ -294,7 +287,6 @@ export function ContinuationResultsStage({
             activeTab,
             candidateId: currentCandidateId,
             content: currentContent,
-            requestGeneration,
             code: isMarkdownChapterBodyInvalidError(error) ? error.code : 'chapter_adopt_failed',
           })
         },
@@ -333,18 +325,6 @@ export function ContinuationResultsStage({
       'text/plain;charset=utf-8',
     )
   }, [fallbackVersions, isFallbackMode, isStreamMode, nonStreamVersions, t, variants])
-
-  const handleFeedbackSubmit = useCallback(async (answers: Parameters<typeof api.submitFeedback>[0]) => {
-    setFeedbackSubmitting(true)
-    try {
-      await api.submitFeedback(answers)
-      await refreshQuota()
-      setShowFeedbackForm(false)
-      retryStream()
-    } finally {
-      setFeedbackSubmitting(false)
-    }
-  }, [refreshQuota, retryStream])
 
   const proseWarnings = useMemo(() => {
     const targetVersion = activeTab + 1
@@ -394,19 +374,10 @@ export function ContinuationResultsStage({
 
   if (streamError) {
     return (
-      <ContinuationResultsStreamErrorState
+      <ContinuationResultsReloadErrorState
         error={streamError}
-        isQuotaExhausted={isQuotaExhausted}
-        feedbackAlreadySubmitted={Boolean(user?.feedback_submitted)}
-        showFeedbackForm={showFeedbackForm}
-        feedbackSubmitting={feedbackSubmitting}
-        onOpenFeedback={() => setShowFeedbackForm(true)}
-        onCloseFeedback={() => setShowFeedbackForm(false)}
-        onSubmitFeedback={handleFeedbackSubmit}
         onRetry={retryStream}
-        onBackToWrite={() => leaveResults(`/novel/${novelId}?stage=write`)}
-        onReturnToWorkspace={() => leaveResults(`/novel/${novelId}`)}
-        onGoToSettings={() => navigate('/settings')}
+        onBack={() => leaveResults(`/novel/${novelId}?stage=write`)}
         t={t}
       />
     )

@@ -17,7 +17,8 @@ from typing import Any, Awaitable, Callable
 
 from sqlalchemy.orm import Session, load_only
 
-from app.core.ai_client import ToolCallUnsupportedError
+from app.core.ai_client import StructuredOutputParseError, ToolCallUnsupportedError
+from app.core.copilot.messages import CopilotTextKey, get_copilot_text
 from app.core.llm_config import ResolvedLlmConfig
 from app.core.copilot.prompt_contract import PromptBuild
 from app.core.copilot.prompting import (
@@ -29,7 +30,6 @@ from app.core.copilot.prompting import (
 from app.core.copilot.run_state import (
     call_copilot_llm,
     claim_run_for_execution,
-    copilot_run_failed_message,
     ensure_run_lease,
     fail_run,
     parse_llm_response,
@@ -422,7 +422,7 @@ def _complete_run(
 
 
 def _persist_execution_failure(
-    db_factory: Callable[[], Session], *, run_id: str, worker_id: str
+    db_factory: Callable[[], Session], *, run_id: str, worker_id: str, message_key: CopilotTextKey
 ) -> None:
     check_sync_cancelled()
     db = db_factory()
@@ -434,7 +434,7 @@ def _persist_execution_failure(
                 db,
                 run,
                 "run_execution_error",
-                copilot_run_failed_message(resolve_run_interaction_locale(run)),
+                get_copilot_text(message_key, locale=resolve_run_interaction_locale(run)),
                 worker_id=worker_id,
             )
     finally:
@@ -508,12 +508,14 @@ async def execute_copilot_run(
         )
     except hooks.lease_lost_error_type:
         return
-    except Exception:
+    except Exception as exc:
         logger.exception("Copilot run %s failed", run_id)
         try:
             await run_sync(
                 _persist_execution_failure,
                 SessionLocal,
+                message_key=(CopilotTextKey.INVALID_MODEL_OUTPUT
+                             if isinstance(exc, StructuredOutputParseError) else CopilotTextKey.RUN_FAILED),
                 run_id=run_id,
                 worker_id=worker_id,
             )

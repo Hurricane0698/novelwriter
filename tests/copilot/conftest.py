@@ -42,25 +42,6 @@ def db():
         Base.metadata.drop_all(bind=engine)
 
 
-@pytest.fixture(scope="function")
-def hosted_settings(_force_selfhost_settings):  # ensure conftest runs first
-    import app.config as config_mod
-    from app.config import Settings
-
-    prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(
-        deploy_mode="hosted",
-        hosted_llm_base_url="https://hosted.example/v1",
-        hosted_llm_api_key="hosted-key",
-        hosted_llm_model="hosted-model",
-        _env_file=None,
-    )
-    try:
-        yield
-    finally:
-        config_mod._settings_instance = prev
-
-
 @pytest.fixture
 def novel(db):
     n = Novel(title="测试小说", author="测试", file_path="/tmp/t.txt", total_chapters=3, language="zh")
@@ -68,22 +49,6 @@ def novel(db):
     db.commit()
     db.refresh(n)
     return n
-
-
-@pytest.fixture
-def hosted_user(db, hosted_settings):
-    user = User(
-        username="hosted_copilot_user",
-        hashed_password="x",
-        role="admin",
-        is_active=True,
-        generation_quota=2,
-        feedback_submitted=False,
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
 
 
 @pytest.fixture
@@ -158,53 +123,16 @@ def client(db):
             pass
 
     test_app.dependency_overrides[get_db] = override_get_db
-    from app.core.auth import check_generation_quota, get_current_user, get_current_user_or_default
+    from app.core.auth import get_current_user, get_current_user_or_default
     fake_user = User(id=1, username="testuser", hashed_password="x", role="admin", is_active=True, generation_quota=999)
     test_app.dependency_overrides[get_current_user] = lambda: fake_user
     test_app.dependency_overrides[get_current_user_or_default] = lambda: fake_user
-    test_app.dependency_overrides[check_generation_quota] = lambda: fake_user
     test_app.dependency_overrides[get_llm_config] = lambda: ResolvedLlmConfig(
         base_url="https://example.com/v1",
         api_key="key",
         model="model",
-        billing_source_hint="selfhost",
         source="selfhost_settings",
     )
-
-    with TestClient(test_app) as c:
-        yield c
-    test_app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def hosted_client(db, hosted_user, monkeypatch):
-    import app.core.auth as auth_core
-    from app.api import copilot as copilot_api, world
-    from app.core.auth import get_current_user, get_current_user_or_default
-    from app.core.llm_config import ResolvedLlmConfig
-    from app.core.llm_request import get_llm_config
-
-    test_app = FastAPI()
-    test_app.include_router(copilot_api.router)
-    test_app.include_router(world.router)
-
-    def override_get_db():
-        try:
-            yield db
-        finally:
-            pass
-
-    test_app.dependency_overrides[get_db] = override_get_db
-    test_app.dependency_overrides[get_current_user] = lambda: hosted_user
-    test_app.dependency_overrides[get_current_user_or_default] = lambda: hosted_user
-    test_app.dependency_overrides[get_llm_config] = lambda: ResolvedLlmConfig(
-        base_url="https://hosted.example/v1",
-        api_key="hosted-key",
-        model="hosted-model",
-        billing_source_hint="hosted",
-        source="hosted_settings",
-    )
-    monkeypatch.setattr(auth_core, "ensure_ai_available", lambda *args, **kwargs: None)
 
     with TestClient(test_app) as c:
         yield c

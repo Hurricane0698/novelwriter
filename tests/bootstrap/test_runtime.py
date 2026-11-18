@@ -34,7 +34,6 @@ _LLM_CONFIG = ResolvedLlmConfig(
     base_url="https://example.com/v1",
     api_key="k",
     model="m",
-    billing_source_hint="selfhost",
     source="selfhost_settings",
 )
 
@@ -418,7 +417,7 @@ async def test_run_bootstrap_job_defers_state_proto_build_until_world_entities_e
 
 
 @pytest.mark.asyncio
-async def test_run_bootstrap_job_builds_state_proto_before_refinement_in_hosted_mode(
+async def test_run_bootstrap_job_builds_state_proto_before_refinement(
     db, monkeypatch
 ):
     novel = Novel(title="Hosted Bootstrap Targets", author="Tester", language="en", file_path="/tmp/test.txt", total_chapters=1)
@@ -451,7 +450,7 @@ async def test_run_bootstrap_job_builds_state_proto_before_refinement_in_hosted_
     monkeypatch.setattr(
         bootstrap_module,
         "get_settings",
-        lambda: Settings.model_validate({"deploy_mode": "hosted", "environment": "production"}),
+        lambda: Settings(_env_file=None),
     )
 
     original_build = bootstrap_module.execute_state_proto_build

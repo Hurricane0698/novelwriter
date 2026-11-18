@@ -1,12 +1,3 @@
-"""
-Contract tests: hosted mode must enforce owner isolation for novel-scoped routers.
-
-Why: in hosted (multi-tenant) deployments, users must not be able to read/write
-other users' novel-scoped data by guessing `novel_id`.
-"""
-
-from unittest.mock import MagicMock
-
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -62,31 +53,9 @@ def users(db) -> tuple[User, User]:
     return u1, u2
 
 
-class TestHostedIsolationNovelScopedRouters:
-    def test_hosted_world_denies_cross_tenant_access(self, db, users, monkeypatch):
-        import app.api.deps as api_deps
-        from app.api import world as world_api
-
-        monkeypatch.setattr(api_deps, "get_settings", lambda: MagicMock(deploy_mode="hosted"))
-
-        u1, u2 = users
-        other_novel = Novel(title="N", author="", file_path="/tmp/n.txt", total_chapters=0, owner_id=u2.id)
-        db.add(other_novel)
-        db.commit()
-        db.refresh(other_novel)
-
-        app = _make_app(db, world_api.router, current_user=u1)
-        with TestClient(app) as c:
-            resp = c.get(f"/api/novels/{other_novel.id}/world/entities")
-        assert resp.status_code == 404
-
-
 class TestSelfhostNovelScopedRouters:
     def test_selfhost_world_ignores_owner_id(self, db, users, monkeypatch):
-        import app.api.deps as api_deps
         from app.api import world as world_api
-
-        monkeypatch.setattr(api_deps, "get_settings", lambda: MagicMock(deploy_mode="selfhost"))
 
         u1, u2 = users
         other_novel = Novel(title="N", author="", file_path="/tmp/n.txt", total_chapters=0, owner_id=u2.id)

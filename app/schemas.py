@@ -1,4 +1,4 @@
-from pydantic import AfterValidator, BaseModel, Field, ConfigDict, SecretStr, field_validator, model_validator, TypeAdapter
+from pydantic import AfterValidator, BaseModel, Field, ConfigDict, SecretStr, field_validator, model_validator, TypeAdapter, StringConstraints
 from pydantic_core import PydanticCustomError
 from typing import Annotated, ClassVar, Optional, List, Literal, Any
 from datetime import datetime
@@ -79,6 +79,16 @@ class NovelBase(BaseModel):
     @classmethod
     def _normalize_language_field(cls, v: object) -> object:
         return normalize_language_code(v if isinstance(v, str) else None, default=DEFAULT_LANGUAGE)
+
+
+class NovelTitle(BaseModel):
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+
+
+class NovelCreate(NovelTitle):
+    language: str = Field(default=DEFAULT_LANGUAGE, min_length=1, max_length=50)
+
+
 class NovelResponse(NovelBase):
     id: int
     content_format: NovelContentFormat

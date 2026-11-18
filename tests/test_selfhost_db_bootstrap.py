@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from alembic.script import ScriptDirectory
+from alembic.config import Config
 import pytest
 import sqlalchemy as sa
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
@@ -427,7 +428,7 @@ def test_revision_032_upgrade_creates_generation_admission_tables_and_preserves_
 
     inspector = sa.inspect(engine)
     assert result == "upgraded"
-    assert _recorded_revision(engine) == "042"
+    assert _recorded_revision(engine) == ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
     assert {"continuation_runs", "world_generation_runs"}.issubset(
         inspector.get_table_names()
     )
@@ -465,7 +466,7 @@ def test_repairs_v032_database_already_stamped_past_continuation_table_creation(
         column["name"] for column in inspector.get_columns("world_generation_runs")
     }
     assert result == "upgraded"
-    assert _recorded_revision(engine) == "042"
+    assert _recorded_revision(engine) == ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
     assert {
         "client_request_id",
         "request_hash",

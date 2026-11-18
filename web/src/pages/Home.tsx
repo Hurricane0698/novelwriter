@@ -5,7 +5,6 @@ import '@/lib/uiMessagePacks/home'
 
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { HeroSection } from '@/components/home/HeroSection'
-import { trackHostedAnalyticsEvent } from '@/lib/hostedAnalytics'
 
 const loadHomeDeferredSections = () => import('@/components/home/HomeDeferredSections')
 
@@ -46,10 +45,6 @@ function HomeDeferredSectionsSlot() {
 
 export function Home({ deferBelowFold = true }: HomeProps = {}) {
   const [shouldLoadDeferredSections, setShouldLoadDeferredSections] = useState(false)
-
-  useEffect(() => {
-    void trackHostedAnalyticsEvent('acquisition_landing_view')
-  }, [])
 
   useEffect(() => {
     if (!deferBelowFold) return

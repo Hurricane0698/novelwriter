@@ -461,12 +461,6 @@ export interface WorldpackImportResponse {
   warnings: WorldpackImportWarning[]
 }
 
-// Auth types
-export interface QuotaResponse {
-  generation_quota: number
-  feedback_submitted: boolean
-}
-
 export type StreamEvent =
   | { type: 'start'; variant: number; total_variants: number; debug?: ContinueDebugSummary | null }
   | { type: 'token'; variant: number; content: string }

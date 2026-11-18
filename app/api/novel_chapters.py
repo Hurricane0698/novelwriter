@@ -10,9 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.content_formats import MARKDOWN_CONTENT_FORMAT
-from app.core.auth import get_current_user_or_default
 from app.core.chapter_numbering import get_next_missing_chapter_number
-from app.core.events import record_event
 from app.core.indexing.lifecycle import (
     enqueue_window_index_rebuild_job,
     mark_window_index_inputs_changed,
@@ -20,7 +18,7 @@ from app.core.indexing.lifecycle import (
 from app.core.markdown_parser import validate_markdown_chapter_body
 from app.core.source_errors import MarkdownStructureInvalidError
 from app.database import get_db
-from app.models import Chapter, Novel, User
+from app.models import Chapter, Novel
 from app.schemas import (
     ChapterCreateRequest,
     ChapterMetaResponse,
@@ -105,9 +103,8 @@ def get_chapters(
     skip: int = 0,
     limit: int | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ) -> List[ChapterResponse]:
-    novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel_support.get_novel(db, novel_id)
 
     query = (
         db.query(Chapter)
@@ -126,9 +123,8 @@ def get_chapters_meta(
     skip: int = 0,
     limit: int | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ) -> List[ChapterMetaResponse]:
-    novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel_support.get_novel(db, novel_id)
 
     query = (
         db.query(
@@ -168,9 +164,8 @@ def get_chapter(
     novel_id: int,
     chapter_number: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel_support.get_novel(db, novel_id)
 
     return _get_chapter_or_404(db, novel_id, chapter_number)
 
@@ -180,9 +175,8 @@ def create_chapter(
     novel_id: int,
     req: ChapterCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel = novel_support.get_novel(db, novel_id)
     _validate_chapter_content(novel, req.content)
 
     if req.chapter_number is not None and req.chapter_number < 1:
@@ -220,7 +214,6 @@ def create_chapter(
                 )
 
             db.refresh(chapter)
-            record_event(db, current_user.id, "chapter_save", novel_id=novel_id, meta={"chapter": chapter_number})
             return chapter
 
         raise HTTPException(status_code=409, detail="Chapter number conflict; please retry")
@@ -253,7 +246,6 @@ def create_chapter(
         raise HTTPException(status_code=409, detail=f"Chapter {chapter_number} already exists")
 
     db.refresh(chapter)
-    record_event(db, current_user.id, "chapter_save", novel_id=novel_id, meta={"chapter": chapter_number})
     return chapter
 
 
@@ -263,9 +255,8 @@ def update_chapter(
     chapter_number: int,
     req: ChapterUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel = novel_support.get_novel(db, novel_id)
 
     chapter = _get_chapter_or_404(db, novel_id, chapter_number)
 
@@ -289,7 +280,6 @@ def update_chapter(
     )
     db.commit()
     db.refresh(chapter)
-    record_event(db, current_user.id, "chapter_save", novel_id=novel_id, meta={"chapter": chapter_number})
     return chapter
 
 
@@ -298,9 +288,8 @@ def delete_chapter(
     novel_id: int,
     chapter_number: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel = novel_support.get_novel(db, novel_id)
 
     chapter = _get_chapter_or_404(db, novel_id, chapter_number)
 

@@ -47,6 +47,7 @@ export function useNovelCopilotRunsState(sessions: NovelCopilotSession[]): Novel
 // ---------------------------------------------------------------------------
 
 interface UseNovelCopilotRunsParams {
+  getLocalSession: (id: string) => NovelCopilotSession | undefined
   sessions: NovelCopilotSession[]
   focusedSessionId: string | null
   runsBySessionId: Record<string, CopilotRun[]>
@@ -100,23 +101,6 @@ function getPollFailureMessage(error: unknown, message: (key: string) => string)
     return message('copilot.errors.pollRunNotFound')
   }
   return message('copilot.errors.connectionInterrupted')
-}
-
-function readApiErrorDetailMessage(detail: unknown): string | null {
-  if (typeof detail === 'string') return detail
-  if (!detail || typeof detail !== 'object') return null
-  const message = (detail as { message?: unknown }).message
-  return typeof message === 'string' ? message : null
-}
-
-function isQuotaExhaustedApiError(error: ApiError) {
-  if (error.code === 'generation_quota_exhausted' || error.code === 'generation_quota_insufficient') {
-    return true
-  }
-  if (error.status !== 429) return false
-
-  const detailMessage = `${readApiErrorDetailMessage(error.detail) ?? ''} ${typeof error.detail === 'string' ? error.detail : ''}`.toLowerCase()
-  return detailMessage.includes('quota') || detailMessage.includes('额度')
 }
 
 function appendSessionRun(
@@ -209,7 +193,7 @@ function invalidateWorldQueriesForAppliedSuggestions(
 }
 
 export function useNovelCopilotRuns({
-  sessions,
+  sessions, getLocalSession,
   focusedSessionId,
   runsBySessionId,
   setRunsBySessionId,
@@ -292,9 +276,6 @@ export function useNovelCopilotRuns({
         case 'resume_run_not_resumable':
           return t('copilot.errors.resumeRunNotResumable')
         default: {
-          if (isQuotaExhaustedApiError(error)) {
-            return t('copilot.errors.quotaExhausted')
-          }
           const llmMessage = getLlmApiErrorMessage(error)
           if (llmMessage) return llmMessage
           if (error.status === 429) return t('copilot.errors.requestBusy')
@@ -452,7 +433,7 @@ export function useNovelCopilotRuns({
 
   const submitPrompt = useCallback(
     async (sessionId: string, prompt: string, _scope: CopilotScope, _context?: CopilotContextData, quickAction?: string) => {
-      const session = sessionsByIdRef.current.get(sessionId)
+      const session = getLocalSession(sessionId)
       if (!session) return false
 
       const sessionRuns = runsBySessionId[sessionId] ?? []
@@ -517,7 +498,7 @@ export function useNovelCopilotRuns({
         return false
       }
     },
-    [runsBySessionId, setRunsBySessionId, resolveBackendSessionId, startPolling, getRunCreateFailureMessage, t],
+    [runsBySessionId, setRunsBySessionId, resolveBackendSessionId, startPolling, getRunCreateFailureMessage, getLocalSession, t],
   )
 
   const retryInterruptedRun = useCallback(async (sessionId: string, runId: string) => {

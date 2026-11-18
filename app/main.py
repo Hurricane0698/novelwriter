@@ -42,32 +42,16 @@ class StartupSecurityValidationError(RuntimeError):
 def _validate_startup_security_settings(
     *,
     jwt_secret_key: str,
-    deploy_mode: str,
     is_production: bool,
 ) -> None:
-    """Refuse startup when using an insecure JWT secret key in unsafe modes."""
     normalized_secret = (jwt_secret_key or "").strip()
-    normalized_deploy_mode = (deploy_mode or "").strip().lower()
-
-    if normalized_deploy_mode == "hosted" and normalized_secret in _INSECURE_JWT_SECRETS:
-        raise StartupSecurityValidationError(
-            "Refusing to start with DEPLOY_MODE=hosted and an insecure JWT secret. "
-            "Set JWT_SECRET_KEY to a non-default value."
-        )
-
-    if is_production and normalized_deploy_mode == "selfhost":
+    if is_production:
         raise StartupSecurityValidationError(
             "Refusing to start in production with DEPLOY_MODE=selfhost. "
-            "Set DEPLOY_MODE=hosted for web deployments."
+            "Use a local runtime."
         )
 
-    if is_production and normalized_secret in _INSECURE_JWT_SECRETS:
-        raise StartupSecurityValidationError(
-            "Refusing to start in production with an insecure JWT secret. "
-            "Set JWT_SECRET_KEY to a non-default value."
-        )
-
-    if not is_production and normalized_secret in _INSECURE_JWT_SECRETS:
+    if normalized_secret in _INSECURE_JWT_SECRETS:
         logger.warning(
             "Using default JWT secret in non-production environment. "
             "Do not use this configuration outside local development."
@@ -78,12 +62,10 @@ def _validate_startup_security_settings(
 async def lifespan(app: FastAPI):
     global _start_time
     _start_time = time.time()
-    # Force reload settings from .env on server start/reload
     from app.config import reload_settings
     settings = reload_settings()
     _validate_startup_security_settings(
         jwt_secret_key=settings.jwt_secret_key,
-        deploy_mode=settings.deploy_mode,
         is_production=settings.is_production,
     )
     configure_logging(is_production=settings.is_production)
@@ -103,12 +85,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 _cors_settings = _get_settings()
-_default_cors = ["http://localhost:5173"]
-_skip_cors = (
-    _cors_settings.deploy_mode == "selfhost"
-    and _cors_settings.cors_allowed_origins == _default_cors
-)
-if not _skip_cors:
+if _cors_settings.cors_allowed_origins != ["http://localhost:5173"]:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_settings.cors_allowed_origins,
@@ -219,18 +196,6 @@ def _build_access_health_report(*, static_dir: _Path | None) -> dict[str, object
     assets_present = bool(assets_dir and assets_dir.is_dir() and any(assets_dir.iterdir()))
 
     upload_dir = novel_support.UPLOAD_DIR
-    invite_ready = settings.deploy_mode != "hosted" or settings.hosted_invite_login_enabled
-    github_configured = auth._github_oauth_is_configured()
-    github_enabled = settings.deploy_mode == "hosted" and settings.hosted_github_login_enabled and github_configured
-    hosted_llm_ready = settings.deploy_mode != "hosted" or all(
-        [
-            settings.hosted_llm_base_url.strip(),
-            settings.hosted_llm_api_key.strip(),
-            settings.hosted_llm_model.strip(),
-        ]
-    )
-    generation_ready = hosted_llm_ready and not settings.ai_manual_disable
-
     checks = {
         "database": {
             "critical": True,
@@ -244,35 +209,11 @@ def _build_access_health_report(*, static_dir: _Path | None) -> dict[str, object
             "asset_cache_control": _ASSET_CACHE_CONTROL,
             "html_cache_control": _HTML_CACHE_CONTROL,
         },
-        "auth": {
-            "critical": settings.deploy_mode == "hosted",
-            "ready": invite_ready,
-            "invite_login_enabled": settings.deploy_mode == "hosted" and settings.hosted_invite_login_enabled,
-            "invite_configured": settings.hosted_invite_login_enabled,
-            "invite_code_count": len(settings.hosted_invite_code_entries),
-            "github_login_enabled": github_enabled,
-            "github_oauth_configured": github_configured,
-        },
         "upload": {
             "critical": True,
             "ready": _directory_is_writable(upload_dir),
             "directory": str(upload_dir),
             "max_megabytes": int(settings.upload_max_megabytes),
-        },
-        "generation": {
-            "critical": settings.deploy_mode == "hosted",
-            "ready": generation_ready,
-            "hosted_llm_configured": hosted_llm_ready,
-            "ai_manual_disable": settings.ai_manual_disable,
-            "stream_media_type": "application/x-ndjson",
-            "stream_headers": novel_support.STREAMING_RESPONSE_HEADERS,
-            "max_concurrent_llm_calls": settings.max_concurrent_llm_calls,
-            "max_background_concurrent_llm_calls": settings.max_background_concurrent_llm_calls,
-        },
-        "monitoring": {
-            "critical": False,
-            "ready": settings.enable_event_tracking,
-            "event_tracking_enabled": settings.enable_event_tracking,
         },
     }
     critical_failures = [name for name, check in checks.items() if check.get("critical") and not check.get("ready")]

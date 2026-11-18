@@ -211,7 +211,6 @@ def test_ingest_job_queues_auto_bootstrap_when_selfhost_llm_is_configured(db, tm
         base_url="https://api.openai.com/v1",
         api_key="sk-test",
         model="gpt-4o-mini",
-        billing_source_hint="selfhost",
         source="selfhost_settings",
     )
 

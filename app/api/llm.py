@@ -10,7 +10,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from openai import AsyncOpenAI
-from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.core.ai_client import (
@@ -30,8 +29,6 @@ from app.core.llm_config import (
     save_desktop_llm_config,
 )
 from app.core.llm_request import get_llm_config
-from app.core.safety_fuses import ensure_ai_available
-from app.database import get_db
 from app.schemas import (
     DesktopLlmConfigPutRequest,
     DesktopLlmConfigResponse,
@@ -277,15 +274,12 @@ async def _probe_json_mode_support(
 async def test_llm_connection(
     request: Request,
     _user=Depends(get_current_user_or_default),
-    db: Session = Depends(get_db),
 ):
     """Probe the exact configuration that application AI calls will use."""
     settings = get_settings()
     if settings.runtime_mode == "desktop":
         _require_desktop_origin(request)
     config = get_llm_config(request)
-    billing_source = config.billing_source_hint
-    ensure_ai_available(db, billing_source=billing_source)
 
     start = time.perf_counter()
     capabilities = LlmProbeCapabilityStatuses()
@@ -299,7 +293,7 @@ async def test_llm_connection(
         _record_usage(
             config.model, prompt_tokens, completion_tokens,
             endpoint="/api/llm/test", node_name="llm_test",
-            user_id=getattr(_user, "id", None), billing_source=billing_source,
+            user_id=_user.id,
         )
 
     try:

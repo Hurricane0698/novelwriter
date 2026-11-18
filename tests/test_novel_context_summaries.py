@@ -103,7 +103,6 @@ def client(db, user, monkeypatch):
         base_url="https://example.com/v1",
         api_key="test-key",
         model="test-model",
-        billing_source_hint="selfhost",
         source="selfhost_settings",
     )
     test_app.dependency_overrides[get_db] = override_get_db
@@ -231,7 +230,7 @@ def test_summary_freshness_reads_overlapping_chapters_once(db, novel, user, surf
     event.listen(engine, "before_cursor_execute", capture)
     try:
         if surface == "list":
-            result = list_context_summaries(novel_id, db, user)
+            result = list_context_summaries(novel_id, db)
             assert all(not item["is_stale"] for item in result)
         else:
             _format_selected_context_summaries(
@@ -266,13 +265,13 @@ def test_batched_summary_freshness_preserves_ranges_gaps_and_markdown(db, novel,
     blank = _fresh_summary(db, novel, start_chapter=4, end_chapter=4)
     empty = _fresh_summary(db, novel, start_chapter=8, end_chapter=9)
     expected = {whole.id: False, first.id: False, second.id: False, blank.id: False, empty.id: True}
-    result = list_context_summaries(novel.id, db, user)
+    result = list_context_summaries(novel.id, db)
     assert {item["id"]: item["is_stale"] for item in result} == expected
 
     blank_chapter = db.query(Chapter).filter_by(novel_id=novel.id, chapter_number=4).one()
     blank_chapter.source_chapter_label = "Updated source label"
     db.commit()
-    result = list_context_summaries(novel.id, db, user)
+    result = list_context_summaries(novel.id, db)
     assert {item["id"]: item["is_stale"] for item in result} == expected
 
     chapter = db.query(Chapter).filter_by(novel_id=novel.id, chapter_number=2).one()
@@ -280,13 +279,13 @@ def test_batched_summary_freshness_preserves_ranges_gaps_and_markdown(db, novel,
     db.commit()
     expected[whole.id] = True
     expected[second.id] = True
-    result = list_context_summaries(novel.id, db, user)
+    result = list_context_summaries(novel.id, db)
     assert {item["id"]: item["is_stale"] for item in result} == expected
 
     blank_chapter.title = "Changed heading"
     db.commit()
     expected[blank.id] = True
-    result = list_context_summaries(novel.id, db, user)
+    result = list_context_summaries(novel.id, db)
     assert {item["id"]: item["is_stale"] for item in result} == expected
 
 
@@ -309,7 +308,7 @@ def test_summary_batch_does_not_read_chapters_between_distant_ranges(db, novel, 
 
     event.listen(Chapter, "load", capture)
     try:
-        result = list_context_summaries(novel_id, db, user)
+        result = list_context_summaries(novel_id, db)
     finally:
         event.remove(Chapter, "load", capture)
     assert all(not row["is_stale"] for row in result)

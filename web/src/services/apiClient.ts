@@ -3,16 +3,6 @@ import { isSelfhostRuntime } from '@/lib/runtimeMode'
 
 // NOTE: use nullish coalescing so `VITE_API_URL=""` stays empty (same-origin in Docker).
 export const BASE_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')
-const NON_RETRIABLE_503_CODES = new Set([
-  'ai_manually_disabled',
-  'ai_budget_hard_stop',
-  'ai_budget_meter_disabled',
-  'ai_budget_meter_unavailable',
-])
-
-export function isNonRetriable503Code(code: string | undefined): boolean {
-  return !!code && NON_RETRIABLE_503_CODES.has(code)
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -128,15 +118,9 @@ export async function request<T>(path: string, init?: RequestInit, maxRetries = 
     const res = await fetch(`${BASE_URL}${path}`, {
       ...init,
       credentials: init?.credentials ?? 'include',
-      // Only attach LLM BYOK headers on endpoints that actually need them.
-      // This reduces accidental secret exposure via unrelated API calls / proxies / logs.
       headers: { 'Content-Type': 'application/json', ...init?.headers },
     })
-    if (res.status === 503 && attempt < maxRetries) {
-      const parsed = await parseErrorDetail(res)
-      if (isNonRetriable503Code(parsed.code)) {
-        throw createApiError(res.status, parsed)
-      }
+    if (res.status === 503 && res.headers.has('Retry-After') && attempt < maxRetries) {
       const retryAfter = parseRetryAfterSeconds(res)
       await new Promise(r => setTimeout(r, retryAfter * 1000))
       continue

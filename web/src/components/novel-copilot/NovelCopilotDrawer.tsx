@@ -180,7 +180,7 @@ function ActiveNovelCopilotDrawer({
   )
 
   const textTarget = session.prefill.context?.text_target
-  const submitReview = async (prompt: string, action = 'review_text') => {
+  const submitReview = async (prompt: string, action: string) => {
     if (!textTarget || preparingReviewRef.current) return
     const binding = getTextTarget(textTarget)
     if (!binding) { setReviewError(t('review.unavailable')); return }
@@ -210,7 +210,10 @@ function ActiveNovelCopilotDrawer({
   }
 
   const handleSubmit = (prompt: string) => {
-    if (textTarget) { void submitReview(prompt); return }
+    if (textTarget) {
+      void submitReview(prompt, activeRun?.text_review?.action ?? 'review_text')
+      return
+    }
     void submitPrompt(session.sessionId, prompt, session.prefill.scope, session.prefill.context)
   }
 

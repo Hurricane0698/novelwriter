@@ -13,7 +13,6 @@ _LLM_CONFIG = ResolvedLlmConfig(
     base_url="https://example.com/v1",
     api_key="key",
     model="model",
-    billing_source_hint="selfhost",
     source="selfhost_settings",
 )
 

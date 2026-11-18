@@ -32,11 +32,10 @@ def update_continuation(
     continuation_id: int,
     req: TextEditRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
     from app.api.novel_chapters import _validate_chapter_content
     from app.core.text_targets import load_text_target, stage_text_write
-    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel = novel_support.get_novel(db, novel_id)
     row = load_text_target(db, novel_id, {"kind": "continuation", "id": continuation_id})
     _validate_chapter_content(novel, req.content)
     stage_text_write(db, row, req.content, req.expected_content_hash)
@@ -88,9 +87,8 @@ def get_continuations(
     novel_id: int,
     ids: str = Query(..., description="Comma-separated continuation IDs"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel_support.get_novel(db, novel_id)
 
     parts = [p.strip() for p in (ids or "").split(",") if p.strip()]
     if not parts:

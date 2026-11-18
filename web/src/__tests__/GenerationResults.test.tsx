@@ -1,16 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { webcrypto } from 'node:crypto'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClientProvider } from '@tanstack/react-query'
+import type { ComponentProps } from 'react'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { UiLocaleProvider } from '@/contexts/UiLocaleContext'
 import { ContinuationResultsStage } from '@/components/studio/stages/ContinuationResultsStage'
-import { createTestQueryClient } from '@/__tests__/support/queryClient'
+import { TextSourceLink } from '@/components/novel-copilot/TextSourceLink'
+import { useNovelCopilot } from '@/components/novel-copilot/NovelCopilotContext'
+import { createNovelWrapper } from '@/__tests__/support/novel'
+import { adoptedChapter, continuation, deferred } from '@/__tests__/support/continuation'
 import { MARKDOWN_CHAPTER_BODY_INVALID } from '@/lib/chapterMutationError'
 import { ApiError } from '@/services/apiClient'
-import type { Chapter } from '@/types/api'
-
-const mockUseAuth = vi.fn()
+import type { Chapter, Continuation } from '@/types/api'
 
 vi.mock('@/components/ui/plain-text-content', () => ({
   PlainTextContent: ({
@@ -22,21 +23,14 @@ vi.mock('@/components/ui/plain-text-content', () => ({
   }) => <div data-testid="plain-text-content">{content || emptyLabel}</div>,
 }))
 
-vi.mock('@/components/feedback/FeedbackForm', () => ({
-  FeedbackForm: () => null,
-}))
-
 vi.mock('@/components/generation/DriftWarningPopover', () => ({
   DriftWarningPopover: () => null,
-}))
-
-vi.mock('@/contexts/AuthContext', () => ({
-  useAuth: (...args: unknown[]) => mockUseAuth(...args),
 }))
 
 vi.mock('@/services/api', () => ({
   api: {
     getContinuations: vi.fn(),
+    updateContinuation: vi.fn(),
     continueNovel: vi.fn(),
     createChapter: vi.fn(),
     submitFeedback: vi.fn(),
@@ -60,14 +54,59 @@ const mockContinueNovel = api.continueNovel as ReturnType<typeof vi.fn>
 const mockCreateChapter = api.createChapter as ReturnType<typeof vi.fn>
 const mockStreamContinuation = streamContinuation as ReturnType<typeof vi.fn>
 
-function createDeferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise
-    reject = rejectPromise
+function setCandidates(rows: Array<Partial<Continuation> & Pick<Continuation, 'id' | 'content'>>) {
+  const candidates = rows.map((row) => ({ ...continuation(row.id, row.content), ...row }))
+  mockGetContinuations.mockImplementation(async (_novelId: number, ids: number[]) => (
+    ids.map((id) => candidates.find((candidate) => candidate.id === id)!)
+  ))
+  vi.mocked(api.updateContinuation).mockImplementation(async (_novelId, id, content) => {
+    const row = candidates.find((candidate) => candidate.id === id)!
+    Object.assign(row, { edited_content: content, content_hash: continuation(id, content).content_hash })
+    return { ...row }
   })
-  return { promise, resolve, reject }
+}
+
+const singleResult = '/novel/7?stage=results&chapter=3&continuations=0:101&total_variants=1'
+const twoResults = '/novel/7?stage=results&chapter=3&continuations=0:101,1:102&total_variants=2'
+
+function ResultsStage({ contentFormat = 'plain_text', isActive = true }: {
+  contentFormat?: 'plain_text' | 'markdown'; isActive?: boolean
+}) {
+  return <ContinuationResultsStage novelId={7} contentFormat={contentFormat} isActive={isActive}
+    activeChapterNum={3} showInjectionSummaryRail={false}
+    onToggleInjectionSummaryRail={vi.fn()} onDebugChange={vi.fn()} />
+}
+
+function ResultsRoute({ contentFormat, sourceSwitch, citation }: {
+  contentFormat: 'plain_text' | 'markdown'; sourceSwitch: boolean; citation: boolean
+}) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { getTextTarget } = useNovelCopilot()
+  const inResults = new URLSearchParams(location.search).get('stage') === 'results'
+  return <>
+    {inResults ? <>
+      <ResultsStage contentFormat={contentFormat} />
+      {sourceSwitch && <ResultsSourceSwitchProbe />}
+      {citation && <TextSourceLink novelId={7} source={{ chapter_number: 1 }}
+        beforeNavigate={async () => { await getTextTarget({ kind: 'continuation', id: 102 })!.prepare() }} />}
+    </> : <button onClick={() => navigate(-1)}>Return to results</button>}
+    <LocationProbe />
+  </>
+}
+
+function renderResults({ entry = singleResult, contentFormat = 'plain_text', sourceSwitch = false, session = false, citation = false } : {
+  entry?: NonNullable<ComponentProps<typeof MemoryRouter>['initialEntries']>[number]
+  contentFormat?: 'plain_text' | 'markdown'
+  sourceSwitch?: boolean
+  session?: boolean
+  citation?: boolean
+} = {}) {
+  return render(<MemoryRouter initialEntries={[entry]}>
+    <Routes><Route path="/novel/:novelId" element={session ? <ResultsSessionProbe /> :
+      <ResultsRoute contentFormat={contentFormat} sourceSwitch={sourceSwitch} citation={citation} />
+    } /></Routes>
+  </MemoryRouter>, { wrapper: createNovelWrapper() })
 }
 
 function LocationProbe() {
@@ -105,15 +144,7 @@ function ResultsSessionProbe() {
 
   return (
     <>
-      <ContinuationResultsStage
-        novelId={7}
-        contentFormat="plain_text"
-        isActive={isActive}
-        activeChapterNum={3}
-        showInjectionSummaryRail={false}
-        onToggleInjectionSummaryRail={vi.fn()}
-        onDebugChange={vi.fn()}
-      />
+      <ResultsStage isActive={isActive} />
       <button
         type="button"
         data-testid="replace-results-ui-state"
@@ -151,20 +182,10 @@ describe('ContinuationResultsStage runtime', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     sessionStorage.clear()
+    localStorage.clear()
+    vi.stubGlobal('crypto', webcrypto)
 
-    mockUseAuth.mockReturnValue({
-      user: { feedback_submitted: false },
-      refreshQuota: vi.fn().mockResolvedValue(undefined),
-    })
-
-    mockGetContinuations.mockResolvedValue([
-      {
-        id: 101,
-        novel_id: 7,
-        content: '已持久化的续写结果',
-        created_at: '2026-03-03T00:00:00Z',
-      },
-    ])
+    setCandidates([continuation(101, '已持久化的续写结果')])
     mockContinueNovel.mockResolvedValue({
       continuations: [],
       debug: {
@@ -179,48 +200,32 @@ describe('ContinuationResultsStage runtime', () => {
         prose_warnings: [],
       },
     })
-    mockCreateChapter.mockResolvedValue({
-      id: 301,
-      novel_id: 7,
-      chapter_number: 4,
-      title: '',
-      source_chapter_label: null,
-      source_chapter_number: null,
-      source_volume_title: null,
-      content: '续写结果',
-      created_at: '2026-03-03T00:00:00Z',
-      updated_at: null,
-    })
+    mockCreateChapter.mockResolvedValue(adoptedChapter('续写结果'))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it.each(['citation', 'regenerate'] as const)('preserves edited candidates across %s navigation and adopts the edited text', async (navigation) => {
+    setCandidates([continuation(101, '候选一'), continuation(102, '候选二')])
+    renderResults({ entry: twoResults, citation: true })
+    await userEvent.click(await screen.findByRole('button', { name: '编辑修改稿' }))
+    await userEvent.clear(screen.getByTestId('candidate-draft-editor'))
+    await userEvent.type(screen.getByTestId('candidate-draft-editor'), '作者修改候选一')
+    await userEvent.click(screen.getByRole('button', { name: '版本 2' }))
+
+    if (navigation === 'citation') await userEvent.click(screen.getByRole('link', { name: '查看原文 · 1' }))
+    else await userEvent.click(screen.getByRole('button', { name: '重新生成' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Return to results' }))
+    await waitFor(() => expect(screen.getByTestId('plain-text-content')).toHaveTextContent('作者修改候选一'))
+    await userEvent.click(screen.getByTestId('results-adopt-button'))
+    await waitFor(() => expect(mockCreateChapter).toHaveBeenCalledWith(7, { content: '作者修改候选一' }))
+    expect(api.updateContinuation).toHaveBeenCalledTimes(1)
+    expect(api.updateContinuation).toHaveBeenCalledWith(7, 101, '作者修改候选一', continuation(101, '候选一').content_hash)
   })
 
   it('recovers persisted results inside the embedded studio results stage without hook-order crashes', async () => {
-    const queryClient = createTestQueryClient()
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    render(
-      <UiLocaleProvider>
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={['/novel/7?stage=results&chapter=3&continuations=0:101&total_variants=1']}>
-            <Routes>
-              <Route
-                path="/novel/:novelId"
-                element={(
-                  <ContinuationResultsStage
-                    novelId={7}
-                    contentFormat="plain_text"
-                    isActive
-                    activeChapterNum={3}
-                    showInjectionSummaryRail={false}
-                    onToggleInjectionSummaryRail={vi.fn()}
-                    onDebugChange={vi.fn()}
-                  />
-                )}
-              />
-            </Routes>
-          </MemoryRouter>
-        </QueryClientProvider>
-      </UiLocaleProvider>,
-    )
+    renderResults()
 
     expect(screen.getByText('正在加载续写结果...')).toBeInTheDocument()
 
@@ -237,7 +242,6 @@ describe('ContinuationResultsStage runtime', () => {
   })
 
   it('falls back to non-stream continuation when early streaming transport fails', async () => {
-    const queryClient = createTestQueryClient()
 
     mockStreamContinuation.mockReturnValue({
       [Symbol.asyncIterator]() {
@@ -272,44 +276,10 @@ describe('ContinuationResultsStage runtime', () => {
       },
     })
 
-    render(
-      <UiLocaleProvider>
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter
-            initialEntries={[
-              {
-                pathname: '/novel/7',
-                search: '?stage=results&chapter=3',
-                state: {
-                  novelId: 7,
-                  streamParams: { num_versions: 1 },
-                },
-              },
-            ]}
-          >
-            <Routes>
-              <Route
-                path="/novel/:novelId"
-                element={(
-                  <>
-                    <ContinuationResultsStage
-                      novelId={7}
-                      contentFormat="plain_text"
-                      isActive
-                      activeChapterNum={3}
-                      showInjectionSummaryRail={false}
-                      onToggleInjectionSummaryRail={vi.fn()}
-                      onDebugChange={vi.fn()}
-                    />
-                    <LocationProbe />
-                  </>
-                )}
-              />
-            </Routes>
-          </MemoryRouter>
-        </QueryClientProvider>
-      </UiLocaleProvider>,
-    )
+    renderResults({ entry: {
+      pathname: '/novel/7', search: '?stage=results&chapter=3',
+      state: { novelId: 7, streamParams: { num_versions: 1 } },
+    } })
 
     await waitFor(() => {
       expect(screen.getByTestId('plain-text-content')).toHaveTextContent('这是稳定返回的续写结果')
@@ -325,7 +295,6 @@ describe('ContinuationResultsStage runtime', () => {
       7,
       { num_versions: 1 },
       {
-        deliveryMode: 'stream-fallback',
         continuationRequestId: 'test-continuation-request-id',
       },
     )
@@ -336,39 +305,9 @@ describe('ContinuationResultsStage runtime', () => {
   })
 
   it('renders persisted Markdown candidates exactly as they will appear after adoption', async () => {
-    mockGetContinuations.mockResolvedValue([
-      {
-        id: 101,
-        novel_id: 7,
-        content: '**加粗候选**\n\n### 小节',
-        created_at: '2026-03-03T00:00:00Z',
-      },
-    ])
+    setCandidates([continuation(101, '**加粗候选**\n\n### 小节')])
 
-    render(
-      <UiLocaleProvider>
-        <QueryClientProvider client={createTestQueryClient()}>
-          <MemoryRouter initialEntries={['/novel/7?stage=results&chapter=3&continuations=0:101&total_variants=1']}>
-            <Routes>
-              <Route
-                path="/novel/:novelId"
-                element={(
-                  <ContinuationResultsStage
-                    novelId={7}
-                    contentFormat="markdown"
-                    isActive
-                    activeChapterNum={3}
-                    showInjectionSummaryRail={false}
-                    onToggleInjectionSummaryRail={vi.fn()}
-                    onDebugChange={vi.fn()}
-                  />
-                )}
-              />
-            </Routes>
-          </MemoryRouter>
-        </QueryClientProvider>
-      </UiLocaleProvider>,
-    )
+    renderResults({ contentFormat: 'markdown' })
 
     await waitFor(() => {
       expect(screen.getByTestId('markdown-content')).toHaveTextContent('加粗候选')
@@ -382,45 +321,9 @@ describe('ContinuationResultsStage runtime', () => {
       code: MARKDOWN_CHAPTER_BODY_INVALID,
       detail: { code: MARKDOWN_CHAPTER_BODY_INVALID },
     }))
-    mockGetContinuations.mockResolvedValue([
-      {
-        id: 101,
-        novel_id: 7,
-        content: '```markdown\n未闭合候选',
-        created_at: '2026-03-03T00:00:00Z',
-      },
-      {
-        id: 102,
-        novel_id: 7,
-        content: '边界安全的候选',
-        created_at: '2026-03-03T00:00:00Z',
-      },
-    ])
+    setCandidates([continuation(101, '```markdown\n未闭合候选'), continuation(102, '边界安全的候选')])
 
-    render(
-      <UiLocaleProvider>
-        <QueryClientProvider client={createTestQueryClient()}>
-          <MemoryRouter initialEntries={['/novel/7?stage=results&chapter=3&continuations=0:101,1:102&total_variants=2']}>
-            <Routes>
-              <Route
-                path="/novel/:novelId"
-                element={(
-                  <ContinuationResultsStage
-                    novelId={7}
-                    contentFormat="markdown"
-                    isActive
-                    activeChapterNum={3}
-                    showInjectionSummaryRail={false}
-                    onToggleInjectionSummaryRail={vi.fn()}
-                    onDebugChange={vi.fn()}
-                  />
-                )}
-              />
-            </Routes>
-          </MemoryRouter>
-        </QueryClientProvider>
-      </UiLocaleProvider>,
-    )
+    renderResults({ entry: twoResults, contentFormat: 'markdown' })
 
     await waitFor(() => {
       expect(screen.getByTestId('results-adopt-button')).toBeEnabled()
@@ -440,7 +343,7 @@ describe('ContinuationResultsStage runtime', () => {
   })
 
   it('does not restore an old adopt error after an A to B to A result-source round trip', async () => {
-    const staleAdoption = createDeferred<Chapter>()
+    const staleAdoption = deferred<Chapter>()
     mockCreateChapter.mockImplementationOnce(() => staleAdoption.promise)
     mockGetContinuations.mockImplementation(async (_novelId: number, ids: number[]) => (
       ids.map((id) => ({
@@ -451,33 +354,7 @@ describe('ContinuationResultsStage runtime', () => {
       }))
     ))
 
-    render(
-      <UiLocaleProvider>
-        <QueryClientProvider client={createTestQueryClient()}>
-          <MemoryRouter initialEntries={['/novel/7?stage=results&chapter=3&continuations=0:101&total_variants=1']}>
-            <Routes>
-              <Route
-                path="/novel/:novelId"
-                element={(
-                  <>
-                    <ContinuationResultsStage
-                      novelId={7}
-                      contentFormat="plain_text"
-                      isActive
-                      activeChapterNum={3}
-                      showInjectionSummaryRail={false}
-                      onToggleInjectionSummaryRail={vi.fn()}
-                      onDebugChange={vi.fn()}
-                    />
-                    <ResultsSourceSwitchProbe />
-                  </>
-                )}
-              />
-            </Routes>
-          </MemoryRouter>
-        </QueryClientProvider>
-      </UiLocaleProvider>,
-    )
+    renderResults({ sourceSwitch: true })
 
     await waitFor(() => expect(screen.getByTestId('results-adopt-button')).toBeEnabled())
     await userEvent.click(screen.getByTestId('results-adopt-button'))
@@ -496,67 +373,17 @@ describe('ContinuationResultsStage runtime', () => {
   })
 
   it('confirms an already committed adoption after switching tabs in the same result source', async () => {
-    const committedAdoption = createDeferred<Chapter>()
+    const committedAdoption = deferred<Chapter>()
     mockCreateChapter.mockImplementationOnce(() => committedAdoption.promise)
-    mockGetContinuations.mockResolvedValue([
-      {
-        id: 101,
-        novel_id: 7,
-        content: '候选一',
-        created_at: '2026-03-03T00:00:00Z',
-      },
-      {
-        id: 102,
-        novel_id: 7,
-        content: '候选二',
-        created_at: '2026-03-03T00:00:00Z',
-      },
-    ])
+    setCandidates([continuation(101, '候选一'), continuation(102, '候选二')])
 
-    render(
-      <UiLocaleProvider>
-        <QueryClientProvider client={createTestQueryClient()}>
-          <MemoryRouter initialEntries={['/novel/7?stage=results&chapter=3&continuations=0:101,1:102&total_variants=2']}>
-            <Routes>
-              <Route
-                path="/novel/:novelId"
-                element={(
-                  <>
-                    <ContinuationResultsStage
-                      novelId={7}
-                      contentFormat="plain_text"
-                      isActive
-                      activeChapterNum={3}
-                      showInjectionSummaryRail={false}
-                      onToggleInjectionSummaryRail={vi.fn()}
-                      onDebugChange={vi.fn()}
-                    />
-                    <LocationProbe />
-                  </>
-                )}
-              />
-            </Routes>
-          </MemoryRouter>
-        </QueryClientProvider>
-      </UiLocaleProvider>,
-    )
+    renderResults({ entry: twoResults })
 
     await waitFor(() => expect(screen.getByTestId('results-adopt-button')).toBeEnabled())
     await userEvent.click(screen.getByTestId('results-adopt-button'))
     await userEvent.click(screen.getByRole('button', { name: '版本 2' }))
     await act(async () => {
-      committedAdoption.resolve({
-        id: 301,
-        novel_id: 7,
-        chapter_number: 4,
-        title: '',
-        source_chapter_label: null,
-        source_chapter_number: null,
-        source_volume_title: null,
-        content: '候选一',
-        created_at: '2026-03-03T00:00:00Z',
-        updated_at: null,
-      })
+      committedAdoption.resolve(adoptedChapter('候选一'))
       await committedAdoption.promise
     })
 
@@ -566,20 +393,10 @@ describe('ContinuationResultsStage runtime', () => {
   })
 
   it('confirms committed adoption after a same-source UI-only replace navigation', async () => {
-    const committedAdoption = createDeferred<Chapter>()
+    const committedAdoption = deferred<Chapter>()
     mockCreateChapter.mockImplementationOnce(() => committedAdoption.promise)
 
-    render(
-      <UiLocaleProvider>
-        <QueryClientProvider client={createTestQueryClient()}>
-          <MemoryRouter initialEntries={['/novel/7?stage=results&chapter=3&continuations=0:101&total_variants=1']}>
-            <Routes>
-              <Route path="/novel/:novelId" element={<ResultsSessionProbe />} />
-            </Routes>
-          </MemoryRouter>
-        </QueryClientProvider>
-      </UiLocaleProvider>,
-    )
+    renderResults({ session: true })
 
     await waitFor(() => expect(screen.getByTestId('results-adopt-button')).toBeEnabled())
     await userEvent.click(screen.getByTestId('results-adopt-button'))
@@ -589,18 +406,7 @@ describe('ContinuationResultsStage runtime', () => {
     })
 
     await act(async () => {
-      committedAdoption.resolve({
-        id: 301,
-        novel_id: 7,
-        chapter_number: 4,
-        title: '',
-        source_chapter_label: null,
-        source_chapter_number: null,
-        source_volume_title: null,
-        content: '已提交候选',
-        created_at: '2026-03-03T00:00:00Z',
-        updated_at: null,
-      })
+      committedAdoption.resolve(adoptedChapter('已提交候选'))
       await committedAdoption.promise
     })
 
@@ -610,20 +416,10 @@ describe('ContinuationResultsStage runtime', () => {
   })
 
   it('does not navigate for a committed adoption after the results stage becomes inactive', async () => {
-    const committedAdoption = createDeferred<Chapter>()
+    const committedAdoption = deferred<Chapter>()
     mockCreateChapter.mockImplementationOnce(() => committedAdoption.promise)
 
-    render(
-      <UiLocaleProvider>
-        <QueryClientProvider client={createTestQueryClient()}>
-          <MemoryRouter initialEntries={['/novel/7?stage=results&chapter=3&continuations=0:101&total_variants=1']}>
-            <Routes>
-              <Route path="/novel/:novelId" element={<ResultsSessionProbe />} />
-            </Routes>
-          </MemoryRouter>
-        </QueryClientProvider>
-      </UiLocaleProvider>,
-    )
+    renderResults({ session: true })
 
     await waitFor(() => expect(screen.getByTestId('results-adopt-button')).toBeEnabled())
     await userEvent.click(screen.getByTestId('results-adopt-button'))
@@ -633,18 +429,7 @@ describe('ContinuationResultsStage runtime', () => {
     })
 
     await act(async () => {
-      committedAdoption.resolve({
-        id: 301,
-        novel_id: 7,
-        chapter_number: 4,
-        title: '',
-        source_chapter_label: null,
-        source_chapter_number: null,
-        source_volume_title: null,
-        content: '已提交候选',
-        created_at: '2026-03-03T00:00:00Z',
-        updated_at: null,
-      })
+      committedAdoption.resolve(adoptedChapter('已提交候选'))
       await committedAdoption.promise
     })
 
@@ -655,30 +440,7 @@ describe('ContinuationResultsStage runtime', () => {
   it('shows safe copy when the adopt request fails', async () => {
     mockCreateChapter.mockRejectedValue(new Error('raw backend diagnostic'))
 
-    render(
-      <UiLocaleProvider>
-        <QueryClientProvider client={createTestQueryClient()}>
-          <MemoryRouter initialEntries={['/novel/7?stage=results&chapter=3&continuations=0:101&total_variants=1']}>
-            <Routes>
-              <Route
-                path="/novel/:novelId"
-                element={(
-                  <ContinuationResultsStage
-                    novelId={7}
-                    contentFormat="plain_text"
-                    isActive
-                    activeChapterNum={3}
-                    showInjectionSummaryRail={false}
-                    onToggleInjectionSummaryRail={vi.fn()}
-                    onDebugChange={vi.fn()}
-                  />
-                )}
-              />
-            </Routes>
-          </MemoryRouter>
-        </QueryClientProvider>
-      </UiLocaleProvider>,
-    )
+    renderResults()
 
     await waitFor(() => {
       expect(screen.getByTestId('results-adopt-button')).toBeEnabled()

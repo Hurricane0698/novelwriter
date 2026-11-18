@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { setStudioResultsStageSearchParams } from '@/components/novel-shell/NovelShellRouteState'
-import { useAuth } from '@/contexts/AuthContext'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { getLlmApiErrorMessage } from '@/lib/llmErrorMessages'
 import { api, ApiError } from '@/services/api'
@@ -61,16 +61,29 @@ function canUseSummary(summary: NovelContextSummary): boolean {
 
 export function useContinuationSetupState(novelId: number, chapterNum: number | null) {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const { mutate: updatePreferences } = useMutation({
+    mutationFn: api.updatePreferences,
+    onSuccess: profile => queryClient.setQueryData(['profile'], profile),
+  })
+  const { data: user } = useQuery({ queryKey: ['profile'], queryFn: api.getProfile })
   const { locale, t } = useUiLocale()
 
   const [instruction, setInstruction] = useState('')
-  const [selectedLength, setSelectedLength] = useState('3000')
+  const [editedLength, setSelectedLength] = useState<string>()
   const [advancedOpen, setAdvancedOpen] = useState(false)
-  const [contextChapters, setContextChapters] = useState(String(DEFAULT_CONTEXT_CHAPTERS))
-  const [numVersions, setNumVersions] = useState('1')
-  const [temperature, setTemperature] = useState('0.8')
-  const [prefsLoaded, setPrefsLoaded] = useState(false)
+  const [editedContext, setContextChapters] = useState<string>()
+  const [editedVersions, setNumVersions] = useState<string>()
+  const [editedTemperature, setTemperature] = useState<string>()
+  const prefs = user?.preferences
+  const numVersions = editedVersions ?? String(prefs?.num_versions ?? 1)
+  const temperature = editedTemperature ?? String(prefs?.temperature ?? 0.8)
+  const contextChapters = editedContext ?? String(
+    clampInt(String(prefs?.context_chapters), MIN_CONTEXT_CHAPTERS, MAX_CONTEXT_CHAPTERS) ?? DEFAULT_CONTEXT_CHAPTERS,
+  )
+  const selectedLength = editedLength ?? (
+    LENGTH_OPTIONS.find(option => Number(option.value) === Number(prefs?.target_chars))?.value ?? '3000'
+  )
   const [selectedContextSummaryIdsState, setSelectedContextSummaryIds] = useState<number[]>([])
   const [contextSummaryRange, setContextSummaryRange] = useState('')
   const [contextSummaryActionError, setContextSummaryActionError] = useState<string | null>(null)
@@ -106,29 +119,6 @@ export function useContinuationSetupState(novelId: number, chapterNum: number | 
     })
   }, [contextSummaries, contextSummariesQuery.isSuccess])
 
-  useEffect(() => {
-    if (prefsLoaded || !user?.preferences) return
-    const preferences = user.preferences as Record<string, unknown>
-    queueMicrotask(() => {
-      if (preferences.num_versions != null) setNumVersions(String(preferences.num_versions))
-      if (preferences.temperature != null) setTemperature(String(preferences.temperature))
-      if (preferences.context_chapters != null) {
-        const next = clampInt(
-          String(preferences.context_chapters),
-          MIN_CONTEXT_CHAPTERS,
-          MAX_CONTEXT_CHAPTERS,
-        )
-        setContextChapters(String(next ?? DEFAULT_CONTEXT_CHAPTERS))
-      }
-      if (preferences.target_chars != null) {
-        const targetChars = Number(preferences.target_chars)
-        const match = LENGTH_OPTIONS.find(option => Number(option.value) === targetChars)
-        if (match) setSelectedLength(match.value)
-      }
-      setPrefsLoaded(true)
-    })
-  }, [prefsLoaded, user?.preferences])
-
   const savePrefs = useCallback(() => {
     const preferences: Record<string, unknown> = {}
     const versions = parseInt(numVersions, 10)
@@ -142,8 +132,8 @@ export function useContinuationSetupState(novelId: number, chapterNum: number | 
       ?? DEFAULT_CONTEXT_CHAPTERS
     )
     preferences.target_chars = resolveTargetChars(selectedLength)
-    api.updatePreferences(preferences).catch(() => {})
-  }, [contextChapters, numVersions, selectedLength, temperature])
+    updatePreferences(preferences)
+  }, [contextChapters, numVersions, selectedLength, temperature, updatePreferences])
 
   const contextSummaryErrorMessage = useCallback((error: unknown): string => {
     if (error instanceof ApiError) {

@@ -45,7 +45,6 @@ import { MIN_NOVEL_SHELL_DRAWER_WIDTH } from '@/components/novel-shell/novelShel
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { api } from '@/services/api'
 import { novelKeys } from '@/hooks/novel/keys'
-import { trackHostedAnalyticsEvent } from '@/lib/hostedAnalytics'
 import { getWindowIndexPollingInterval } from '@/lib/windowIndexStatus'
 import {
   isWorldEntryPendingExpired,
@@ -197,7 +196,6 @@ export function NovelAtlasPage() {
   const [reviewSearch, setReviewSearch] = useState('')
   const [reviewHighlight, setReviewHighlight] = useState<number | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const trackedWorldModelViewRef = useRef(false)
   const tab: AtlasWorkbenchTab = routeState.worldTab ?? 'systems'
   const [assistOpen, setAssistOpen] = useState(() => window.innerWidth >= 1024)
   const [navigatorOpen, setNavigatorOpen] = useState(true)
@@ -300,16 +298,6 @@ export function NovelAtlasPage() {
     [searchParams],
   )
   const effectiveReviewHighlight = reviewHighlightFromUrl ?? reviewHighlight
-
-  useEffect(() => {
-    if (invalidNovelId || trackedWorldModelViewRef.current) return
-    trackedWorldModelViewRef.current = true
-    void trackHostedAnalyticsEvent('world_model_view', {
-      novelId: nid,
-      meta: { surface: 'atlas', tab },
-    })
-  }, [invalidNovelId, nid, tab])
-
 
   const setSelectedEntity = useCallback((entityId: number | null) => {
     setSearchParams((prev) => {

@@ -5,15 +5,12 @@ import { fileURLToPath } from 'node:url'
 import {
   authHeaders,
   blockExternalNoise,
-  createApiSession,
-  getDeployMode,
+  getSessionToken,
   installSession,
-  readInviteCode,
 } from '../fixtures/api-helpers'
 import { waitForInitialNovelReady } from '../fixtures/novel-ready'
 
 const API = process.env.E2E_API_ORIGIN ?? 'http://localhost:8000'
-const AUTH_SCOPE = 'world-generation-llm'
 
 function envFlag(name: string): boolean {
   const raw = (process.env[name] ?? '').trim().toLowerCase()
@@ -86,8 +83,6 @@ let novelId: number
 let sessionToken: string
 
 const backendHasLlmKey = hasBackendLlmKey()
-const deployMode = getDeployMode()
-const inviteCode = readInviteCode()
 
 async function apiGet(request: APIRequestContext, path: string, token: string) {
   return request.get(`${API}${path}`, { headers: authHeaders(token) })
@@ -120,17 +115,12 @@ test.describe.configure({ mode: 'serial' })
 
 test.describe('World generation (real LLM, integration)', () => {
   test.skip(
-    deployMode === 'hosted' && !inviteCode,
-    'Skipping: hosted run requires HOSTED_INVITE_CODES or E2E_INVITE_CODE',
-  )
-
-  test.skip(
     envFlag('E2E_SKIP_LLM') || !backendHasLlmKey,
     'Skipping: backend has no OPENAI_API_KEY configured, or E2E_SKIP_LLM=1',
   )
 
   test.beforeAll(async ({ request }) => {
-    sessionToken = (await createApiSession(request, { scope: AUTH_SCOPE })).accessToken
+    sessionToken = await getSessionToken(request)
 
     const res = await request.post(`${API}/api/novels/upload`, {
       headers: authHeaders(sessionToken),
@@ -144,8 +134,6 @@ test.describe('World generation (real LLM, integration)', () => {
           // this test's explicit paste-settings generation flow.
           buffer: Buffer.from('第一章 世界生成测试\n', 'utf-8'),
         },
-        consent_acknowledged: 'true',
-        consent_version: '2026-03-06',
       },
     })
     expect(res.ok()).toBeTruthy()
@@ -184,15 +172,16 @@ test.describe('World generation (real LLM, integration)', () => {
     ].join('\n')
 
     await page.goto(`/novel/${novelId}`)
-    await waitForInitialNovelReady(page, novelId, { requireOnboarding: true })
+    await waitForInitialNovelReady(page)
 
-    await page.getByTestId('world-onboarding-generate').click()
+    await page.getByTestId('world-build-generate').click()
     await expect(page.getByTestId('world-gen-dialog')).toBeVisible()
 
     await page.getByTestId('world-gen-text').fill(seedText)
     await page.getByTestId('world-gen-submit').click()
 
-    await expect(page).toHaveURL(new RegExp(`/world/${novelId}\\?tab=review&kind=entities`), {
+    await page.getByTestId('studio-world-entry-attention-action').click()
+    await expect(page).toHaveURL(url => url.pathname === `/world/${novelId}` && url.searchParams.get('kind') === 'entities', {
       timeout: 180_000,
     })
     await expect(page.getByTestId('tab-review-indicator')).toBeVisible({ timeout: 15_000 })

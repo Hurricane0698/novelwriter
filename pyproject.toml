@@ -15,7 +15,6 @@ dependencies = [
     "markdown-it-py>=4.0.0",
     "msgpack>=1.0.8",
     "openai>=1.50.0",
-    "passlib[bcrypt]>=1.7.4",
     "psycopg2-binary>=2.9.9",
     "pyahocorasick>=2.0.0",
     "pydantic>=2.10.0",
@@ -43,11 +42,6 @@ dev = [
     "pytest-asyncio",
     "ruff",
 ]
-hosted-proxy = [
-    "aiohttp>=3.13.5",
-    "cryptography>=46.0.6",
-    "litellm[proxy,google]==1.82.0",
-]
 
 [tool.uv]
 package = true
@@ -61,7 +55,5 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 markers = [
-    "contract: tests for deferred/unimplemented modules (update_detector, explorations)",
     "e2e_llm: real provider end-to-end LLM tests",
 ]
-addopts = "-m 'not contract'"

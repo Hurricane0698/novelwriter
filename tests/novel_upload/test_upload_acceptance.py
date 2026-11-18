@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event
 
 import app.core.ingest.worker as ingest_worker
-from app.api import novel_support
 from app.models import Chapter, Novel
 
 from .support import make_novels_app, novel_txt_bytes, patch_upload_dir, run_ingest_and_index_jobs
@@ -23,8 +22,6 @@ def test_selfhost_upload_persists_novel_and_chapters(db, tmp_path, monkeypatch, 
             data={
                 "title": "T",
                 "author": "A",
-                "consent_acknowledged": "true",
-                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
         status_resp = c.get(f"/api/novels/{resp.json()['novel_id']}/status")
@@ -104,8 +101,6 @@ def test_upload_keeps_failed_ingest_state_after_accept(db, tmp_path, monkeypatch
             data={
                 "title": "T",
                 "author": "A",
-                "consent_acknowledged": "true",
-                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
 
@@ -166,8 +161,6 @@ def test_markdown_upload_round_trips_native_format_and_volume_metadata(
             data={
                 "title": "Markdown Novel",
                 "author": "A",
-                "consent_acknowledged": "true",
-                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
         assert response.status_code == 202
@@ -214,8 +207,6 @@ def test_markdown_upload_reports_structure_error_without_retrying_same_file(
             files={"file": ("disguised.md", b"plain body without h2", "text/markdown")},
             data={
                 "title": "Broken",
-                "consent_acknowledged": "true",
-                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
         novel_id = response.json()["novel_id"]
@@ -247,8 +238,6 @@ def test_markdown_upload_reports_non_utf8_encoding(
             files={"file": ("gbk.md", "## 第一章\n正文".encode("gbk"), "text/markdown")},
             data={
                 "title": "GBK Markdown",
-                "consent_acknowledged": "true",
-                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
         novel_id = response.json()["novel_id"]
@@ -276,8 +265,6 @@ def test_upload_reports_missing_saved_source_without_retrying(
             files={"file": ("novel.txt", novel_txt_bytes(), "text/plain")},
             data={
                 "title": "Missing source",
-                "consent_acknowledged": "true",
-                "consent_version": novel_support.UPLOAD_CONSENT_VERSION,
             },
         )
         novel_id = response.json()["novel_id"]
@@ -329,6 +316,7 @@ def test_get_novel_exposes_window_index_lifecycle_contract(
     enqueue_window_index_rebuild_job(db, novel_id=novel.id, target_revision=revision)
     db.commit()
     detail_path = f"/api/novels/{novel.id}"
+    db.expunge(novel)
 
     queries = {"novels": []}
 

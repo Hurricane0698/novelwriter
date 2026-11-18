@@ -8,16 +8,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_user_or_default
-from app.core.world.application import (
-    batch_confirm_systems as confirm_system_drafts,
-    batch_reject_systems as reject_system_drafts,
-    create_system as create_system_use_case,
-    delete_system as delete_system_use_case,
-    update_system as update_system_use_case,
-)
+from app.core.world import crud
 from app.database import get_db
-from app.models import User, WorldSystem
+from app.models import WorldSystem
 from app.schemas import (
     BatchConfirmRequest,
     BatchConfirmResponse,
@@ -36,8 +29,6 @@ from app.api.world_support import (
     get_novel,
     get_system as load_world_system,
     parse_visibility_filter,
-    run_user_batch_operation,
-    run_user_payload_operation,
     run_world_operation,
 )
 
@@ -54,9 +45,7 @@ def list_systems(
     status: Optional[WorldModelRowStatus] = None,
     display_type: Optional[SystemDisplayType] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    _ = current_user
     get_novel(novel_id, db)
     query = db.query(WorldSystem).filter(WorldSystem.novel_id == novel_id)
     query = apply_ilike_search(query, q, WorldSystem.name, WorldSystem.description)
@@ -77,13 +66,11 @@ def create_system(
     novel_id: int,
     body: WorldSystemCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    return run_user_payload_operation(
-        create_system_use_case,
+    return run_world_operation(
+        crud.create_system,
         novel_id,
-        body=body,
-        current_user_id=current_user.id,
+        body.model_dump(),
         db=db,
     )
 
@@ -93,9 +80,7 @@ def get_system_route(
     novel_id: int,
     system_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    _ = current_user
     get_novel(novel_id, db)
     return load_world_system(novel_id, system_id, db)
 
@@ -106,16 +91,13 @@ def update_system(
     system_id: int,
     body: WorldSystemUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    return run_user_payload_operation(
-        update_system_use_case,
+    return run_world_operation(
+        crud.update_system,
         novel_id,
         system_id,
-        body=body,
-        current_user_id=current_user.id,
+        body.model_dump(exclude_none=True),
         db=db,
-        exclude_none=True,
     )
 
 
@@ -124,10 +106,8 @@ def delete_system(
     novel_id: int,
     system_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    _ = current_user
-    run_world_operation(delete_system_use_case, novel_id, system_id, db=db)
+    run_world_operation(crud.delete_system, novel_id, system_id, db=db)
     return {"message": "System deleted"}
 
 
@@ -136,13 +116,11 @@ def batch_confirm_systems(
     novel_id: int,
     body: BatchConfirmRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    count = run_user_batch_operation(
-        confirm_system_drafts,
+    count = run_world_operation(
+        crud.batch_confirm_systems,
         novel_id,
         body.ids,
-        current_user_id=current_user.id,
         db=db,
     )
     return BatchConfirmResponse(confirmed=count)
@@ -153,13 +131,11 @@ def batch_reject_systems(
     novel_id: int,
     body: BatchRejectRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    count = run_user_batch_operation(
-        reject_system_drafts,
+    count = run_world_operation(
+        crud.batch_reject_systems,
         novel_id,
         body.ids,
-        current_user_id=current_user.id,
         db=db,
     )
     return BatchRejectResponse(rejected=count)

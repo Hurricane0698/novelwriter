@@ -585,7 +585,6 @@ describe('NovelCopilotDrawer', () => {
   it.each([
     [409, 'session_run_active', '当前会话里已有一轮研究正在进行，请等它完成后再继续。'],
     [429, 'too_many_active_runs', '你当前同时进行的研究轮次已达上限，请先等待其他会话完成。'],
-    [429, 'generation_quota_exhausted', '可用额度已用完，请先提交反馈解锁更多额度。'],
     [503, 'too_many_global_runs', '当前服务器较忙，正在处理过多的 Copilot 请求，请稍后再试。'],
   ] as const)('shows a friendly run creation error for %s/%s', async (status, code, expectedMessage) => {
     const user = userEvent.setup()

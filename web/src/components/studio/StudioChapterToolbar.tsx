@@ -36,13 +36,15 @@ interface StudioChapterToolbarProps {
   assistOpen: boolean
   onToggleAssist?: () => void
   onReview?: () => void
+  onProposeChanges?: () => void
+  reviewError?: string
   reviewBusy?: boolean
 }
 
 /** Chapter metadata and commands; save ownership stays in the mounted Studio editor. */
 export function StudioChapterToolbar({
   currentMeta, currentChapterIdentity, updatedAt, content, canEdit, canDelete,
-  editor, actions, onReview, reviewBusy,
+  editor, actions, onReview, onProposeChanges, reviewError, reviewBusy,
 }: StudioChapterToolbarProps) {
   const { t } = useUiLocale()
   const { editMode, editingTitle, titleDraft, setTitleDraft, setEditingTitle, handleTitleSave, toggleEdit } = editor
@@ -127,6 +129,10 @@ export function StudioChapterToolbar({
               {editMode ? t('studio.chapter.finishEditing') : t('studio.chapter.edit')}
             </NwButton>
 
+            {onProposeChanges && content.trim() && <NwButton onClick={onProposeChanges} disabled={reviewBusy}
+              data-testid="chapter-world-changes" variant="glass" className="rounded-[10px] px-3 py-2 text-sm"
+              title={t('review.updateHint')}>{t('review.update')}</NwButton>}
+            {reviewError && <span role="alert" className="text-xs text-destructive">{reviewError}</span>}
             {onReview && <NwButton onClick={onReview} disabled={!canEdit || reviewBusy}
               variant="glass" className="rounded-[10px] px-4 py-2 text-sm font-medium"
               title={t('review.openHint')}><FileSearch size={14} />{t('review.chapter')}</NwButton>}

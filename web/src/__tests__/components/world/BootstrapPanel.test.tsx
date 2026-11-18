@@ -14,7 +14,6 @@ import type { BootstrapJobResponse, WindowIndexState } from '@/types/api'
 const mockUseBootstrapStatus = vi.fn()
 const mockUseTriggerBootstrap = vi.fn()
 const mockUseNovelWindowIndex = vi.fn()
-const trackHostedAnalyticsEventMock = vi.fn().mockResolvedValue(true)
 
 vi.mock('@/hooks/world/useBootstrap', () => ({
   useBootstrapStatus: (...args: unknown[]) => mockUseBootstrapStatus(...args),
@@ -23,10 +22,6 @@ vi.mock('@/hooks/world/useBootstrap', () => ({
 
 vi.mock('@/hooks/novel/useNovelWindowIndex', () => ({
   useNovelWindowIndex: (...args: unknown[]) => mockUseNovelWindowIndex(...args),
-}))
-
-vi.mock('@/lib/hostedAnalytics', () => ({
-  trackHostedAnalyticsEvent: (...args: unknown[]) => trackHostedAnalyticsEventMock(...args),
 }))
 
 const baseJob: BootstrapJobResponse = {
@@ -75,8 +70,6 @@ describe('BootstrapPanel (sidebar variant)', () => {
     mockUseNovelWindowIndex.mockReturnValue({ data: freshIndexState })
     localStorage.clear()
     document.documentElement.lang = 'zh-CN'
-    trackHostedAnalyticsEventMock.mockReset()
-    trackHostedAnalyticsEventMock.mockResolvedValue(true)
   })
 
   it('renders skeleton while loading', () => {
@@ -225,8 +218,8 @@ describe('BootstrapPanel (sidebar variant)', () => {
     document.documentElement.lang = 'en'
     mutateAsyncFn.mockRejectedValue(
       new ApiError(503, 'HTTP 503', {
-        code: 'ai_manually_disabled',
-        detail: { code: 'ai_manually_disabled' },
+        code: 'llm_config_missing',
+        detail: { code: 'llm_config_missing' },
       }),
     )
     mockUseBootstrapStatus.mockReturnValue({ data: null, isLoading: false })
@@ -235,7 +228,7 @@ describe('BootstrapPanel (sidebar variant)', () => {
 
     await userEvent.click(screen.getByText('Extract from chapters'))
 
-    expect(screen.getByText('AI is disabled on this instance, so model requests are unavailable right now.')).toBeTruthy()
+    expect(screen.getByText('Configure an AI model in Settings before trying again.')).toBeTruthy()
   })
 
   it('calls trigger with initial payload on idle row click', async () => {
@@ -244,12 +237,6 @@ describe('BootstrapPanel (sidebar variant)', () => {
     renderPanel()
 
     await userEvent.click(screen.getByText('从章节提取'))
-    expect(trackHostedAnalyticsEventMock).toHaveBeenCalledWith('bootstrap_trigger', expect.objectContaining({
-      novelId: 1,
-      meta: expect.objectContaining({
-        mode: 'initial',
-      }),
-    }))
     expect(mutateAsyncFn).toHaveBeenCalledWith({ mode: 'initial' })
   })
 

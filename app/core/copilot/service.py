@@ -70,7 +70,6 @@ def create_run(
     *,
     quick_action_id: str | None = None,
     resume_run_id: str | None = None,
-    quota_reservation_id: int | None = None,
 ) -> CopilotRun:
     hooks = RunLifecycleHooks(
         count_active_runs=runtime_lookup_mod.count_active_runs,
@@ -90,7 +89,6 @@ def create_run(
         prompt=prompt,
         quick_action_id=quick_action_id,
         resume_run_id=resume_run_id,
-        quota_reservation_id=quota_reservation_id,
     )
 
 

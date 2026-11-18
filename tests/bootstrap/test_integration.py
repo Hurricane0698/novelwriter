@@ -32,14 +32,12 @@ _SELFHOST_LLM_CONFIG = ResolvedLlmConfig(
     base_url="https://example.com/v1",
     api_key="test-key",
     model="test-model",
-    billing_source_hint="selfhost",
     source="selfhost_request",
 )
 _DESKTOP_LLM_CONFIG = ResolvedLlmConfig(
     base_url="https://desktop.example/v1",
     api_key="desktop-key",
     model="desktop-model",
-    billing_source_hint="selfhost",
     source="desktop_store",
 )
 
@@ -273,36 +271,6 @@ def test_index_refresh_endpoint_rejects_incomplete_selfhost_override(client, db)
     assert response.json()["detail"]["code"] == "llm_config_incomplete"
 
 
-def test_index_refresh_endpoint_rejects_hosted_override(client, db, monkeypatch):
-    import app.config as config_mod
-
-    novel = _create_initialized_novel_with_stale_index(db)
-    monkeypatch.setattr(
-        config_mod,
-        "_settings_instance",
-        Settings(
-            deploy_mode="hosted",
-            hosted_llm_base_url="https://hosted.example/v1",
-            hosted_llm_api_key="hosted-key",
-            hosted_llm_model="hosted-model",
-            _env_file=None,
-        ),
-    )
-
-    response = client.post(
-        f"/api/novels/{novel.id}/world/bootstrap",
-        json={"mode": "index_refresh"},
-        headers={
-            "x-llm-base-url": "https://override.example/v1",
-            "x-llm-api-key": "override-key",
-            "x-llm-model": "override-model",
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.json()["detail"]["code"] == "hosted_byok_disabled"
-
-
 def test_index_refresh_endpoint_rejects_desktop_override_before_store_read(
     client, db, monkeypatch, tmp_path
 ):
@@ -332,31 +300,7 @@ def test_index_refresh_endpoint_rejects_desktop_override_before_store_read(
     assert response.json()["detail"]["code"] == "desktop_llm_override_disabled"
 
 
-def test_hosted_bootstrap_queues_for_worker_instead_of_launching_inline(client, db):
-    import app.config as config_mod
-
-    novel = _create_novel_with_text(db)
-
-    prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(
-        deploy_mode="hosted",
-        hosted_llm_base_url="https://hosted.example/v1",
-        hosted_llm_api_key="hosted-key",
-        hosted_llm_model="hosted-model",
-        _env_file=None,
-    )
-    try:
-        response = client.post(
-            f"/api/novels/{novel.id}/world/bootstrap",
-            json={"mode": "initial"},
-        )
-        assert response.status_code == 202
-        assert client.app.state._bootstrap_task_capture == {}
-    finally:
-        config_mod._settings_instance = prev
-
-
-def test_hosted_bootstrap_default_trigger_fast_fails_when_index_is_already_fresh(
+def test_bootstrap_default_trigger_fast_fails_when_index_is_already_fresh(
     client, db
 ):
     import app.config as config_mod
@@ -381,10 +325,10 @@ def test_hosted_bootstrap_default_trigger_fast_fails_when_index_is_already_fresh
 
     prev = config_mod._settings_instance
     config_mod._settings_instance = Settings(
-        deploy_mode="hosted",
-        hosted_llm_base_url="https://hosted.example/v1",
-        hosted_llm_api_key="hosted-key",
-        hosted_llm_model="hosted-model",
+        deploy_mode="selfhost",
+        openai_base_url="https://model.example/v1",
+        openai_api_key="test-key",
+        openai_model="test-model",
         _env_file=None,
     )
     try:
@@ -396,36 +340,7 @@ def test_hosted_bootstrap_default_trigger_fast_fails_when_index_is_already_fresh
         config_mod._settings_instance = prev
 
 
-def test_hosted_bootstrap_does_not_require_generation_quota(client, db):
-    import app.config as config_mod
-
-    novel = _create_novel_with_text(db)
-    user = db.get(User, 1)
-    assert user is not None
-    user.generation_quota = 0
-    db.commit()
-
-    prev = config_mod._settings_instance
-    config_mod._settings_instance = Settings(
-        deploy_mode="hosted",
-        hosted_llm_base_url="https://hosted.example/v1",
-        hosted_llm_api_key="hosted-key",
-        hosted_llm_model="hosted-model",
-        _env_file=None,
-    )
-    try:
-        response = client.post(
-            f"/api/novels/{novel.id}/world/bootstrap",
-            json={"mode": "initial"},
-        )
-        assert response.status_code == 202
-        db.refresh(user)
-        assert user.generation_quota == 0
-    finally:
-        config_mod._settings_instance = prev
-
-
-def test_hosted_worker_claims_bootstrap_job_and_uses_trigger_user(db):
+def test_worker_claims_bootstrap_job_and_uses_trigger_user(db):
     from app.core.world import bootstrap_application as bootstrap_app
 
     novel = _create_novel_with_text(db)
@@ -434,7 +349,7 @@ def test_hosted_worker_claims_bootstrap_job_and_uses_trigger_user(db):
         mode="initial",
         status="pending",
         progress={"step": 0, "detail": "queued"},
-        result=build_bootstrap_trigger_result(mode="initial", user_id=7),
+        result=build_bootstrap_trigger_result(mode="initial", user_id=7, queued_source="ingest_auto"),
     )
     db.add(job)
     db.commit()
@@ -461,10 +376,10 @@ def test_hosted_worker_claims_bootstrap_job_and_uses_trigger_user(db):
     did_work = bootstrap_app.run_next_bootstrap_job(
         session_factory=TestingSessionLocal,
         settings=Settings(
-            deploy_mode="hosted",
-            hosted_llm_base_url="https://hosted.example/v1",
-            hosted_llm_api_key="hosted-key",
-            hosted_llm_model="hosted-model",
+            deploy_mode="selfhost",
+            openai_base_url="https://model.example/v1",
+            openai_api_key="test-key",
+            openai_model="test-model",
             _env_file=None,
         ),
         background_job_runner=_runner,
@@ -474,11 +389,10 @@ def test_hosted_worker_claims_bootstrap_job_and_uses_trigger_user(db):
     assert observed[0]["job_id"] == job.id
     assert observed[0]["user_id"] == 7
     assert observed[0]["llm_config"] == ResolvedLlmConfig(
-        base_url="https://hosted.example/v1",
-        api_key="hosted-key",
-        model="hosted-model",
-        billing_source_hint="hosted",
-        source="hosted_settings",
+        base_url="https://model.example/v1",
+        api_key="test-key",
+        model="test-model",
+        source="selfhost_settings",
     )
 
 
@@ -584,7 +498,7 @@ def test_worker_does_not_resolve_llm_config_without_candidate_job(db, monkeypatc
     assert (
         bootstrap_app.run_next_bootstrap_job(
             session_factory=TestingSessionLocal,
-            settings=Settings(deploy_mode="hosted", _env_file=None),
+            settings=Settings(deploy_mode="selfhost", _env_file=None),
         )
         is False
     )
@@ -743,7 +657,7 @@ def test_worker_canonicalizes_candidate_mode_before_config_resolution(db, monkey
         mode="unknown",
         status="pending",
         progress={"step": 0, "detail": "queued"},
-        result=build_bootstrap_trigger_result(mode="unknown", user_id=1),
+        result=build_bootstrap_trigger_result(mode="unknown", user_id=1, queued_source="ingest_auto"),
     )
     db.add(job)
     db.commit()
@@ -763,7 +677,7 @@ def test_worker_canonicalizes_candidate_mode_before_config_resolution(db, monkey
     assert (
         bootstrap_app.run_next_bootstrap_job(
             session_factory=TestingSessionLocal,
-            settings=Settings(deploy_mode="hosted", _env_file=None),
+            settings=Settings(deploy_mode="selfhost", _env_file=None),
             background_job_runner=_runner,
         )
         is True

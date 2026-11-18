@@ -70,9 +70,7 @@ def probe(monkeypatch):
     monkeypatch.setattr(llm, "AsyncOpenAI", make_client)
     monkeypatch.setattr(llm, "get_llm_config", lambda request: SimpleNamespace(
         base_url="https://provider.test/v1", api_key="test-key", model="reasoner",
-        billing_source_hint="hosted",
     ))
-    monkeypatch.setattr(llm, "ensure_ai_available", lambda *args, **kwargs: None)
     monkeypatch.setattr(llm, "_record_usage", lambda *args, **kwargs: usage.append((args, kwargs)))
     app = FastAPI()
     app.include_router(llm.router)
@@ -102,7 +100,6 @@ def test_reasoning_truncation_retries_then_confirms_json_mode(probe):
     budgets = [r["max_tokens"] for r in requests if "response_format" in r]
     assert len(budgets) == 2 and 32 < budgets[0] < budgets[1] <= 2048
     assert sum(args[2] for args, _ in usage) == 557
-    assert all(kwargs["billing_source"] == "hosted" for _, kwargs in usage)
 
 
 def test_persistent_truncation_is_inconclusive_and_bounded(probe):

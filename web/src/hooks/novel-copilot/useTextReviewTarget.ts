@@ -16,7 +16,8 @@ export function useTextReviewTarget(options: {
   save: (content: string, expectedHash: string) => Promise<void>
   selection?: () => { start?: number; end?: number }
 }) {
-  const { registerTextTarget, openDrawer } = useNovelCopilot()
+  const [reviewFailed, setReviewFailed] = useState(false)
+  const { registerTextTarget, getTextTarget, openDrawer, submitPrompt } = useNovelCopilot()
   const latest = useRef(options)
   const locked = useRef(false)
   const [busy, setBusy] = useState(false)
@@ -62,13 +63,26 @@ export function useTextReviewTarget(options: {
     })
   }, [identity, registerTextTarget, options.target?.kind, options.target?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const target = options.target
+  const prefill = target && {
+    mode: 'research' as const, scope: 'whole_book' as const,
+    context: { surface: 'studio' as const, stage: target.kind === 'chapter' ? 'chapter' as const : 'results' as const, text_target: target },
+  }
   return {
     busy,
+    reviewFailed,
     isLocked: () => locked.current,
-    openReview: () => {
-      if (options.target) openDrawer({ mode: 'research', scope: 'whole_book',
-        context: { surface: 'studio', stage: options.target.kind === 'chapter' ? 'chapter' : 'results', text_target: options.target },
-      }, { displayTitle: options.target.label })
+    openReview: () => { if (prefill) openDrawer(prefill, { displayTitle: target!.label }) },
+    proposeChanges: async (prompt: string) => {
+      if (!prefill || target?.kind !== 'chapter') return
+      setReviewFailed(false)
+      try {
+        const saved = await getTextTarget(target)!.prepare()
+        if (activeIdentity.current !== identity) return
+        const context = { ...prefill.context, text_target: { ...target, content_hash: saved.content_hash } }
+        const sessionId = openDrawer({ ...prefill, context }, { displayTitle: target.label })
+        await submitPrompt(sessionId, prompt, prefill.scope, context, 'propose_world_updates')
+      } catch { setReviewFailed(true) }
     },
   }
 }

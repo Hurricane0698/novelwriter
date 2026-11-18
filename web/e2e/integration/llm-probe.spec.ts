@@ -1,7 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, test } from '@playwright/test'
-import { getDeployMode } from '../fixtures/api-helpers'
 
 // The browser calls the real FastAPI endpoint; only the external provider is local.
 let provider: Server
@@ -41,7 +40,7 @@ test.afterAll(async () => {
 
 // Error variants are covered by test_llm_probe_reasoning.py and LlmConfigCard.test.tsx.
 test('settings retries a truncated probe through the real backend', async ({ page }) => {
-  test.skip(getDeployMode() !== 'selfhost', 'Selfhost settings contract')
+
   budgets = []
   await page.goto('/settings')
   await page.getByLabel('API Base URL').fill(baseUrl)
