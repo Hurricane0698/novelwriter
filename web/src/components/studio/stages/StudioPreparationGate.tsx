@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 import { GlassSurface } from '@/components/ui/glass-surface'
 import { NwButton } from '@/components/ui/nw-button'

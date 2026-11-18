@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 def test_smalltalk_prompt_build_stays_on_light_sections(db, novel, entities):
     from app.core.copilot.prompting import build_copilot_system_prompt_build

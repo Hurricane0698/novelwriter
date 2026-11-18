@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 from app.core.copilot.messages import CopilotTextKey, get_copilot_text
 from app.core.copilot.tracing import build_completed_trace

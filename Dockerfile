@@ -66,6 +66,7 @@ COPY --from=backend-build /app/alembic /app/alembic
 COPY --from=backend-build /app/alembic.ini /app/alembic.ini
 COPY --from=backend-build /app/data /app/data
 COPY --from=frontend-build /web/dist/ /app/static/
+COPY LICENSE /app/static/LICENSE
 
 # Selfhost defaults to a host bind-mounted /data volume. Keep the runtime user as
 # root so first-run SQLite/bootstrap writes still succeed when the host path is

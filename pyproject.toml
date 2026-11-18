@@ -1,10 +1,11 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77.0.3", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "novwr"
-version = "0.6.0"
+version = "0.7.0"
+license = "MIT"
 description = "Long-form novel writing engine with world-model-driven generation."
 readme = "README.md"
 requires-python = ">=3.13,<3.14"

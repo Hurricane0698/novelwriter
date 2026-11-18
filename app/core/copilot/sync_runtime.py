@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 """Bounded synchronous work, with no worker escaping a cancelled Copilot run.
 

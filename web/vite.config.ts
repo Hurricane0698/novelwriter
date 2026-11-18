@@ -22,6 +22,7 @@ const buildId = (
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  build: { license: { fileName: 'THIRD-PARTY-LICENSES.md' } },
   define: {
     __NOVWR_APP_VERSION__: JSON.stringify(packageJson.version),
     __NOVWR_BUILD_ID__: JSON.stringify(buildId),

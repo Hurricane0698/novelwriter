@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 """Worldpack import application service shared by API and background flows."""
 

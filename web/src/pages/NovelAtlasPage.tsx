@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 import { PanelLeft } from 'lucide-react'
 import { lazy, Suspense, useState, useRef, useCallback, useMemo, useEffect } from 'react'

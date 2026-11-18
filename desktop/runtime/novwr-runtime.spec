@@ -14,6 +14,7 @@ datas = [
     (str(ROOT / "alembic.ini"), "."),
     (str(ROOT / "alembic"), "alembic"),
     (str(ROOT / "web/dist"), "static"),
+    (str(ROOT / "LICENSE"), "static"),
     (str(ROOT / "data/common_words"), "data/common_words"),
     (str(ROOT / "data/demo"), "data/demo"),
     (str(ROOT / "data/worldpacks"), "data/worldpacks"),

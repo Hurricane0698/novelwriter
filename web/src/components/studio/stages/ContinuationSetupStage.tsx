@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 import { ChevronDown, ChevronUp, Sparkles, Trash2, X } from 'lucide-react'
 import { useOverlayPanelFocus } from '@/hooks/useOverlayPanelFocus'
