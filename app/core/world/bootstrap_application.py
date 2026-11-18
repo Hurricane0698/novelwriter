@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 """Application orchestration for bootstrap trigger and status flows."""
 
@@ -10,7 +10,6 @@ from dataclasses import dataclass
 import logging
 from typing import Awaitable, Callable
 
-from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -21,7 +20,6 @@ from app.core.bootstrap import (
     BOOTSTRAP_MODE_REEXTRACT,
     BOOTSTRAP_RESULT_QUEUED_SOURCE_INGEST_AUTO,
     build_bootstrap_trigger_result,
-    BootstrapRunSummary,
     bootstrap_job_queued_source,
     find_legacy_manual_draft_ambiguity,
     is_running_status,
@@ -32,8 +30,6 @@ from app.core.bootstrap import (
     resolve_reextract_draft_policy,
     run_bootstrap_job,
 )
-from app.core.events import record_event
-from app.core.safety_fuses import ensure_ai_available
 from app.core.world.crud import load_novel
 from app.core.world.bootstrap_queue import is_window_index_ready
 from app.core.indexing.chapters import has_non_empty_chapter_text
@@ -48,7 +44,6 @@ from app.core.llm_config import (
 from app.core.world.bootstrap_state import is_bootstrap_initialized
 from app.core.world.use_case_errors import (
     WorldUseCaseError,
-    detail_error_from_http_exception,
 )
 from app.models import BootstrapJob, User
 from app.schemas import BootstrapDraftPolicy, BootstrapTriggerRequest
@@ -142,13 +137,6 @@ async def trigger_bootstrap(
                 settings=resolved_settings,
                 llm_override=llm_override,
             )
-            try:
-                ensure_ai_available(
-                    db,
-                    billing_source=llm_config.billing_source_hint,
-                )
-            except HTTPException as exc:
-                raise detail_error_from_http_exception(exc) from exc
 
         if (
             mode == BOOTSTRAP_MODE_REEXTRACT
@@ -215,7 +203,7 @@ async def trigger_bootstrap(
 
         db.refresh(job)
 
-        if resolved_settings.runtime_mode in {"hosted", "desktop"}:
+        if resolved_settings.runtime_mode == "desktop":
             logger.info(
                 "bootstrap[%d]: queued for background worker novel=%d mode=%s runtime=%s",
                 job.id,
@@ -372,7 +360,7 @@ def execute_bootstrap_worker_job(
     background_job_runner: Callable[..., Awaitable[None]] | None = None,
 ) -> None:
     """Execute a value-only selection; the runner owns its database sessions."""
-    runner = background_job_runner or run_bootstrap_background_job
+    runner = background_job_runner or run_bootstrap_job
     asyncio.run(
         runner(
             prepared.candidate.job_id,
@@ -456,7 +444,7 @@ def launch_bootstrap_job(
     background_session_factory = sessionmaker(
         bind=db.get_bind(), autocommit=False, autoflush=False
     )
-    runner = background_job_runner or run_bootstrap_background_job
+    runner = background_job_runner or run_bootstrap_job
     task_scheduler(
         runner(
             job_id,
@@ -465,43 +453,6 @@ def launch_bootstrap_job(
             llm_config=llm_config,
         )
     )
-
-
-async def run_bootstrap_background_job(
-    job_id: int,
-    *,
-    session_factory: Callable[[], Session],
-    user_id: int | None = None,
-    llm_config: ResolvedLlmConfig | None = None,
-    bootstrap_runner: Callable[
-        ..., Awaitable[BootstrapRunSummary | None]
-    ] = run_bootstrap_job,
-    record_event_fn: Callable[..., None] = record_event,
-) -> None:
-    summary = await bootstrap_runner(
-        job_id,
-        session_factory=session_factory,
-        user_id=user_id,
-        llm_config=llm_config,
-    )
-    if summary is None or user_id is None:
-        return
-
-    event_db = session_factory()
-    try:
-        record_event_fn(
-            event_db,
-            user_id,
-            "bootstrap_run",
-            novel_id=summary.novel_id,
-            meta={
-                "mode": summary.mode,
-                "entities_found": summary.entities_found,
-                "relationships_found": summary.relationships_found,
-            },
-        )
-    finally:
-        event_db.close()
 
 
 async def _get_bootstrap_trigger_lock(novel_id: int) -> asyncio.Lock:

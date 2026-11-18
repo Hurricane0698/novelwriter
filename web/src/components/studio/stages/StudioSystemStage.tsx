@@ -1,4 +1,6 @@
 import { type KeyboardEvent } from 'react'
+import { WorldModelHelp } from '@/components/world-model/shared/WorldModelHelp'
+import { WorldSourceRefs } from '@/components/world-model/shared/WorldSourceRefs'
 import { ArrowLeft, Compass } from 'lucide-react'
 import { AssistToggleButton } from '@/components/studio/AssistToggleButton'
 import { LABELS } from '@/constants/labels'
@@ -73,9 +75,8 @@ export function StudioSystemStage({
             <h2 className="text-lg font-semibold text-foreground">
               {t('studio.stage.system.title')}
             </h2>
-            <p className="text-sm text-muted-foreground">
-              {t('studio.stage.system.description')}
-            </p>
+            <WorldModelHelp kind="system" />
+            {system && <WorldSourceRefs novelId={novelId} sources={system.source_refs} />}
           </div>
 
           <div className="flex flex-wrap gap-2">

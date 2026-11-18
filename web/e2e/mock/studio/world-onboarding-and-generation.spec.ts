@@ -99,9 +99,6 @@ test.describe('World onboarding + world generation (mock)', () => {
       await route.fulfill({ json: { entities_created: 1, relationships_created: 0, systems_created: 0, warnings: [] } })
     })
     await page.goto('/novel/1?chapter=1')
-    await page.getByTestId('world-onboarding-dismiss').click()
-    await expect(page).toHaveURL('/world/1')
-    await page.goto('/novel/1?chapter=1')
     await page.getByRole('button', { name: '编辑', exact: true }).click()
     const editor = page.getByTestId('chapter-editor-textarea')
     await expect(editor).toBeVisible()
@@ -122,8 +119,8 @@ test.describe('World onboarding + world generation (mock)', () => {
           && focused.getBoundingClientRect().width > 0 && getComputedStyle(focused).visibility === 'visible')
       })).toBe(true)
     }
-    await page.clock.install()
-    await page.clock.pauseAt(new Date())
+    await page.clock.install({ time: new Date('2026-01-01T12:00:00Z') })
+    await page.clock.pauseAt(new Date('2026-01-01T12:01:00Z'))
     const draft = '这段正文还没有到三秒自动保存时间，不能被迟到的生成结果覆盖。'
     const editorUrl = page.url()
     await editor.fill(draft)
@@ -140,62 +137,6 @@ test.describe('World onboarding + world generation (mock)', () => {
     await page.reload()
     await page.getByRole('button', { name: '编辑', exact: true }).click()
     await expect(editor).toHaveValue(draft)
-  })
-
-  test('ready imported studio does not reopen empty-world onboarding on first entry', async ({ page }) => {
-    await page.route('**/api/**', route => route.abort('blockedbyclient'))
-    await mockAllApiRoutes(page)
-
-    await mockChapterReadyStudio(page)
-
-    await page.route('**/api/novels/1/world/bootstrap/status', route => {
-      if (route.request().method() !== 'GET') return route.abort('blockedbyclient')
-      return route.fulfill({
-        json: {
-          job_id: 9,
-          novel_id: 1,
-          mode: 'initial',
-          initialized: true,
-          status: 'completed',
-          progress: { step: 5, detail: 'Done' },
-          result: {
-            entities_found: 0,
-            relationships_found: 0,
-            index_refresh_only: false,
-          },
-          error: null,
-          created_at: nowIso(),
-          updated_at: nowIso(),
-        },
-      })
-    })
-
-    await page.goto('/novel/1')
-
-    await expect(page.getByTestId('world-onboarding')).toHaveCount(0)
-    await expect(page.getByTestId('studio-rail-chapters')).toBeVisible()
-    await expect(page.getByRole('button', { name: /第\s*1\s*章/ })).toBeVisible()
-  })
-
-  test('Studio shows onboarding when world is empty; dismissal persists', async ({ page }) => {
-    await mockAllApiRoutes(page)
-
-    await page.goto('/novel/1')
-    await expect(page.getByTestId('world-onboarding')).toBeVisible()
-
-    await page.getByTestId('world-onboarding-dismiss').click()
-    await expect(page).toHaveURL('/world/1')
-
-    // Back to novel detail: onboarding stays dismissed (localStorage per novel).
-    await page.goto('/novel/1')
-    await expect(page.getByTestId('world-onboarding')).not.toBeVisible()
-    await expect(page.getByTestId('studio-assistant-rail')).toBeVisible()
-    await expect(page.getByTestId('world-build-panel')).toBeVisible()
-    await expect(page.getByTestId('studio-rail-continuation')).toBeVisible()
-
-    await page.getByTestId('novel-copilot-trigger').click()
-    await expect(page.getByTestId('novel-copilot-drawer')).toBeVisible()
-    await expect(page.getByTestId('studio-assistant-rail')).toHaveCount(0)
   })
 
   test('from settings generation → draft review → confirm → entity appears', async ({ page }) => {
@@ -259,14 +200,14 @@ test.describe('World onboarding + world generation (mock)', () => {
     })
 
     await page.goto('/novel/1')
-    await expect(page.getByTestId('world-onboarding')).toBeVisible()
 
-    await page.getByTestId('world-onboarding-generate').click()
+    await page.getByTestId('world-build-generate').click()
     await expect(page.getByTestId('world-gen-dialog')).toBeVisible()
 
     await page.getByTestId('world-gen-text').fill('这里是一些世界观设定文本，长度足够触发生成。')
     await page.getByTestId('world-gen-submit').click()
 
+    await page.getByTestId('studio-world-entry-attention-action').click()
     await expect(page.getByTestId('tab-review-indicator')).toBeVisible({ timeout: 10_000 })
     const card = page.locator('[id^="draft-entities-"]').filter({ hasText: '测试角色' })
     await expect(card).toBeVisible()
@@ -289,177 +230,14 @@ test.describe('World onboarding + world generation (mock)', () => {
     })
 
     await page.goto('/novel/1')
-    await page.getByTestId('world-onboarding-generate').click()
+    await page.getByTestId('world-build-generate').click()
     await page.getByTestId('world-gen-text').fill('这里是一些世界观设定文本，长度足够触发生成。')
     await page.getByTestId('world-gen-submit').click()
 
     await expect(page.getByTestId('world-gen-error')).toBeVisible()
   })
 
-  test('bootstrap trigger stays single-flight under repeated clicks while pending', async ({ page }) => {
-    await page.route('**/api/**', route => route.abort('blockedbyclient'))
-    await mockAllApiRoutes(page)
-    await mockChapterReadyStudio(page)
-
-    let bootstrapTriggerCount = 0
-    let bootstrapStatusReads = 0
-    let bootstrapRunning = false
-
-    await page.route('**/api/novels/1/world/bootstrap', async (route) => {
-      if (route.request().method() !== 'POST') return route.abort('blockedbyclient')
-      bootstrapTriggerCount += 1
-      bootstrapRunning = true
-      return route.fulfill({
-        json: {
-          job_id: 41,
-          novel_id: 1,
-          mode: 'initial',
-          initialized: false,
-          status: 'pending',
-          progress: { step: 0, detail: 'queued' },
-          result: {
-            entities_found: 0,
-            relationships_found: 0,
-            index_refresh_only: false,
-          },
-          error: null,
-          created_at: nowIso(),
-          updated_at: nowIso(),
-        },
-      })
-    })
-
-    await page.route('**/api/novels/1/world/bootstrap/status', async (route) => {
-      if (route.request().method() !== 'GET') return route.abort('blockedbyclient')
-      bootstrapStatusReads += 1
-      if (!bootstrapRunning) {
-        return route.fulfill({
-          status: 404,
-          json: { detail: { code: 'bootstrap_job_not_found' } },
-        })
-      }
-      return route.fulfill({
-        json: {
-          job_id: 41,
-          novel_id: 1,
-          mode: 'initial',
-          initialized: false,
-          status: 'extracting',
-          progress: { step: 2, detail: 'Extracting...' },
-          result: {
-            entities_found: 0,
-            relationships_found: 0,
-            index_refresh_only: false,
-          },
-          error: null,
-          created_at: nowIso(),
-          updated_at: nowIso(),
-        },
-      })
-    })
-
-    await page.goto('/novel/1')
-    await expect(page.getByTestId('world-onboarding')).toBeVisible()
-
-    const extractButton = page.getByTestId('world-onboarding-bootstrap')
-    await extractButton.click()
-
-    await expect.poll(() => bootstrapTriggerCount).toBe(1)
-    await expect(page.getByTestId('studio-preparation-gate')).toBeVisible()
-    await expect(page.getByText(/提取候选词|Extracting/)).toBeVisible()
-    await expect(extractButton).toHaveCount(0)
-    await expect.poll(() => bootstrapStatusReads).toBeGreaterThan(0)
-  })
-
-  test('failed bootstrap shows retry semantics after the pending run settles', async ({ page }) => {
-    await page.route('**/api/**', route => route.abort('blockedbyclient'))
-    await mockAllApiRoutes(page)
-    await mockChapterReadyStudio(page)
-
-    let bootstrapStatusReads = 0
-
-    await page.route('**/api/novels/1/world/bootstrap', async (route) => {
-      if (route.request().method() !== 'POST') return route.abort('blockedbyclient')
-      return route.fulfill({
-        json: {
-          job_id: 52,
-          novel_id: 1,
-          mode: 'initial',
-          initialized: false,
-          status: 'pending',
-          progress: { step: 0, detail: 'queued' },
-          result: {
-            entities_found: 0,
-            relationships_found: 0,
-            index_refresh_only: false,
-          },
-          error: null,
-          created_at: nowIso(),
-          updated_at: nowIso(),
-        },
-      })
-    })
-
-    await page.route('**/api/novels/1/world/bootstrap/status', async (route) => {
-      if (route.request().method() !== 'GET') return route.abort('blockedbyclient')
-      bootstrapStatusReads += 1
-      if (bootstrapStatusReads === 1) {
-        return route.fulfill({
-          status: 404,
-          json: { detail: { code: 'bootstrap_job_not_found' } },
-        })
-      }
-      if (bootstrapStatusReads === 2) {
-        return route.fulfill({
-          json: {
-            job_id: 52,
-            novel_id: 1,
-            mode: 'initial',
-            initialized: false,
-            status: 'extracting',
-            progress: { step: 2, detail: 'Extracting...' },
-            result: {
-              entities_found: 0,
-              relationships_found: 0,
-              index_refresh_only: false,
-            },
-            error: null,
-            created_at: nowIso(),
-            updated_at: nowIso(),
-          },
-        })
-      }
-      return route.fulfill({
-        json: {
-          job_id: 52,
-          novel_id: 1,
-          mode: 'initial',
-          initialized: false,
-          status: 'failed',
-          progress: { step: 2, detail: 'Extracting...' },
-          result: {
-            entities_found: 0,
-            relationships_found: 0,
-            index_refresh_only: false,
-          },
-          error: 'boom',
-          created_at: nowIso(),
-          updated_at: nowIso(),
-        },
-      })
-    })
-
-    await page.goto('/novel/1')
-    await expect(page.getByTestId('world-onboarding')).toBeVisible()
-
-    await page.getByTestId('world-onboarding-bootstrap').click()
-
-    await expect(page.getByTestId('studio-preparation-gate')).toBeVisible()
-    await expect(page.getByRole('button', { name: /重新提取|Retry extraction/ })).toBeVisible()
-    await expect(page.getByRole('button', { name: /稍后处理|Defer/ })).toBeVisible()
-  })
-
-  test('pending extraction survives a browser reload as an attention gate instead of falling back to onboarding', async ({ page }) => {
+  test('chapters remain readable during extraction after a reload', async ({ page }) => {
     await page.route('**/api/**', route => route.abort('blockedbyclient'))
     await mockAllApiRoutes(page)
     await mockChapterReadyStudio(page)
@@ -489,15 +267,11 @@ test.describe('World onboarding + world generation (mock)', () => {
     const pendingAt = Date.now()
     await page.goto(`/novel/1?worldEntryPending=extract&worldEntryPendingAt=${pendingAt}&worldEntryPendingJob=61`)
 
-    await expect(page.getByTestId('studio-preparation-gate')).toBeVisible()
-    await expect(page.getByText(/提取候选词|Extracting/)).toBeVisible()
-    await expect(page.getByTestId('world-onboarding')).toHaveCount(0)
+    await expect(page.getByTestId('studio-workspace-toolbar')).toBeVisible()
 
     await page.reload()
 
-    await expect(page.getByTestId('studio-preparation-gate')).toBeVisible()
-    await expect(page.getByText(/提取候选词|Extracting/)).toBeVisible()
-    await expect(page.getByTestId('world-onboarding')).toHaveCount(0)
+    await expect(page.getByTestId('studio-workspace-toolbar')).toBeVisible()
   })
 
   test('repeated Atlas handoff clicks navigate once and keep the review target stable', async ({ page }) => {

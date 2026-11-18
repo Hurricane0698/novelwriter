@@ -11,7 +11,6 @@ import type { WorldpackImportResponse } from '@/types/api'
 const mockUseGenerateWorld = vi.fn()
 const mockUseImportWorldpack = vi.fn()
 const navigateMock = vi.fn()
-const trackHostedAnalyticsEventMock = vi.fn().mockResolvedValue(true)
 
 vi.mock('@/hooks/world/useWorldGeneration', () => ({
   useGenerateWorld: (...args: unknown[]) => mockUseGenerateWorld(...args),
@@ -19,10 +18,6 @@ vi.mock('@/hooks/world/useWorldGeneration', () => ({
 
 vi.mock('@/hooks/world/useWorldpack', () => ({
   useImportWorldpack: (...args: unknown[]) => mockUseImportWorldpack(...args),
-}))
-
-vi.mock('@/lib/hostedAnalytics', () => ({
-  trackHostedAnalyticsEvent: (...args: unknown[]) => trackHostedAnalyticsEventMock(...args),
 }))
 
 vi.mock('react-router-dom', async () => {
@@ -53,8 +48,6 @@ describe('WorldGenerationDialog', () => {
     mockUseGenerateWorld.mockReturnValue({ mutate: vi.fn(), isPending: false })
     mockUseImportWorldpack.mockReturnValue({ mutate: vi.fn(), isPending: false })
     navigateMock.mockReset()
-    trackHostedAnalyticsEventMock.mockReset()
-    trackHostedAnalyticsEventMock.mockResolvedValue(true)
   })
 
   it('removes closed controls, restores focus, and rejects a previous dialog session completion', async () => {
@@ -153,12 +146,6 @@ describe('WorldGenerationDialog', () => {
     await userEvent.type(screen.getByTestId('world-gen-text'), 'Enough setting text to trigger world generation.')
     await userEvent.click(screen.getByTestId('world-gen-submit'))
 
-    expect(trackHostedAnalyticsEventMock).toHaveBeenCalledWith('world_generate_submit', expect.objectContaining({
-      novelId: 7,
-      meta: expect.objectContaining({
-        source_surface: 'unknown',
-      }),
-    }))
     expect(mutate).toHaveBeenCalled()
   })
 

@@ -1,4 +1,4 @@
-from pydantic import AfterValidator, BaseModel, Field, ConfigDict, SecretStr, field_validator, model_validator, TypeAdapter
+from pydantic import AfterValidator, BaseModel, Field, ConfigDict, SecretStr, field_validator, model_validator, TypeAdapter, StringConstraints
 from pydantic_core import PydanticCustomError
 from typing import Annotated, ClassVar, Optional, List, Literal, Any
 from datetime import datetime
@@ -79,6 +79,16 @@ class NovelBase(BaseModel):
     @classmethod
     def _normalize_language_field(cls, v: object) -> object:
         return normalize_language_code(v if isinstance(v, str) else None, default=DEFAULT_LANGUAGE)
+
+
+class NovelTitle(BaseModel):
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+
+
+class NovelCreate(NovelTitle):
+    language: str = Field(default=DEFAULT_LANGUAGE, min_length=1, max_length=50)
+
+
 class NovelResponse(NovelBase):
     id: int
     content_format: NovelContentFormat
@@ -222,6 +232,7 @@ class WindowIndexStateResponse(BaseModel):
 
 
 class ChapterResponse(BaseModel):
+    content_hash: str = ""
     id: int
     novel_id: int
     chapter_number: int
@@ -267,6 +278,7 @@ SingleLineChapterTitle = Annotated[
 class ChapterUpdateRequest(BaseModel):
     title: SingleLineChapterTitle | None = None
     content: str | None = None
+    expected_content_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
 class ChapterCreateRequest(BaseModel):
@@ -278,6 +290,8 @@ class ContinuationResponse(BaseModel):
     novel_id: int
     chapter_number: int
     content: str
+    edited_content: str | None = None
+    content_hash: str = ""
     rating: Optional[int]
     created_at: datetime
 
@@ -420,6 +434,7 @@ class WorldEntityUpdate(BaseModel):
 
 
 class WorldEntityAttributeResponse(BaseModel):
+    source_refs: List[dict] = Field(default_factory=list)
     id: int
     entity_id: int
     key: str
@@ -435,6 +450,7 @@ class WorldEntityAttributeResponse(BaseModel):
 
 
 class WorldEntityResponse(BaseModel):
+    source_refs: List[dict] = Field(default_factory=list)
     id: int
     novel_id: int
     name: str
@@ -527,6 +543,7 @@ class WorldRelationshipUpdate(BaseModel):
 
 
 class WorldRelationshipResponse(BaseModel):
+    source_refs: List[dict] = Field(default_factory=list)
     id: int
     novel_id: int
     source_id: int
@@ -666,6 +683,7 @@ class WorldSystemUpdate(BaseModel):
 
 
 class WorldSystemResponse(BaseModel):
+    source_refs: List[dict] = Field(default_factory=list)
     id: int
     novel_id: int
     name: str
@@ -912,11 +930,27 @@ CopilotContextStage = Literal[
 ]
 
 
+class CopilotTextTarget(BaseModel):
+    kind: Literal["chapter", "continuation"]
+    id: int = Field(gt=0)
+    chapter_number: int | None = Field(default=None, gt=0)
+    content_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    label: str = Field(default="", max_length=160)
+    start: int = Field(default=0, ge=0)
+    end: int | None = Field(default=None, ge=1)
+
+
+class TextEditRequest(BaseModel):
+    content: str
+    expected_content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class CopilotContextData(BaseModel):
     entity_id: Optional[int] = None
     tab: Optional[CopilotContextTab] = None
     surface: Optional[CopilotContextSurface] = None
     stage: Optional[CopilotContextStage] = None
+    text_target: Optional["CopilotTextTarget"] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -1017,7 +1051,7 @@ class CopilotEvidenceResponse(BaseModel):
 
 
 class CopilotSuggestionTargetResponse(BaseModel):
-    resource: Literal["entity", "relationship", "system"]
+    resource: Literal["entity", "relationship", "system", "chapter", "continuation"]
     resource_id: Optional[int] = None
     label: str
     tab: str
@@ -1071,10 +1105,16 @@ class CopilotRunResponse(BaseModel):
     evidence: List[CopilotEvidenceResponse] = Field(default_factory=list)
     suggestions: List[CopilotSuggestionResponse] = Field(default_factory=list)
     error: Optional[str] = None
+    text_review: dict | None = None
 
 
 class CopilotApplyRequest(BaseModel):
     suggestion_ids: List[str] = Field(min_length=1, max_length=50)
+
+
+class CopilotTextApplyRequest(BaseModel):
+    suggestion_ids: List[str] = Field(min_length=1, max_length=3)
+    expected_content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class CopilotApplyResultItem(BaseModel):

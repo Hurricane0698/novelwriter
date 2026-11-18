@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SMOKE_IMAGE_TAG="${NOVWR_SMOKE_IMAGE:-novwr-selfhost:ci}"
+SMOKE_IMAGE_TAG="${1:-${NOVWR_SMOKE_IMAGE:-novwr-selfhost:ci}}"
 INSTALL_PORT="${NOVWR_SMOKE_INSTALL_PORT:-18080}"
 COMPOSE_PORT="${NOVWR_SMOKE_COMPOSE_PORT:-18081}"
 NOVWR_BIN="$HOME/.local/bin/novwr"
@@ -75,8 +75,10 @@ docker compose version >/dev/null
 
 cd "$ROOT_DIR"
 
-echo "[selfhost-smoke] building local app image: $SMOKE_IMAGE_TAG"
-docker build -t "$SMOKE_IMAGE_TAG" .
+if [[ $# -eq 0 ]]; then
+  echo "[selfhost-smoke] building local app image: $SMOKE_IMAGE_TAG"
+  docker build -t "$SMOKE_IMAGE_TAG" .
+fi
 
 echo "[selfhost-smoke] building wheel"
 uv build --wheel --out-dir dist >/dev/null

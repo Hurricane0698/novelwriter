@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 """Copilot API endpoints.
 
@@ -13,15 +13,10 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
+from app.core.auth import get_current_user_or_default
 from app.api.deps import verify_novel_access
-from app.core.auth import (
-    check_generation_quota,
-    finalize_quota_reservation,
-    get_current_user_or_default,
-    open_quota_reservation,
-)
 from app.core.copilot.apply import apply_suggestions
 from app.core.copilot.runtime_errors import CopilotError
 from app.core.copilot.run_state import check_stale_run
@@ -33,7 +28,6 @@ from app.core.copilot.service import (
 )
 from app.core.copilot.session_runtime import list_session_runs
 from app.core.copilot.suggestions import dismiss_suggestions
-from app.core.events import record_event
 from app.core.llm_request import get_llm_config
 from app.core.llm_config import ResolvedLlmConfig
 from app.database import get_db
@@ -54,6 +48,7 @@ from app.schemas import (
     CopilotSuggestionResponse,
     CopilotSuggestionTargetResponse,
     CopilotTraceStepResponse,
+    CopilotTextApplyRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,22 +61,6 @@ def _handle_copilot_error(exc: CopilotError) -> None:
         status_code=exc.status_code,
         detail={"code": exc.code, "message": exc.message},
     )
-
-
-def _copilot_session_event_meta(session, *, extra: dict[str, object] | None = None) -> dict[str, object]:
-    meta: dict[str, object] = {
-        "mode": getattr(session, "mode", ""),
-        "scope": getattr(session, "scope", ""),
-    }
-    context = getattr(session, "context_json", None)
-    if isinstance(context, dict):
-        for key in ("surface", "stage", "tab"):
-            value = context.get(key)
-            if isinstance(value, str) and value.strip():
-                meta[key] = value.strip()
-    if extra:
-        meta.update(extra)
-    return meta
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +119,7 @@ async def run_create(
     session_id: str,
     body: CopilotRunCreateRequest,
     novel: Novel = Depends(verify_novel_access),
-    user: User = Depends(check_generation_quota),
+    user: User = Depends(get_current_user_or_default),
     llm_config: ResolvedLlmConfig = Depends(get_llm_config),
     db: Session = Depends(get_db),
 ):
@@ -149,24 +128,16 @@ async def run_create(
     The run executes asynchronously.  Poll via GET to check progress.
     One non-terminal run per session; bounded active runs per user.
     """
-    reservation_id: int | None = None
     try:
         session = load_session(db, novel_id, user.id, session_id)
-        reservation_id = open_quota_reservation(db, user.id, count=1)
-        try:
-            run = create_run(
-                db,
-                session,
-                user.id,
-                body.prompt,
-                quick_action_id=body.quick_action_id,
-                resume_run_id=body.resume_run_id,
-                quota_reservation_id=reservation_id,
-            )
-        except Exception:
-            if reservation_id is not None:
-                finalize_quota_reservation(db, reservation_id)
-            raise
+        run = create_run(
+            db,
+            session,
+            user.id,
+            body.prompt,
+            quick_action_id=body.quick_action_id,
+            resume_run_id=body.resume_run_id,
+        )
     except CopilotError as exc:
         _handle_copilot_error(exc)
         return  # unreachable, silences type checker
@@ -179,20 +150,6 @@ async def run_create(
             user_id=user.id,
             llm_config=llm_config,
         )
-    )
-
-    record_event(
-        db,
-        user.id,
-        "copilot_run",
-        novel_id=novel_id,
-        meta=_copilot_session_event_meta(
-            session,
-            extra={
-                "quick_action_id": body.quick_action_id,
-                "is_resume": body.resume_run_id is not None,
-            },
-        ),
     )
 
     return _run_to_response(run)
@@ -269,7 +226,7 @@ def run_list(
 
     # Build value responses before commit expires the whole session history.
     # Commit failure still aborts the request; no response escapes an uncommitted
-    # stale-run transition or quota settlement.
+    # stale-run transition.
     responses = [_run_to_response(run) for run in runs]
     if changed:
         db.commit()
@@ -279,6 +236,22 @@ def run_list(
 # ---------------------------------------------------------------------------
 # Apply / Dismiss endpoints
 # ---------------------------------------------------------------------------
+
+
+@router.post("/sessions/{session_id}/runs/{run_id}/apply-text")
+def run_apply_text(
+    novel_id: int, session_id: str, run_id: str, body: CopilotTextApplyRequest,
+    novel: Novel = Depends(verify_novel_access),
+    user: User = Depends(get_current_user_or_default),
+    db: Session = Depends(get_db),
+):
+    from app.core.copilot.text_review_apply import apply_text_suggestions
+    try:
+        run = load_run(db, novel_id, user.id, session_id, run_id)
+    except CopilotError as exc:
+        _handle_copilot_error(exc)
+        return
+    return apply_text_suggestions(db, run, body.suggestion_ids, body.expected_content_hash)
 
 
 @router.post("/sessions/{session_id}/runs/{run_id}/apply", response_model=CopilotApplyResponse)
@@ -310,20 +283,6 @@ def run_apply(
         run,
         body.suggestion_ids,
         getattr(getattr(run, "session", None), "interaction_locale", "zh"),
-    )
-    success_count = sum(1 for result in results if result.success)
-    record_event(
-        db,
-        user.id,
-        "copilot_apply",
-        novel_id=novel_id,
-        meta=_copilot_session_event_meta(
-            getattr(run, "session", None),
-            extra={
-                "requested_count": len(body.suggestion_ids),
-                "success_count": success_count,
-            },
-        ),
     )
     return CopilotApplyResponse(
         results=[
@@ -365,6 +324,8 @@ def run_dismiss(
 
 
 def _run_to_response(run) -> CopilotRunResponse:
+    from app.core.copilot.text_review_apply import review_response
+    db = object_session(run)
     trace = [
         CopilotTraceStepResponse(**step)
         for step in (run.trace_json or [])
@@ -400,6 +361,7 @@ def _run_to_response(run) -> CopilotRunResponse:
         evidence=evidence,
         suggestions=suggestions,
         error=run.error,
+        text_review=review_response(run, db) if db is not None and run.quick_action_id in {"review_text", "propose_world_updates"} else None,
     )
 
 

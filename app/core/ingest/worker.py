@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 INGEST_SOURCE_MISSING_MESSAGE = "上传源文件不存在，请重新上传"
 INGEST_SOURCE_ENCODING_UNSUPPORTED_MESSAGE = "文件编码不受支持；Markdown 请使用 UTF-8 或 UTF-8 BOM"
-INGEST_MARKDOWN_STRUCTURE_INVALID_MESSAGE = "Markdown 结构无效；请按 # 卷名、## 章节名整理后重新上传"
+INGEST_MARKDOWN_STRUCTURE_INVALID_MESSAGE = "Markdown 结构无效。请用 # 章节名分章，分卷时用 # 卷名和 ## 章节名。"
 INGEST_JOB_FAILED_MESSAGE = "稿件导入失败，请稍后重试"
 
 INGEST_ERROR_SOURCE_MISSING = "source_missing"

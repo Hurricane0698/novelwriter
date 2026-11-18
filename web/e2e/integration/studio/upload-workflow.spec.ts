@@ -1,15 +1,12 @@
 import { test, expect, type APIRequestContext } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
-import { authHeaders, blockExternalNoise, createApiSession, ensureProductAccess } from '../../fixtures/api-helpers'
-import {
-  installTestIdVisibilityProbe,
-  waitForInitialNovelReady,
-  wasTestIdSeen,
-} from '../../fixtures/novel-ready'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { authHeaders, blockExternalNoise, getSessionToken } from '../../fixtures/api-helpers'
+import { waitForInitialNovelReady } from '../../fixtures/novel-ready'
 
 const API = process.env.E2E_API_ORIGIN ?? 'http://localhost:8000'
 const RUN = Math.random().toString(36).slice(2, 6)
-const AUTH_SCOPE = 'upload-workflow'
 
 const createdNovelIds: number[] = []
 let sessionToken = ''
@@ -18,19 +15,8 @@ async function apiDelete(request: APIRequestContext, path: string) {
   return request.delete(`${API}${path}`, { headers: authHeaders(sessionToken) })
 }
 
-async function ensureUploadConsent(page: import('@playwright/test').Page) {
-  const createButton = page.getByTestId('library-create-novel')
-  if (await createButton.isEnabled()) return
-
-  const checkbox = page.getByRole('checkbox').first()
-  if (await checkbox.isVisible()) {
-    await checkbox.click()
-    await expect(createButton).toBeEnabled({ timeout: 15_000 })
-  }
-}
-
 test.beforeAll(async ({ request }) => {
-  sessionToken = (await createApiSession(request, { scope: AUTH_SCOPE })).accessToken
+  sessionToken = await getSessionToken(request)
 })
 
 test.afterAll(async ({ request }) => {
@@ -42,21 +28,17 @@ test.afterAll(async ({ request }) => {
 
 test.beforeEach(async ({ page }) => {
   await blockExternalNoise(page)
-  await ensureProductAccess(page, { scope: AUTH_SCOPE })
+  await page.goto('/library')
 })
 
-test('upload reaches a ready Studio without flashing empty-world onboarding on first entry', async ({ page }) => {
+test('opens imported chapters in Studio', async ({ page }) => {
   test.slow()
   test.setTimeout(180_000)
 
-  await installTestIdVisibilityProbe(page, 'world-onboarding-first-entry', 'world-onboarding')
-
-  await page.goto('/library')
-  await ensureUploadConsent(page)
 
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByTestId('library-create-novel').click(),
+    page.getByTestId('library-import-novel').click(),
   ])
 
   const fileName = `首发验证_${Date.now()}_${RUN}.txt`
@@ -68,101 +50,105 @@ test('upload reaches a ready Studio without flashing empty-world onboarding on f
   expect(Number.isFinite(novelId)).toBeTruthy()
   createdNovelIds.push(novelId)
 
-  await waitForInitialNovelReady(page, novelId)
+  await waitForInitialNovelReady(page)
 
   const chapterList = page.getByTestId('studio-rail-chapters')
   await expect(chapterList.getByRole('button', { name: /第\s*1\s*章/ })).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByTestId('world-onboarding')).toHaveCount(0)
   await expect(page.getByTestId('studio-preparation-gate')).toHaveCount(0)
-  expect(await wasTestIdSeen(page, 'world-onboarding-first-entry')).toBe(false)
 })
 
-test('import → enter writing desk → continue → adopt', async ({ page }) => {
-  test.slow()
-  test.setTimeout(180_000)
-
-  await page.goto('/library')
-  await ensureUploadConsent(page)
-
-  const [chooser] = await Promise.all([
-    page.waitForEvent('filechooser'),
-    page.getByTestId('library-create-novel').click(),
-  ])
-
-  const fileName = `导入测试_${Date.now()}_${RUN}.txt`
-  const fileContent = Buffer.from('第一章\n这里是导入的内容。\n', 'utf-8')
-  await chooser.setFiles({ name: fileName, mimeType: 'text/plain', buffer: fileContent })
-
-  await expect(page).toHaveURL(/\/novel\/\d+$/, { timeout: 60_000 })
-  const novelId = Number(page.url().split('/').pop())
-  expect(Number.isFinite(novelId)).toBeTruthy()
+test('write a first chapter, confirm an evidenced change, then continue and adopt it', async ({ page, request }) => {
+  const quote = '沈梨把铜钥匙交给林秋。'
+  const nextScene = '林秋用铜钥匙打开了西门。'
+  const owner = '由林秋保管'
+  await page.getByRole('button', { name: '新建作品' }).click()
+  await expect(page).toHaveURL(/\/novel\/\d+$/)
+  const novelId = Number(new URL(page.url()).pathname.split('/').pop())
   createdNovelIds.push(novelId)
+  const editor = page.getByTestId('chapter-editor-textarea')
+  await expect(editor).toBeEditable()
+  await page.getByRole('button', { name: '未命名作品' }).click()
+  await page.getByLabel('修改书名').fill('渡口来信')
+  await page.getByLabel('修改书名').press('Enter')
+  await expect(page.getByRole('button', { name: '渡口来信' })).toBeVisible()
+  await editor.fill(quote)
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.reload()
+  await expect(page.getByText(quote, { exact: true })).toBeVisible()
 
-  const chapterList = page.getByTestId('studio-rail-chapters')
-  const chapterBtn = chapterList.getByRole('button', { name: /第\s*1\s*章/ })
-  await waitForInitialNovelReady(page, novelId, { dismissOnboarding: true })
+  const world = `${API}/api/novels/${novelId}/world/entities`
+  const headers = authHeaders(sessionToken)
+  const created = await request.post(world, { headers, data: {
+    name: '铜钥匙', entity_type: 'Item', description: '由沈梨保管',
+  } })
+  expect(created.ok()).toBeTruthy()
+  const key = await created.json()
+  expect((await request.post(`${world}/confirm`, { headers, data: { ids: [key.id] } })).ok()).toBeTruthy()
 
-  // Sidebar label should NOT duplicate the heading ("第 1 章 · 第一章 ...")
-  await expect(chapterBtn).toBeVisible({ timeout: 15_000 })
-  await expect(chapterBtn).not.toContainText('第一章')
+  const prompts: string[] = []
+  const provider = createServer(async (req, res) => {
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    const body = JSON.parse(Buffer.concat(chunks).toString())
+    const envelope = { id: 'test', model: body.model, created: 0 }
+    if (body.stream) {
+      prompts.push(body.messages.map((m: { content: string }) => m.content).join('\n'))
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      const chunk = { ...envelope, object: 'chat.completion.chunk',
+        choices: [{ index: 0, delta: { content: nextScene }, finish_reason: 'stop' }] }
+      res.end(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`)
+    } else {
+      const content = JSON.stringify({ answer: '铜钥匙易手。', suggestions: [{
+        kind: 'update_entity', target_id: key.id, title: '铜钥匙的持有人', summary: '记录交接后的持有人。',
+        delta: { description: owner }, references: [{ id: 'e0', quote }],
+      }] })
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ...envelope, object: 'chat.completion',
+        choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }] }))
+    }
+  })
+  await new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve))
+  try {
+    await page.goto('/settings')
+    await page.getByLabel('API Base URL').fill(`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`)
+    await page.getByLabel('API Key', { exact: true }).fill('novwr-local-test-key')
+    await page.getByLabel('Model Name').fill('novwr-local-test')
+    await page.getByRole('link', { name: '作品库' }).click()
+    await page.getByRole('link', { name: /渡口来信/ }).click()
 
-  // Enter writing desk
-  await page.getByTestId('studio-rail-continuation').click()
-  await expect(page).toHaveURL(url => url.pathname === `/novel/${novelId}` && url.searchParams.get('stage') === 'write' && url.searchParams.get('chapter') === '1')
-  await expect(page.getByText('续写设置')).toBeVisible()
+    await page.getByTestId('chapter-world-changes').click()
+    const card = page.getByTestId(/^copilot-suggestion-/).filter({ hasText: '铜钥匙的持有人' })
+    await expect(card).toContainText(quote, { timeout: 20_000 })
+    await expect(card).toContainText(key.description)
+    await expect(card).toContainText(owner)
+    async function savedKey() { return (await request.get(`${world}/${key.id}`, { headers })).json() }
+    expect((await savedKey()).description).toBe(key.description)
+    await card.getByRole('button', { name: '采纳', exact: true }).click()
+    await expect.poll(async () => (await savedKey()).description).toBe(owner)
+    expect((await savedKey()).source_refs[0].quote).toBe(quote)
 
-  // Mock the LLM streaming endpoint: deterministic NDJSON, no real model calls.
-  const ndjson = [
-    JSON.stringify({ type: 'start', variant: 0, total_variants: 3 }),
-    JSON.stringify({ type: 'token', variant: 0, content: '他抬头看见远处的灯火。' }),
-    JSON.stringify({
-      type: 'variant_done',
-      variant: 0,
-      continuation_id: 101,
-      content: '他抬头看见远处的灯火。',
-    }),
-    JSON.stringify({
-      type: 'variant_done',
-      variant: 1,
-      continuation_id: 102,
-      content: '风从走廊尽头吹来，带着旧纸张的气味。',
-    }),
-    JSON.stringify({
-      type: 'variant_done',
-      variant: 2,
-      continuation_id: 103,
-      content: '门轴轻响，像某种迟到的回答。',
-    }),
-    JSON.stringify({ type: 'done', continuation_ids: [101, 102, 103] }),
-  ].join('\n')
-  await page.route('**/api/novels/*/continue/stream', route =>
-    route.fulfill({ status: 200, body: ndjson, headers: { 'content-type': 'application/x-ndjson' } }),
-  )
-
-  // Generate continuation (navigates to the canonical in-shell Studio results route).
-  await page.getByTestId('studio-generate-button').click()
-  await expect(page).toHaveURL(new RegExp(`/novel/${novelId}\\?stage=results&chapter=1$`), { timeout: 15_000 })
-
-  // Wait until streaming completes and adopting is enabled.
-  const adoptBtn = page.getByTestId('results-adopt-button')
-  await expect(adoptBtn).toBeEnabled({ timeout: 15_000 })
-  await adoptBtn.click()
-
-  // Adopting returns to Studio with the newly created chapter selected.
-  await expect(page).toHaveURL(new RegExp(`/novel/${novelId}\\?chapter=2$`), { timeout: 15_000 })
-  await expect(chapterList.getByRole('button', { name: /第\s*2\s*章/ })).toBeVisible({ timeout: 15_000 })
+    await page.getByTestId('studio-rail-continuation').click()
+    await page.getByTestId('studio-generate-button').click()
+    const adopt = page.getByTestId('results-adopt-button')
+    await expect(adopt).toBeEnabled({ timeout: 20_000 })
+    expect(prompts.some(prompt => prompt.includes(owner))).toBe(true)
+    await adopt.click()
+    await expect(page).toHaveURL(new RegExp(`/novel/${novelId}\\?chapter=2$`))
+    await page.reload()
+    await expect(page.getByText(nextScene, { exact: true })).toBeVisible()
+  } finally {
+    provider.closeAllConnections()
+    await new Promise<void>(resolve => provider.close(() => resolve()))
+  }
 })
 
 test('Markdown import → source preview → save → native export', async ({ page }) => {
   test.slow()
   test.setTimeout(180_000)
 
-  await page.goto('/library')
-  await ensureUploadConsent(page)
-
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByTestId('library-create-novel').click(),
+    page.getByTestId('library-import-novel').click(),
   ])
   const fileName = `Markdown_闭环_${Date.now()}_${RUN}.md`
   const fileContent = Buffer.from(
@@ -184,7 +170,7 @@ test('Markdown import → source preview → save → native export', async ({ p
   const novelId = Number(page.url().split('/').pop())
   expect(Number.isFinite(novelId)).toBeTruthy()
   createdNovelIds.push(novelId)
-  await waitForInitialNovelReady(page, novelId, { dismissOnboarding: true })
+  await waitForInitialNovelReady(page)
 
   await expect(page.getByTestId('markdown-content').getByText('粗体')).toBeVisible()
   await expect(page.getByRole('heading', { level: 3, name: '章内小节' })).toBeVisible()
@@ -219,9 +205,6 @@ test('import supports 30MB txt (boundary)', async ({ page }) => {
   test.slow()
   test.setTimeout(180_000)
 
-  await page.goto('/library')
-  await ensureUploadConsent(page)
-
   const maxBytes = 30 * 1024 * 1024
   const header = 'Chapter 1\nhello\n\nChapter 2\n'
   const headerBuf = Buffer.from(header, 'utf-8')
@@ -232,7 +215,7 @@ test('import supports 30MB txt (boundary)', async ({ page }) => {
 
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByTestId('library-create-novel').click(),
+    page.getByTestId('library-import-novel').click(),
   ])
   await chooser.setFiles({
     name: `30MB_boundary_${Date.now()}_${RUN}.txt`,
@@ -247,7 +230,7 @@ test('import supports 30MB txt (boundary)', async ({ page }) => {
 
   const chapterList = page.getByTestId('studio-rail-chapters')
   const chapterCount = chapterList.getByText(/共\s*2\s*章/)
-  await waitForInitialNovelReady(page, novelId, { dismissOnboarding: true })
+  await waitForInitialNovelReady(page)
 
   // Parser should split into two chapters, but the page should remain responsive
   // (first chapter content is small).

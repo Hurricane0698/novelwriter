@@ -16,6 +16,8 @@ export function NovelCopilotSuggestionCard({
   onApply,
   onDismiss,
   onLocateTarget,
+  selection,
+  showEvidence = false,
 }: {
   suggestion: CopilotSuggestion
   mode?: 'pending' | 'applied'
@@ -23,11 +25,13 @@ export function NovelCopilotSuggestionCard({
   onApply: (id: string) => void
   onDismiss: (id: string) => void
   onLocateTarget?: (target: CopilotSuggestionTarget) => void
+  showEvidence?: boolean
+  selection?: { checked: boolean; disabled: boolean; onChange: () => void }
 }) {
   const { locale, t } = useUiLocale()
   const isApplied = mode === 'applied'
   const kindMeta = getCopilotSuggestionKindMeta(suggestion.kind, locale)
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(showEvidence || Boolean(selection))
 
   return (
     <div
@@ -175,7 +179,13 @@ export function NovelCopilotSuggestionCard({
               {t('copilot.suggestion.dismiss')}
             </button>
 
-              <button
+              {selection ? (
+                <label className="inline-flex items-center gap-2 text-xs text-foreground">
+                  <input type="checkbox" checked={selection.checked} onChange={selection.onChange}
+                    disabled={selection.disabled || !suggestion.preview.actionable} className="accent-current" />
+                  {t('review.selected')}
+                </label>
+              ) : <button
                 type="button"
                 onClick={() => onApply(suggestion.suggestion_id)}
                 disabled={isApplying || !suggestion.preview.actionable}
@@ -183,7 +193,7 @@ export function NovelCopilotSuggestionCard({
                 className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[hsl(var(--foreground)/0.12)] bg-foreground px-4 text-xs font-medium text-background shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-foreground/90 hover:shadow-[0_6px_16px_rgba(0,0,0,0.12)] hover:-translate-y-[1px] active:scale-[0.97] active:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--foreground)/0.2)] focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:translate-y-0 disabled:hover:bg-foreground"
               >
                 <Check className="h-3.5 w-3.5" /> {isApplying ? t('copilot.suggestion.applying') : t('copilot.suggestion.apply')}
-              </button>
+              </button>}
             </div>
         )}
       </div>

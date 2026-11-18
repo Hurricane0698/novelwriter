@@ -11,7 +11,7 @@ from app.models import Novel, User
 @pytest.mark.parametrize("loader_name", ["novel_api", "api_dependency", "world_crud"])
 def test_novel_access_loaders_defer_index_but_preserve_on_demand_reads(tmp_path, loader_name):
     from app.api.deps import verify_novel_access
-    from app.api.novel_support import get_accessible_novel
+    from app.api.novel_support import get_novel
     from app.core.world.crud import load_novel
 
     engine = create_engine(f"sqlite:///{tmp_path / 'projection.db'}")
@@ -33,7 +33,7 @@ def test_novel_access_loaders_defer_index_but_preserve_on_demand_reads(tmp_path,
         with Session(engine) as db:
             user = User(id=1, username="owner", hashed_password="unused")
             if loader_name == "novel_api":
-                novel = get_accessible_novel(db, novel_id, user)
+                novel = get_novel(db, novel_id)
             elif loader_name == "api_dependency":
                 novel = verify_novel_access(novel_id, db, user)
             else:

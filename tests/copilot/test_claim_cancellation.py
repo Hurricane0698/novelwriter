@@ -1,16 +1,15 @@
 """Cancel real SQL work before commit and observe the rolled-back database."""
 
 import asyncio
-from datetime import timedelta
 import threading
 
 import pytest
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-from app.core.copilot.run_state import claim_run_for_execution, fail_run, utcnow_naive
+from app.core.copilot.run_state import claim_run_for_execution
 from app.core.copilot.sync_runtime import SyncExecutionChannel
-from app.models import CopilotRun, QuotaReservation, User
+from app.models import CopilotRun
 from tests.copilot.test_resource_lifecycle import (
     _seed_runtime,
     runtime_database as runtime_database,
@@ -22,27 +21,10 @@ from tests.copilot.test_sync_runtime import wait_started
 @pytest.mark.parametrize("boundary", [
     "claim-after-select",
     "claim-after-update",
-    "stale-claim-after-quota-select",
-    "fail-after-quota-select",
 ])
-async def test_cancelled_claim_and_failure_leave_no_committed_transition(runtime_database, boundary):
+async def test_cancelled_claim_leave_no_committed_transition(runtime_database, boundary):
     engine, factory, _ = runtime_database
     _, run_id, _, _, _ = _seed_runtime(factory)
-    failure = boundary == "fail-after-quota-select"
-    with factory() as db:
-        db.add(User(id=1, username="quota-owner", hashed_password="unused", generation_quota=1))
-        reservation = QuotaReservation(user_id=1, reserved_count=1, charged_count=0, lease_token="test")
-        db.add(reservation)
-        db.flush()
-        reservation_id = reservation.id
-        run = db.query(CopilotRun).filter_by(run_id=run_id).one()
-        run.quota_reservation_id = reservation_id
-        if failure:
-            run.status, run.lease_owner = "running", "worker"
-        elif boundary == "stale-claim-after-quota-select":
-            run.lease_expires_at = utcnow_naive() - timedelta(seconds=60)
-        db.commit()
-
     started, release = threading.Event(), threading.Event()
     statements = []
 
@@ -50,10 +32,7 @@ async def test_cancelled_claim_and_failure_leave_no_committed_transition(runtime
         statements.append(sql)
         matches = (
             sql.startswith("UPDATE copilot_runs") if boundary == "claim-after-update"
-            else sql.startswith("SELECT") and (
-                "FROM copilot_runs" in sql if boundary == "claim-after-select"
-                else "FROM quota_reservations" in sql
-            )
+            else sql.startswith("SELECT") and "FROM copilot_runs" in sql
         )
         if matches and not started.is_set():
             started.set()
@@ -61,11 +40,7 @@ async def test_cancelled_claim_and_failure_leave_no_committed_transition(runtime
 
     def work():
         with factory() as db:
-            if failure:
-                run = db.query(CopilotRun).filter_by(run_id=run_id).one()
-                fail_run(db, run, "synthetic", "failure", worker_id="worker")
-            else:
-                claim_run_for_execution(db, run_id=run_id, worker_id="worker")
+            claim_run_for_execution(db, run_id=run_id, worker_id="worker")
 
     channel = SyncExecutionChannel(max_workers=1)
     event.listen(engine, "after_cursor_execute", pause_after_sql)
@@ -92,12 +67,9 @@ async def test_cancelled_claim_and_failure_leave_no_committed_transition(runtime
         assert any(sql.startswith("UPDATE copilot_runs") for sql in statements)
     with factory() as db:
         run = db.query(CopilotRun).filter_by(run_id=run_id).one()
-        assert run.status == ("running" if failure else "queued")
-        assert run.lease_owner == ("worker" if failure else None)
+        assert run.status == "queued"
+        assert run.lease_owner is None
         assert run.error is None and run.workspace_json is None
-        reservation = db.get(QuotaReservation, reservation_id)
-        assert reservation.released_at is None and reservation.charged_count == 0
-        assert db.get(User, 1).generation_quota == 1
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { WorldModelHelp } from '@/components/world-model/shared/WorldModelHelp'
 import { cn } from '@/lib/utils'
 import { useWorldRelationships, useCreateRelationship, useUpdateRelationship, useDeleteRelationship, useConfirmRelationships } from '@/hooks/world/useRelationships'
 import { useWorldEntities } from '@/hooks/world/useEntities'
@@ -159,8 +160,9 @@ export function RelationshipsTab({
 
   if (selectedEntityId === null) {
     return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground">
-        {t('worldModel.relationship.empty')}
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-muted-foreground">
+        <p>{t('worldModel.relationship.empty')}</p>
+        <WorldModelHelp kind="relationship" empty />
       </div>
     )
   }

@@ -180,12 +180,6 @@ vi.mock('@/components/detail/ChapterEditor', () => ({
   ),
 }))
 
-vi.mock('@/components/detail/EmptyWorldOnboarding', () => ({
-  EmptyWorldOnboarding: ({ onGenerate }: { onGenerate: () => void }) => (
-    <div data-testid="world-onboarding"><button onClick={onGenerate}>generate-world</button></div>
-  ),
-}))
-
 vi.mock('@/components/world-model/shared/WorldGenerationDialog', () => ({
   WorldGenerationDialog: ({
     open,
@@ -708,21 +702,6 @@ describe('NovelStudioPage', () => {
     }
   })
 
-  it('keeps the generation dialog alive when returned world data removes onboarding', async () => {
-    mockUseWorldEntities.mockReturnValue({ data: [], isLoading: false })
-    const { queryClient } = renderWithStudioShell('/novel/7')
-    await userEvent.click(await screen.findByRole('button', { name: 'generate-world' }))
-    expect(screen.getByTestId('mock-world-gen-success')).toBeInTheDocument()
-
-    mockUseWorldEntities.mockReturnValue({ data: [{ id: 1, name: '生成的人物' }], isLoading: false })
-    act(() => {
-      queryClient.setQueryData(novelKeys.detail(7), { ...buildNovelResponse(), title: 'Generated world' })
-    })
-
-    await waitFor(() => expect(screen.queryByTestId('world-onboarding')).not.toBeInTheDocument())
-    expect(screen.getByTestId('mock-world-gen-success')).toBeInTheDocument()
-  })
-
   it('shows a preparation gate while the upload ingest pipeline is still running', async () => {
     mockGetNovel.mockResolvedValue({
       id: 7,
@@ -766,7 +745,6 @@ describe('NovelStudioPage', () => {
     renderWithStudioShell('/novel/7')
 
     expect(await screen.findByTestId('studio-preparation-gate')).toBeInTheDocument()
-    expect(screen.queryByTestId('world-onboarding')).not.toBeInTheDocument()
   })
 
   it('refetches the clicked novel after a retry conflict so cross-tab state converges', async () => {
@@ -916,7 +894,7 @@ describe('NovelStudioPage', () => {
     expect(screen.queryByText('raw retry diagnostic')).not.toBeInTheDocument()
   })
 
-  it('keeps the studio blocked while initial bootstrap extraction is still running', async () => {
+  it('opens saved chapters while initial extraction runs', async () => {
     mockGetNovel.mockResolvedValue({
       id: 7,
       title: '测试小说',
@@ -975,62 +953,8 @@ describe('NovelStudioPage', () => {
 
     renderWithStudioShell('/novel/7')
 
-    expect(await screen.findByTestId('studio-preparation-gate')).toBeInTheDocument()
-    expect(screen.queryByTestId('world-onboarding')).not.toBeInTheDocument()
-    expect(screen.queryByText('第一章内容')).not.toBeInTheDocument()
-  })
-
-  it('lets the user resume editing while a deferred index is waiting for a worker', async () => {
-    mockGetNovel.mockResolvedValue({
-      id: 7,
-      title: '测试小说',
-      is_seeded_demo: false,
-      created_at: '2026-03-01T00:00:00Z',
-      window_index: {
-        status: 'missing',
-        revision: 2,
-        built_revision: null,
-        error: null,
-        readiness: 'processing',
-        capabilities: {
-          chapters_available: true,
-          whole_book_index_available: false,
-          bootstrap_available: false,
-          recent_fallback_only: true,
-        },
-        ingest: {
-          status: 'completed',
-          stage: 'completed',
-          size_tier: 'large',
-          source_bytes: 1024,
-          source_chars: 4096,
-          chapter_count: 4,
-          requested_language: 'zh',
-          resolved_language: 'zh',
-          auto_index_plan: 'deferred',
-          bootstrap_plan: 'defer_until_index',
-          readiness_mode: 'degraded_target',
-          error_code: null,
-          error: null,
-        },
-        job: null,
-      },
-    })
-    mockUseWorldEntities.mockReturnValue({ data: [], isLoading: false })
-    mockUseWorldSystems.mockReturnValue({ data: [], isLoading: false })
-    mockUseBootstrapStatus.mockReturnValue({
-      data: null,
-      isLoading: false,
-    })
-
-    renderWithStudioShell('/novel/7')
-
-    expect(await screen.findByTestId('studio-preparation-gate')).toBeInTheDocument()
-    expect(screen.queryByTestId('world-onboarding')).not.toBeInTheDocument()
-    expect(screen.queryByText('第一章内容')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: '稍后处理' }))
+    expect(await screen.findByText('第一章内容')).toBeVisible()
     expect(screen.queryByTestId('studio-preparation-gate')).not.toBeInTheDocument()
-    expect(await screen.findByText('第一章内容')).toBeInTheDocument()
   })
 
   it('waits to load chapter metadata until uploaded chapters are actually available', async () => {
@@ -1145,20 +1069,18 @@ describe('NovelStudioPage', () => {
     })
   })
 
-  it('opens the chapter workspace instead of empty-world onboarding for upload-entry navigation', async () => {
+  it('opens an imported chapter and its continuation settings', async () => {
     mockUseWorldEntities.mockReturnValue({ data: [], isLoading: false })
     mockUseWorldSystems.mockReturnValue({ data: [], isLoading: false })
     const user = userEvent.setup()
 
     renderWithStudioShell({
       pathname: '/novel/7',
-      state: { novwrEntry: 'upload' },
     })
 
     await waitFor(() => {
       expect(screen.getByText('第一章内容')).toBeInTheDocument()
     })
-    expect(screen.queryByTestId('world-onboarding')).not.toBeInTheDocument()
     expect(screen.getByTestId('studio-rail-chapters')).toBeInTheDocument()
 
     await user.click(screen.getByTestId('studio-rail-continuation'))
@@ -1166,7 +1088,6 @@ describe('NovelStudioPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('continuation-setup')).toBeInTheDocument()
     })
-    expect(screen.queryByTestId('world-onboarding')).not.toBeInTheDocument()
   })
 
   it('renders the in-shell entity inspection stage when the studio route requests an entity target', async () => {
@@ -1936,25 +1857,6 @@ describe('NovelStudioPage', () => {
     })
     expect(screen.getByTestId('location-search')).toHaveTextContent('worldEntryPending=extract')
     expect(screen.getByTestId('location-search')).toHaveTextContent(`worldEntryPendingAt=${ACTIVE_PENDING_STARTED_AT}`)
-    dateNowSpy.mockRestore()
-  })
-
-  it('re-elevates the world-entry rail section when a pending extraction marker is restored from the URL', async () => {
-    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(ACTIVE_PENDING_NOW_MS)
-    renderWithStudioShell(`/novel/7?chapter=3&worldEntryPending=extract&worldEntryPendingAt=${ACTIVE_PENDING_STARTED_AT}`)
-
-    await waitFor(() => {
-      expect(screen.getByText('第三章内容')).toBeInTheDocument()
-    })
-
-    const sections = screen.getByTestId('studio-support-rail-sections')
-    const panels = Array.from(sections.querySelectorAll('[data-testid="studio-world-entry-panel"], [data-testid="studio-research-panel"]'))
-      .map((node) => node.getAttribute('data-testid'))
-
-    expect(screen.getByTestId('studio-assistant-rail')).toHaveAttribute('data-world-entry-stage', 'attention')
-    expect(screen.getByTestId('studio-world-entry-panel')).toHaveAttribute('data-prominence', 'elevated')
-    expect(screen.getByTestId('studio-world-entry-attention-banner')).toHaveAttribute('data-tone', 'running')
-    expect(panels).toEqual(['studio-world-entry-panel', 'studio-research-panel'])
     dateNowSpy.mockRestore()
   })
 

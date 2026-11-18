@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 from __future__ import annotations
 
@@ -290,6 +290,7 @@ def run_next_window_index_rebuild_job(
         novel_id,
         session_factory=session_factory,
         settings=resolved_settings,
+        after_index_build=True,
     )
     return True
 

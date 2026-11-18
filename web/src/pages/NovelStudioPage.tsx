@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 import { useOverlayPanelFocus } from '@/hooks/useOverlayPanelFocus'
 import { getStudioWorkspaceLayout, resolveStudioRightPanel, type StudioRightPanel } from '@/components/studio/studioWorkspaceLayout'
@@ -11,7 +11,6 @@ import { PanelResizeHandle } from '@/components/novel-shell/PanelResizeHandle'
 import { useElementWidth } from '@/hooks/useElementWidth'
 import { StudioWorkspaceToolbar } from '@/components/studio/StudioWorkspaceToolbar'
 import { StudioChapterToolbar } from '@/components/studio/StudioChapterToolbar'
-import { WorldGenerationDialog } from '@/components/world-model/shared/WorldGenerationDialog'
 import { ChapterContent } from '@/components/detail/ChapterContent'
 import { ChapterEditor } from '@/components/detail/ChapterEditor'
 import { PageShell } from '@/components/layout/PageShell'
@@ -20,10 +19,10 @@ import { novelKeys } from '@/hooks/novel/keys'
 import { useUpdateChapter } from '@/hooks/novel/useUpdateChapter'
 import { useCreateChapter } from '@/hooks/novel/useCreateChapter'
 import { useDeleteChapter } from '@/hooks/novel/useDeleteChapter'
-import { useStudioOnboardingState } from '@/hooks/novel/useStudioOnboardingState'
+import { resolveStudioPreparationGate } from '@/hooks/novel/studioOnboardingPreparation'
 import { useWorldEntities } from '@/hooks/world/useEntities'
 import { useWorldSystems } from '@/hooks/world/useSystems'
-import { useBootstrapStatus, useTriggerBootstrap } from '@/hooks/world/useBootstrap'
+import { useBootstrapStatus } from '@/hooks/world/useBootstrap'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { downloadTextFile } from '@/lib/downloadTextFile'
 import {
@@ -36,8 +35,9 @@ import {
   serializeChapterToNativeFormat,
   serializeChaptersToNativeFormat,
 } from '@/lib/chaptersNativeFormat'
-import type { Novel } from '@/types/api'
+import type { Chapter, Novel } from '@/types/api'
 import { useStudioChapterEditor } from '@/hooks/novel/useStudioChapterEditor'
+import { useTextReviewTarget } from '@/hooks/novel-copilot/useTextReviewTarget'
 import { useStudioNavigation } from '@/hooks/novel/useStudioNavigation'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -51,7 +51,7 @@ import { ArtifactStage } from '@/components/novel-shell/ArtifactStage'
 import { InjectionSummaryPanel } from '@/components/studio/panels/InjectionSummaryPanel'
 import { StudioNavigationRail } from '@/components/studio/rail/StudioNavigationRail'
 import { StudioSupportRail } from '@/components/studio/rail/StudioSupportRail'
-import { StudioOnboardingStage } from '@/components/studio/stages/StudioOnboardingStage'
+import { StudioPreparationGate } from '@/components/studio/stages/StudioPreparationGate'
 import { ContinuationSetupStage } from '@/components/studio/stages/ContinuationSetupStage'
 import { StudioRelationshipStage } from '@/components/studio/stages/StudioRelationshipStage'
 import { StudioSystemStage } from '@/components/studio/stages/StudioSystemStage'
@@ -128,14 +128,6 @@ function StudioStagePanelFallback() {
   )
 }
 
-function isUploadEntryLocationState(value: unknown): boolean {
-  return (
-    typeof value === 'object'
-    && value !== null
-    && (value as { novwrEntry?: unknown }).novwrEntry === 'upload'
-  )
-}
-
 export function NovelStudioPage() {
   const { novelId: novelIdParam } = useParams<{ novelId: string }>()
   const navigate = useNavigate()
@@ -157,9 +149,6 @@ export function NovelStudioPage() {
   const worldEntryPending = useMemo(
     () => readWorldEntryPendingSearchParams(searchParams),
     [searchParams],
-  )
-  const [suppressUploadEntryWorldOnboarding] = useState(
-    () => isUploadEntryLocationState(location.state),
   )
   const warmAtlasAssist = useCallback(() => {
     void loadAtlasAssistWorkbench()
@@ -196,7 +185,7 @@ export function NovelStudioPage() {
   const [showMoreActions, setShowMoreActions] = useState(false)
   const [assistOpen, setAssistOpen] = useState<boolean | null>(null)
   const [lastRightPanel, setLastRightPanel] = useState<StudioRightPanel>('assist')
-  const [chaptersOpen, setChaptersOpen] = useState(true)
+  const [chaptersOpen, setChaptersOpen] = useState(() => window.innerWidth >= 768)
   const [chapterRailWidth, setChapterRailWidth] = useState(256)
   const [continuationPanelWidth, setContinuationPanelWidth] = useState(320)
   const { ref: workspaceRef, width: workspaceWidth } = useElementWidth()
@@ -243,8 +232,8 @@ export function NovelStudioPage() {
     chapterCreateGenerationRef.current += 1
   }, [])
 
-  const { data: worldEntities = [], isLoading: worldEntitiesLoading } = useWorldEntities(novelId)
-  const { data: worldSystems = [], isLoading: worldSystemsLoading } = useWorldSystems(novelId)
+  const { data: worldEntities = [] } = useWorldEntities(novelId)
+  const { data: worldSystems = [] } = useWorldSystems(novelId)
   const selectedStudioEntityStillExists = (
     routeState.entityId !== null && worldEntities.some((entity) => entity.id === routeState.entityId)
   )
@@ -344,10 +333,9 @@ export function NovelStudioPage() {
       })
     },
   })
-  const { data: bootstrapJob, isLoading: bootstrapLoading } = useBootstrapStatus(novelId, {
+  const { data: bootstrapJob } = useBootstrapStatus(novelId, {
     refetchWhenMissing: novel?.window_index?.ingest?.bootstrap_plan != null,
   })
-  const triggerBootstrap = useTriggerBootstrap(novelId)
   const chaptersMetaEnabled = (
     !!novelIdParam
     && (
@@ -406,10 +394,25 @@ export function NovelStudioPage() {
   const {
     editMode, setEditMode, editorContent, editorSaveErrorCode, autoSaveStatus,
     handleEditorChange, handleSave, handleCancelEdit, saveCurrentEditorNow,
-    resetEditor, toggleEdit,
+    resetEditor, toggleEdit, flushPendingSaves,
   } = useStudioChapterEditor({
     novelId, chapterNumber: activeChapterNum, locationKey: location.key,
     chapterContent: chapter?.content ?? '', saveChapter: updateChapter.mutateAsync,
+  })
+
+  const openedChapter = useRef<number | null>(null)
+  useEffect(() => {
+    if (!chapter || openedChapter.current === chapter.id) return
+    openedChapter.current = chapter.id
+    if (chapter.content === '') resetEditor('', true)
+  }, [chapter, resetEditor])
+
+  const renameNovel = useMutation({
+    mutationFn: (title: string) => api.renameNovel(novelId, title),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(novelKeys.detail(updated.id), updated)
+      void queryClient.invalidateQueries({ queryKey: novelKeys.all, exact: true })
+    },
   })
 
   const currentMeta = useMemo(
@@ -524,6 +527,57 @@ export function NovelStudioPage() {
   }
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const chapterReview = useTextReviewTarget({
+    target: chapter && activeStage === 'chapter' ? {
+      kind: 'chapter', id: chapter.id, chapter_number: chapter.chapter_number,
+      label: formatChapterBadgeLabel(chapter),
+    } : null,
+    content: editMode ? editorContent : (chapter?.content ?? ''),
+    flush: async () => {
+      if (editMode) return saveCurrentEditorNow()
+      await flushPendingSaves()
+      return true
+    },
+    accept: (change) => {
+      if (!chapter) return
+      resetEditor(change.content, editMode)
+      queryClient.setQueryData(novelKeys.chapter(novelId, chapter.chapter_number), {
+        ...chapter,
+        ...queryClient.getQueryData<Chapter>(novelKeys.chapter(novelId, chapter.chapter_number)),
+        content: change.content, content_hash: change.content_hash,
+        ...(change.updated_at ? { updated_at: change.updated_at } : {}),
+      })
+      void queryClient.invalidateQueries({ queryKey: novelKeys.contextSummaries(novelId) })
+    },
+    save: async (content, expectedHash) => {
+      await updateChapter.mutateAsync({ content, expected_content_hash: expectedHash })
+    },
+    selection: () => {
+      const area = textareaRef.current
+      if (!editMode || !area || area.selectionEnd <= area.selectionStart) return {}
+      return { start: Array.from(area.value.slice(0, area.selectionStart)).length,
+        end: Array.from(area.value.slice(0, area.selectionEnd)).length }
+    },
+  })
+  const locatedSourceRef = useRef<string | null>(null)
+  useEffect(() => {
+    const start = searchParams.get('sourceStart')
+    const expectedHash = searchParams.get('sourceHash')
+    if (!chapter || start === null || locatedSourceRef.current === location.key ||
+      (expectedHash && expectedHash !== chapter.content_hash)) return
+    locatedSourceRef.current = location.key
+    resetEditor(chapter.content, true)
+    const frame = requestAnimationFrame(() => {
+      const area = textareaRef.current
+      if (!area) return
+      const chars = Array.from(chapter.content)
+      const begin = chars.slice(0, Math.max(0, Number(start))).join('').length
+      const finish = chars.slice(0, Number(searchParams.get('sourceEnd') ?? start)).join('').length
+      area.focus()
+      area.setSelectionRange(begin, Math.max(begin, finish))
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [chapter, location.key, resetEditor, searchParams])
   const [cursorInfo, setCursorInfo] = useState({ para: 1, col: 1 })
   const handleSelectionChange = () => {
     const ta = textareaRef.current; if (!ta) return
@@ -742,7 +796,6 @@ export function NovelStudioPage() {
     }
     return undefined
   }, [activeStage, effectiveStudioEntityId, effectiveStudioEntityName, openEntityCopilot, openRelationshipCopilot, t])
-  const worldLoading = worldEntitiesLoading || worldSystemsLoading || bootstrapLoading
   const handleRetryNovelIngest = () => {
     const retryGeneration = ingestRetryGenerationRef.current + 1
     ingestRetryGenerationRef.current = retryGeneration
@@ -753,42 +806,8 @@ export function NovelStudioPage() {
       retryGeneration,
     })
   }
-  const {
-    bootstrapError,
-    chaptersAvailable,
-    handleDismissWorldOnboarding,
-    handleTriggerBootstrap,
-    preparationGate,
-    showWorldOnboarding,
-    worldGenOpen,
-    setWorldGenOpen,
-  } = useStudioOnboardingState({
-    novelId,
-    novel,
-    locale,
-    t,
-    worldEntityCount: worldEntities.length,
-    worldSystemCount: worldSystems.length,
-    worldLoading,
-    bootstrapLoading,
-    bootstrapJob,
-    bootstrapTriggerPending: triggerBootstrap.isPending,
-    suppressWorldOnboarding: suppressUploadEntryWorldOnboarding,
-    triggerInitialBootstrap: (handlers) => {
-      triggerBootstrap.mutate(
-        { mode: 'initial' },
-        {
-          onError: (error) => {
-            handlers?.onError?.(error)
-          },
-        },
-      )
-    },
-    retryIngest: handleRetryNovelIngest,
-    returnToLibrary: () => navigate('/library'),
-    dismissWorldOnboardingRoute: () => {
-      navigate(`/world/${novelId}`)
-    },
+  const preparationGate = resolveStudioPreparationGate({
+    t, novelWindowIndex: novel?.window_index,
   })
   const visiblePreparationGate = (
     preparationGate
@@ -807,7 +826,7 @@ export function NovelStudioPage() {
     handoff: worldEntryHandoff,
     pending: worldEntryPending,
   }) !== 'routine'
-  const rightPanel = resolveStudioRightPanel(showWorkbenchRail, showInjectionSummaryRail && resultsDebug !== null, assistOpen ?? assistNeedsAttention)
+  const rightPanel = resolveStudioRightPanel(showWorkbenchRail, showInjectionSummaryRail && resultsDebug !== null, assistOpen ?? (assistNeedsAttention && !assistantOverlay))
   const assistantOpen = rightPanel !== 'hidden'
   const rightOverlayOpen = assistantOverlay && assistantOpen
   const chaptersVisible = chaptersOpen && !(navigationOverlay && rightOverlayOpen)
@@ -877,28 +896,12 @@ export function NovelStudioPage() {
 
   const currentChapterIdentity = chapter ?? currentMeta ?? null
   const activeChapterReference = currentChapterIdentity ? formatChapterBadgeLabel(currentChapterIdentity) : null
-  const showEntryStage = visiblePreparationGate !== null || showWorldOnboarding
 
   return (
     <PageShell className="h-screen" navbarProps={{ position: 'static' }} mainClassName="min-h-0 flex-1 overflow-hidden">
-      {showEntryStage ? (
-        <StudioOnboardingStage
-          preparationGate={visiblePreparationGate}
-          showWorldOnboarding={showWorldOnboarding}
-          bootstrapPending={triggerBootstrap.isPending}
-          preparationActionPending={
-            triggerBootstrap.isPending
-            || (
-              retryNovelIngest.isPending
-              && retryNovelIngest.variables?.targetNovelId === novelId
-            )
-          }
-          bootstrapError={bootstrapError}
-          chaptersAvailable={chaptersAvailable}
-          onWorldGenOpenChange={setWorldGenOpen}
-          onTriggerBootstrap={handleTriggerBootstrap}
-          onDismissWorldOnboarding={handleDismissWorldOnboarding}
-        />
+      {visiblePreparationGate ? (
+        <StudioPreparationGate {...visiblePreparationGate} onRetry={handleRetryNovelIngest} onReturn={() => navigate('/library')}
+          primaryActionPending={retryNovelIngest.isPending && retryNovelIngest.variables?.targetNovelId === novelId} />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           {chapterCreateErrorVisible ? (
@@ -919,7 +922,7 @@ export function NovelStudioPage() {
               {t('studio.actions.exportFailed')}
             </div>
           ) : null}
-          <StudioWorkspaceToolbar title={novel.title} chaptersOpen={chaptersVisible}
+          <StudioWorkspaceToolbar key={novel.id} title={novel.title} onRename={renameNovel.mutateAsync} chaptersOpen={chaptersVisible}
             onToggleChapters={handleToggleChapters} writing={activeStage === 'write'}
             onToggleWriting={handleToggleWriting} canContinue={latestChapterNum !== null}
             assistantOpen={assistantOpen} onToggleAssistant={handleToggleAssist}
@@ -1091,6 +1094,9 @@ export function NovelStudioPage() {
               /* ── Chapter Stage ── */
               <div className="flex-1 min-h-0 min-w-0 flex flex-col gap-4 px-5 py-5 sm:px-8 overflow-hidden">
                 <StudioChapterToolbar
+                  onReview={chapterReview.openReview}
+                  onProposeChanges={() => void chapterReview.proposeChanges(t('review.update'))} reviewError={chapterReview.reviewFailed ? t('review.failed') : undefined}
+                  reviewBusy={chapterReview.busy}
                   currentMeta={currentMeta}
                   currentChapterIdentity={currentChapterIdentity}
                   updatedAt={chapter?.updated_at ?? chapter?.created_at ?? currentMeta?.created_at}
@@ -1110,7 +1116,8 @@ export function NovelStudioPage() {
                     <ChapterEditor
                       textareaRef={textareaRef}
                       value={editorContent}
-                      onChange={handleEditorChange}
+                      readOnly={chapterReview.busy}
+                      onChange={(value) => { if (!chapterReview.isLocked()) handleEditorChange(value) }}
                       onSelectionChange={handleSelectionChange}
                       cursorInfo={cursorInfo}
                       autoSaveStatus={autoSaveStatus}
@@ -1143,7 +1150,8 @@ export function NovelStudioPage() {
                 onLocateTarget={handleStudioLocateTarget} />
             </Suspense>
           ) : rightPanel !== 'hidden' ? (
-            <aside ref={supportPanelRef} tabIndex={-1} aria-label={t('studio.layout.assistant')} className={`relative shrink-0 border-l border-border/50 bg-background ${assistantOverlay ? '!absolute inset-y-0 right-0 z-30 shadow-xl' : ''}`}
+            <aside ref={supportPanelRef} tabIndex={-1}
+              onFocusCapture={() => setAssistOpen(true)} onPointerDownCapture={() => setAssistOpen(true)} aria-label={t('studio.layout.assistant')} className={`relative shrink-0 border-l border-border/50 bg-background ${assistantOverlay ? '!absolute inset-y-0 right-0 z-30 shadow-xl' : ''}`}
               style={{ width: visibleDrawerWidth }} data-testid="studio-support-panel" data-panel={rightPanel}>
               <PanelResizeHandle side="left" width={visibleDrawerWidth} min={280}
                 max={assistantOverlay ? Math.max(280, workspaceWidth - 32) : maxAssistantWidth}
@@ -1185,13 +1193,6 @@ export function NovelStudioPage() {
           </div>
         </div>
       )}
-      {/* Keep the mutation observer mounted when generated entities hide onboarding. */}
-      <WorldGenerationDialog
-        novelId={novelId}
-        open={worldGenOpen}
-        onOpenChange={setWorldGenOpen}
-        analyticsSource="world_onboarding"
-      />
       <ConfirmDialog {...confirmDialogProps} />
     </PageShell>
   )

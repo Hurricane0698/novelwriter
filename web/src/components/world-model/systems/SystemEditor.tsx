@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react'
+import { WorldModelHelp } from '@/components/world-model/shared/WorldModelHelp'
+import { WorldSourceRefs } from '@/components/world-model/shared/WorldSourceRefs'
 import '@/lib/uiMessagePacks/novel'
 import { InlineEdit } from '@/components/world-model/shared/InlineEdit'
-import { VisibilityDot } from '@/components/world-model/shared/VisibilityDot'
 import { ConstraintsPanel } from '@/components/world-model/systems/ConstraintsPanel'
 import { HierarchyEditor } from '@/components/world-model/systems/HierarchyEditor'
 import { LegacyGraphReadonly } from '@/components/world-model/systems/LegacyGraphReadonly'
@@ -56,6 +57,8 @@ export function SystemEditor({ novelId, system, onBack }: {
       <button className="text-sm text-muted-foreground hover:text-foreground" onClick={onBack}>
         {t('worldModel.system.back')}
       </button>
+      <WorldModelHelp kind="system" />
+      <WorldSourceRefs novelId={novelId} sources={system.source_refs} />
       <div className="rounded-2xl border border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-2xl p-4 space-y-4">
         <div className="flex items-center gap-3">
           <InlineEdit
@@ -64,10 +67,13 @@ export function SystemEditor({ novelId, system, onBack }: {
             className="text-lg font-semibold"
             placeholder={t('worldModel.system.namePlaceholder')}
           />
-          <VisibilityDot
-            visibility={system.visibility}
-            onChange={v => save({ visibility: v })}
-          />
+          <select aria-label={t('worldModel.system.useInWriting')} value={system.visibility}
+            className="rounded border border-border bg-background px-2 py-1 text-xs"
+            onChange={event => save({ visibility: event.target.value })}>
+            <option value="reference">{t('worldModel.system.whenRelevant')}</option>
+            <option value="active">{t('worldModel.system.always')}</option>
+            <option value="hidden">{t('worldModel.common.visibilityHidden')}</option>
+          </select>
           <button
             className={`text-xs ml-auto ${confirmDelete ? 'text-[hsl(var(--color-danger))]' : 'text-muted-foreground hover:text-[hsl(var(--color-danger))]'}`}
             onClick={() => {

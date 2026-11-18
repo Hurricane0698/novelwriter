@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 from __future__ import annotations
 
@@ -9,29 +9,49 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user_or_default
-from app.core.events import ensure_project_start_event
 from app.core.ingest import inspect_novel_readinesses
 from app.core.indexing.lifecycle import inspect_window_index_lifecycles
-from app.core.seed_demo import is_seeded_demo_novel
 from app.database import get_db
-from app.models import Novel, User
-from app.schemas import NovelResponse, WindowIndexStateResponse
+from app.language import normalize_language_code
+from app.models import Chapter, Novel, User
+from app.schemas import NovelCreate, NovelResponse, NovelTitle, WindowIndexStateResponse
 
 from . import novel_support
 
 router = APIRouter(prefix="/api/novels", tags=["novels"])
 
 
-@router.get("", response_model=List[NovelResponse])
-def list_novels(
+@router.post("", response_model=NovelResponse, status_code=201)
+def create_novel(
+    data: NovelCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_or_default),
 ):
-    novels = (
-        novel_support.user_novels(db, current_user)
-        .order_by(Novel.created_at.desc())
-        .all()
+    novel = Novel(
+        title=data.title, language=normalize_language_code(data.language),
+        owner_id=current_user.id, file_path="", total_chapters=1,
+        chapters=[Chapter(chapter_number=1, content="")],
     )
+    db.add(novel)
+    db.commit()
+    return novel_support.serialize_novel_with_states(novel, db=db, has_window_index_payload=False)
+
+
+@router.patch("/{novel_id}", response_model=NovelResponse)
+def rename_novel(novel_id: int, data: NovelTitle, db: Session = Depends(get_db)):
+    novel = novel_support.get_novel(db, novel_id)
+    novel.title = data.title
+    db.commit()
+    return novel_support.serialize_novel_with_states(
+        novel, db=db, has_window_index_payload=novel.window_index_payload_size is not None,
+    )
+
+
+@router.get("", response_model=List[NovelResponse], dependencies=[Depends(get_current_user_or_default)])
+def list_novels(
+    db: Session = Depends(get_db),
+):
+    novels = db.query(Novel).order_by(Novel.created_at.desc()).all()
     index_states = inspect_window_index_lifecycles(
         novels,
         db=db,
@@ -60,21 +80,12 @@ def list_novels(
 def get_novel(
     novel_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    novel, has_payload = novel_support.fetch_novel_with_presence(db, novel_id, current_user)
-    if is_seeded_demo_novel(novel):
-        ensure_project_start_event(
-            db,
-            user_id=current_user.id,
-            novel_id=novel_id,
-            start_mode="demo",
-            meta={"entry_action": "demo_open"},
-        )
+    novel = novel_support.get_novel(db, novel_id)
     return novel_support.serialize_novel_with_states(
         novel,
         db=db,
-        has_window_index_payload=has_payload,
+        has_window_index_payload=novel.window_index_payload_size is not None,
     )
 
 
@@ -82,11 +93,10 @@ def get_novel(
 def get_novel_status(
     novel_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    novel, has_payload = novel_support.fetch_novel_with_presence(db, novel_id, current_user)
+    novel = novel_support.get_novel(db, novel_id)
     return novel_support.serialize_novel_with_states(
         novel,
         db=db,
-        has_window_index_payload=has_payload,
+        has_window_index_payload=novel.window_index_payload_size is not None,
     ).window_index

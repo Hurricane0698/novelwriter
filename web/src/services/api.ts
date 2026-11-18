@@ -9,7 +9,6 @@ import type {
   ContinueResponse,
   Continuation,
   StreamEvent,
-  QuotaResponse,
   WorldEntity,
   WorldEntityDetail,
   WorldEntityAttribute,
@@ -37,7 +36,6 @@ import {
   authFetch,
   createApiError,
   fetchJson,
-  isNonRetriable503Code,
   llmHeaders,
   parseErrorDetail,
   parseRetryAfterSeconds,
@@ -48,18 +46,11 @@ import { copilotApi } from './copilotApi'
 
 const listNovels = () => request<Novel[]>('/api/novels')
 const listChapters = (novelId: number) => request<Chapter[]>(`/api/novels/${novelId}/chapters`)
-const UPLOAD_CONSENT_VERSION = '2026-03-06'
 export const buildContinuationRequestId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
   }
   return `continue_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
-}
-
-interface AuthOptions {
-  deploy_mode: 'hosted' | 'selfhost'
-  invite_login_enabled: boolean
-  github_login_enabled: boolean
 }
 
 export interface LlmConfigResponse {
@@ -91,87 +82,18 @@ export interface LlmProbeResponse {
   capability_statuses?: Record<'basic' | 'stream' | 'json_mode', 'supported' | 'unsupported' | 'unknown'>
 }
 
-interface AnalyticsEventRequest {
-  event: string
-  anonymous_id?: string
-  novel_id?: number
-  meta?: Record<string, string | number | boolean | null>
-}
-
 export const api = {
-  login: async (username: string, password: string) => {
-    const body = new URLSearchParams({ username, password })
-    const res = await fetch(`${BASE_URL}/api/auth/login`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body,
-    })
-    if (!res.ok) await throwApiError(res)
-    return res.json() as Promise<{ access_token: string; token_type: string }>
-  },
-
-  activateInvite: async (
-    invite_code: string,
-    nickname: string,
-    password: string,
-    opts?: {
-      anonymous_id?: string
-      attribution?: Record<string, string | number | boolean | null>
-    },
-  ) => {
-    const res = await fetch(`${BASE_URL}/api/auth/invite`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        invite_code,
-        nickname,
-        password,
-        anonymous_id: opts?.anonymous_id,
-        attribution: opts?.attribution ?? {},
-      }),
-    })
-    if (!res.ok) await throwApiError(res)
-    return res.json() as Promise<{ access_token: string; token_type: string }>
-  },
-
-  getAuthOptions: () => request<AuthOptions>('/api/auth/options'),
-  recordAnalyticsEvent: (payload: AnalyticsEventRequest) =>
-    request<{ ok: boolean }>('/api/auth/events', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-
-  getGitHubLoginUrl: (redirectTo: string) => {
-    const params = new URLSearchParams()
-    if (redirectTo) params.set('redirect_to', redirectTo)
-    const qs = params.toString()
-    return `${BASE_URL}/api/auth/github/start${qs ? `?${qs}` : ''}`
-  },
-
-  getQuota: () => request<QuotaResponse>('/api/auth/quota'),
-
-  logout: async () => {
-    const res = await fetch(`${BASE_URL}/api/auth/logout`, {
-      method: 'POST',
-      credentials: 'include',
-    })
-    if (!res.ok) await throwApiError(res)
-  },
-
+  getProfile: () => request<{ preferences: Record<string, unknown> | null }>('/api/auth/me'),
   updatePreferences: (preferences: Record<string, unknown>) =>
-    request<unknown>('/api/auth/preferences', {
+    request<{ preferences: Record<string, unknown> | null }>('/api/auth/preferences', {
       method: 'PATCH',
       body: JSON.stringify({ preferences }),
     }),
 
-  submitFeedback: (answers: object) =>
-    request<QuotaResponse>('/api/auth/feedback', {
-      method: 'POST',
-      body: JSON.stringify({ answers }),
-    }),
-
+  createNovel: (title: string, language: string) =>
+    request<Novel>('/api/novels', { method: 'POST', body: JSON.stringify({ title, language }) }),
+  renameNovel: (id: number, title: string) =>
+    request<Novel>(`/api/novels/${id}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
   listNovels,
   getNovels: listNovels,
   getNovel: (id: number | string) => request<Novel>(`/api/novels/${encodeURIComponent(String(id))}`),
@@ -183,19 +105,11 @@ export const api = {
     file: File,
     title: string,
     author = '',
-    opts?: {
-      sourceSurface?: string
-    },
   ) => {
     const form = new FormData()
     form.append('file', file)
     form.append('title', title)
     form.append('author', author)
-    if (opts?.sourceSurface) {
-      form.append('source_surface', opts.sourceSurface)
-    }
-    form.append('consent_acknowledged', 'true')
-    form.append('consent_version', UPLOAD_CONSENT_VERSION)
     const res = await fetch(`${BASE_URL}/api/novels/upload`, {
       method: 'POST',
       credentials: 'include',
@@ -211,6 +125,10 @@ export const api = {
   getChapters: listChapters,
   getChapter: (novelId: number, num: number) =>
     request<Chapter>(`/api/novels/${novelId}/chapters/${num}`),
+  updateContinuation: (novelId: number, id: number, content: string, expectedHash: string) =>
+    request<Continuation>(`/api/novels/${novelId}/continuations/${id}`, {
+      method: 'PUT', body: JSON.stringify({ content, expected_content_hash: expectedHash }),
+    }),
   createChapter: (novelId: number, data: ChapterCreateRequest) =>
     request<Chapter>(`/api/novels/${novelId}/chapters`, {
       method: 'POST',
@@ -252,7 +170,7 @@ export const api = {
   continueNovel: (
     novelId: number,
     data: ContinueRequest,
-    opts?: { deliveryMode?: 'sync' | 'stream-fallback'; continuationRequestId?: string },
+    opts?: { continuationRequestId?: string },
   ) =>
     request<ContinueResponse>(`/api/novels/${novelId}/continue`, {
       method: 'POST',
@@ -260,9 +178,6 @@ export const api = {
         ...llmHeaders(),
         ...(opts?.continuationRequestId
           ? { 'X-Novwr-Continuation-Request-ID': opts.continuationRequestId }
-          : {}),
-        ...(opts?.deliveryMode === 'stream-fallback'
-          ? { 'X-Novwr-Delivery-Mode': 'stream-fallback' }
           : {}),
       },
       body: JSON.stringify(data),
@@ -311,11 +226,7 @@ export async function* streamContinuation(
       body: JSON.stringify(data),
       signal: opts?.signal,
     })
-    if (resp.status === 503 && attempt < maxRetries) {
-      const parsed = await parseErrorDetail(resp)
-      if (isNonRetriable503Code(parsed.code)) {
-        throw createApiError(resp.status, parsed)
-      }
+    if (resp.status === 503 && resp.headers.has('Retry-After') && attempt < maxRetries) {
       const retryAfter = parseRetryAfterSeconds(resp)
       await new Promise(r => setTimeout(r, retryAfter * 1000))
       continue

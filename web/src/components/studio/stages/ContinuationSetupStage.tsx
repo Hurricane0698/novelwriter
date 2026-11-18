@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 import { ChevronDown, ChevronUp, Sparkles, Trash2, X } from 'lucide-react'
 import { useOverlayPanelFocus } from '@/hooks/useOverlayPanelFocus'
@@ -261,7 +261,7 @@ export function ContinuationSetupStage({
                     {t('continuation.setup.contextSummary.title')}
                   </div>
                   <p className="mb-2 text-[11px] leading-relaxed text-muted-foreground">
-                    {t('continuation.setup.contextSummary.description')}
+                    {t('review.recapsHelp')}
                   </p>
                   <div className="flex gap-2">
                     <input

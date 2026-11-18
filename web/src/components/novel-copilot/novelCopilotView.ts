@@ -46,6 +46,12 @@ export function getCopilotRunStatusMeta(status: CopilotRunStatus | null, locale?
 export function getCopilotSuggestionKindMeta(kind: string, locale?: UiLocale) {
   const effectiveLocale = readLocale(locale)
   switch (kind) {
+    case 'replace_text':
+      return {
+        label: translateUiMessage(effectiveLocale, 'review.rewrite'),
+        chipClassName: 'border-border bg-muted/40 text-foreground/80',
+        accentClassName: 'bg-foreground/40',
+      }
     case 'create_entity':
     case 'update_entity':
     case 'entity_update':

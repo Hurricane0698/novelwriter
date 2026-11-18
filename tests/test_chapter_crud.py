@@ -95,38 +95,6 @@ class TestCreateChapter:
         db.refresh(novel)
         assert novel.total_chapters == 3
 
-    def test_create_chapter_records_chapter_save_event(self, client, novel, monkeypatch):
-        from app.api import novel_chapters
-
-        recorded: list[dict[str, object]] = []
-        monkeypatch.setattr(
-            novel_chapters,
-            "record_event",
-            lambda db, user_id, event, novel_id=None, meta=None: recorded.append(
-                {
-                    "user_id": user_id,
-                    "event": event,
-                    "novel_id": novel_id,
-                    "meta": meta,
-                }
-            ),
-        )
-
-        resp = client.post(
-            f"/api/novels/{novel.id}/chapters",
-            json={"chapter_number": 3, "title": "第三章", "content": "内容三"},
-        )
-
-        assert resp.status_code == 201
-        assert recorded == [
-            {
-                "user_id": 1,
-                "event": "chapter_save",
-                "novel_id": novel.id,
-                "meta": {"chapter": 3},
-            }
-        ]
-
     def test_create_chapter_auto_number(self, client, db, novel):
         resp = client.post(
             f"/api/novels/{novel.id}/chapters",
@@ -141,38 +109,6 @@ class TestCreateChapter:
 
         db.refresh(novel)
         assert novel.total_chapters == 3
-
-    def test_create_chapter_auto_number_records_chapter_save_event(self, client, novel, monkeypatch):
-        from app.api import novel_chapters
-
-        recorded: list[dict[str, object]] = []
-        monkeypatch.setattr(
-            novel_chapters,
-            "record_event",
-            lambda db, user_id, event, novel_id=None, meta=None: recorded.append(
-                {
-                    "user_id": user_id,
-                    "event": event,
-                    "novel_id": novel_id,
-                    "meta": meta,
-                }
-            ),
-        )
-
-        resp = client.post(
-            f"/api/novels/{novel.id}/chapters",
-            json={"title": "自动编号章", "content": "自动内容"},
-        )
-
-        assert resp.status_code == 201
-        assert recorded == [
-            {
-                "user_id": 1,
-                "event": "chapter_save",
-                "novel_id": novel.id,
-                "meta": {"chapter": 3},
-            }
-        ]
 
     def test_create_chapter_auto_number_fills_gap_after_delete(self, client, db, novel):
         # Arrange: chapters 1,2,3 exist.

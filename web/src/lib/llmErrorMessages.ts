@@ -1,6 +1,5 @@
 import '@/lib/uiMessagePacks/novel'
 import { resolveCurrentUiLocale } from '@/lib/uiLocale'
-import { getRuntimeMode } from '@/lib/runtimeMode'
 import { translateUiMessage, type UiLocale } from '@/lib/uiMessages'
 import { ApiError } from '@/services/api'
 
@@ -22,28 +21,17 @@ export function getLlmApiErrorMessage(err: ApiError, locale?: UiLocale): string 
     case 'llm_config_missing':
       return translateUiMessage(
         effectiveLocale,
-        getRuntimeMode() === 'hosted'
-          ? 'llm.error.missingHostedConfig'
-          : 'llm.error.missingLocalConfig',
+        'llm.error.missingLocalConfig',
       )
     case 'llm_config_incomplete':
       return translateUiMessage(
         effectiveLocale,
-        getRuntimeMode() === 'hosted'
-          ? 'llm.error.incompleteHostedConfig'
-          : 'llm.error.incompleteConfig',
+        'llm.error.incompleteConfig',
       )
     case 'llm_base_url_invalid':
       return translateUiMessage(effectiveLocale, 'llm.error.invalidBaseUrl')
     case 'llm_api_key_invalid':
       return translateUiMessage(effectiveLocale, 'llm.error.invalidApiKey')
-    case 'ai_manually_disabled':
-      return translateUiMessage(effectiveLocale, 'llm.error.aiDisabled')
-    case 'ai_budget_hard_stop':
-      return translateUiMessage(effectiveLocale, 'llm.error.budgetHardStop')
-    case 'ai_budget_meter_disabled':
-    case 'ai_budget_meter_unavailable':
-      return translateUiMessage(effectiveLocale, 'llm.error.budgetUnavailable')
     case 'world_generate_llm_unavailable':
     case 'context_summary_generation_llm_unavailable':
       return translateUiMessage(effectiveLocale, 'llm.error.modelUnavailable')

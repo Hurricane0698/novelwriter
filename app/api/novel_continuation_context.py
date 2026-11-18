@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from app.config import get_settings, resolve_context_chapters
 from app.core.chapter_numbering import load_recent_chapters
 from app.core.context_assembly import (
-    DEFAULT_WORLD_CONTEXT_TOKEN_BUDGET,
     apply_writer_context_budget,
     assemble_writer_context,
 )
@@ -181,7 +180,7 @@ def _prepare_continuation_context(
 ) -> _ContinuationContext:
     settings = get_settings()
 
-    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel = novel_support.get_novel(db, novel_id)
 
     effective_context_chapters = resolve_context_chapters(
         req.context_chapters,
@@ -194,23 +193,18 @@ def _prepare_continuation_context(
 
     novel_language = getattr(novel, "language", None)
     recent_text = format_recent_chapters_for_prompt(recent_chapters, locale=novel_language)
-    relevance_text = append_user_instruction_for_relevance(recent_text, req.prompt, locale=novel_language)
+    relevance_text = append_user_instruction_for_relevance(recent_text[-6000:], req.prompt, locale=novel_language)
     chapter_recaps, context_summary_labels = _format_selected_context_summaries(
         db,
         novel_id=novel_id,
         context_summary_ids=req.context_summary_ids,
         locale=novel_language,
     )
-    remaining_world_context_budget = max(
-        1,
-        DEFAULT_WORLD_CONTEXT_TOKEN_BUDGET - len(chapter_recaps),
-    )
-
     try:
         writer_ctx = assemble_writer_context(db, novel_id, chapter_text=relevance_text)
         writer_ctx = apply_writer_context_budget(
             writer_ctx,
-            max_estimated_tokens=remaining_world_context_budget,
+            locale=novel_language,
         )
     except Exception:
         logger.exception("assemble_writer_context failed for novel %s", novel_id)

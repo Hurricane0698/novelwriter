@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 const HOME_SCREENSHOT_PUBLIC_DIR = '/screenshots/home' as const
 const HOME_SCREENSHOT_BUILD_ID = __NOVWR_BUILD_ID__

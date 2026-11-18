@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   getRuntimeMode,
-  isHostedRuntime,
   isSelfhostRuntime,
 } from '@/lib/runtimeMode'
 
@@ -16,13 +15,10 @@ describe('runtimeMode', () => {
     expect(isSelfhostRuntime()).toBe(true)
   })
 
-  it('distinguishes hosted and desktop contracts', () => {
-    vi.stubEnv('VITE_DEPLOY_MODE', 'hosted')
-    expect(isHostedRuntime()).toBe(true)
+  it('selects the desktop runtime', () => {
 
     vi.stubEnv('VITE_DEPLOY_MODE', 'desktop')
     expect(getRuntimeMode()).toBe('desktop')
-    expect(isHostedRuntime()).toBe(false)
     expect(isSelfhostRuntime()).toBe(false)
   })
 

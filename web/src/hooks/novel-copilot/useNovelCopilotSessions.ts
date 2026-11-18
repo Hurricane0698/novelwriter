@@ -7,7 +7,6 @@ import {
   type NovelCopilotSession,
 } from '@/types/copilot'
 import { getDefaultCopilotSessionTitle } from '@/components/novel-copilot/novelCopilotHelpers'
-import { trackHostedAnalyticsEvent } from '@/lib/hostedAnalytics'
 import { copilotApi } from '@/services/api'
 
 export interface NovelCopilotSessionsOnlyState {
@@ -16,6 +15,7 @@ export interface NovelCopilotSessionsOnlyState {
   isOpen: boolean
   sessions: NovelCopilotSession[]
   focusedSessionId: string | null
+  getLocalSession: (id: string) => NovelCopilotSession | undefined
   openDrawer: (prefill: CopilotPrefill, options?: OpenNovelCopilotOptions) => string
   focusSession: (sessionId: string) => void
   removeSession: (sessionId: string) => void
@@ -98,6 +98,8 @@ export function useNovelCopilotSessionsState({
     if (changed) commitSessions(nextSessions)
   }, [commitSessions])
 
+  const getLocalSession = useCallback((id: string) => sessionsRef.current.find(s => s.sessionId === id), [])
+
   const resolveBackendSessionId = useCallback((sessionId: string): Promise<string> => {
     const session = sessionsRef.current.find((candidate) => candidate.sessionId === sessionId)
     if (!session) return Promise.reject(new Error(`Session ${sessionId} not found`))
@@ -176,14 +178,6 @@ export function useNovelCopilotSessionsState({
       }
       setFocusedSessionId(existing.sessionId)
       setIsOpen(true)
-      void trackHostedAnalyticsEvent('copilot_open', {
-        novelId,
-        meta: {
-          mode: existing.prefill.mode,
-          scope: existing.prefill.scope,
-          surface: existing.prefill.context?.surface ?? 'unknown',
-        },
-      })
       prefetchBackendSession(existing.sessionId)
       return existing.sessionId
     }
@@ -202,14 +196,6 @@ export function useNovelCopilotSessionsState({
     commitSessions([...currentSessions, nextSession])
     setFocusedSessionId(localId)
     setIsOpen(true)
-    void trackHostedAnalyticsEvent('copilot_open', {
-      novelId,
-      meta: {
-        mode: nextSession.prefill.mode,
-        scope: nextSession.prefill.scope,
-        surface: nextSession.prefill.context?.surface ?? 'unknown',
-      },
-    })
     prefetchBackendSession(localId)
     return localId
   }, [commitSessions, novelId, normalizedInteractionLocale, prefetchBackendSession])
@@ -269,6 +255,7 @@ export function useNovelCopilotSessionsState({
     removeSession,
     closeDrawer,
     reopenDrawer,
+    getLocalSession,
     resolveBackendSessionId,
   }
 }

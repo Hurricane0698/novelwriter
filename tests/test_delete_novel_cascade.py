@@ -22,6 +22,7 @@ from app.models import (
     BootstrapJob,
     Chapter,
     Continuation,
+    WorldGenerationRun,
     Exploration,
     ExplorationChapter,
     Novel,
@@ -110,7 +111,7 @@ def test_delete_novel_cascades_to_world_and_explorations(db, tmp_path):
     rel = WorldRelationship(novel_id=novel.id, source_id=e1.id, target_id=e2.id, label="friend", description="")
     sys = WorldSystem(novel_id=novel.id, name="sys", display_type="hierarchy", description="", data={}, constraints=[])
     job = BootstrapJob(novel_id=novel.id, mode="initial", status="pending", initialized=False)
-    db.add_all([attr, rel, sys, job])
+    db.add_all([attr, rel, sys, job, WorldGenerationRun(novel_id=novel.id, user_id=user.id, claim_token="demo")])
 
     # Exploration tables (NOT ORM-cascaded off Novel).
     exp = Exploration(novel_id=novel.id, name="exp", description="", from_chapter=1, to_chapter=1)
@@ -152,6 +153,7 @@ def test_delete_novel_cascades_to_world_and_explorations(db, tmp_path):
     assert db.query(WorldRelationship).filter(WorldRelationship.novel_id == novel.id).count() == 0
     assert db.query(WorldEntity).filter(WorldEntity.novel_id == novel.id).count() == 0
     assert db.query(WorldSystem).filter(WorldSystem.novel_id == novel.id).count() == 0
+    assert db.query(WorldGenerationRun).filter_by(novel_id=novel.id).count() == 0
     assert db.query(BootstrapJob).filter(BootstrapJob.novel_id == novel.id).count() == 0
 
     assert db.query(Exploration).filter(Exploration.novel_id == novel.id).count() == 0
@@ -176,6 +178,11 @@ def test_delete_novel_does_not_delete_file_when_db_commit_fails(db, tmp_path):
     db.commit()
     db.refresh(novel)
 
+    entity = WorldEntity(novel_id=novel.id, name="Hero", entity_type="Character")
+    db.add(entity)
+    db.commit()
+    entity_id = entity.id
+
     def _boom_commit():
         raise RuntimeError("boom")
 
@@ -190,6 +197,7 @@ def test_delete_novel_does_not_delete_file_when_db_commit_fails(db, tmp_path):
     assert file_path.exists()
     db.expire_all()
     assert db.get(Novel, novel.id) is not None
+    assert db.get(WorldEntity, entity_id).name == "Hero"
 
 
 def test_delete_novel_best_effort_cleans_up_legacy_hierarchy_tables(db, tmp_path):

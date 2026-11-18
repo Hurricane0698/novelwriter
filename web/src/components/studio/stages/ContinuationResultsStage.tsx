@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -8,14 +8,15 @@ import { ChevronDown, ChevronRight, Info } from 'lucide-react'
 import { DriftWarningPopover } from '@/components/generation/DriftWarningPopover'
 import type { TextAnnotation } from '@/components/ui/annotated-text'
 import { useCreateChapter } from '@/hooks/novel/useCreateChapter'
-import { useAuth } from '@/contexts/AuthContext'
+import { useCandidateDraft } from '@/hooks/novel/useCandidateDraft'
+import { NwButton } from '@/components/ui/nw-button'
+import '@/lib/uiMessagePacks/copilot'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { addToWhitelist, getWhitelist } from '@/lib/postcheckWhitelistStorage'
 import { setActiveWarnings } from '@/lib/postcheckActiveWarningsStorage'
 import { downloadTextFile } from '@/lib/downloadTextFile'
 import { isMarkdownChapterBodyInvalidError } from '@/lib/chapterMutationError'
 import { cn } from '@/lib/utils'
-import { api } from '@/services/api'
 import type { ContinueDebugSummary, NovelContentFormat } from '@/types/api'
 import {
   ContinuationResultsHeader,
@@ -26,7 +27,6 @@ import {
   ContinuationResultsEmptyState,
   ContinuationResultsLoadingState,
   ContinuationResultsReloadErrorState,
-  ContinuationResultsStreamErrorState,
 } from './continuation-results/ContinuationResultsStates'
 import { ContinuationResultsTabs } from './continuation-results/ContinuationResultsTabs'
 import {
@@ -61,18 +61,14 @@ export function ContinuationResultsStage({
 }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, refreshQuota } = useAuth()
   const { locale, t } = useUiLocale()
   const [activeTab, setActiveTab] = useState(0)
-  const [showFeedbackForm, setShowFeedbackForm] = useState(false)
-  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
   const [whitelist, setWhitelist] = useState<string[]>(() => getWhitelist(novelId))
   const [adoptError, setAdoptError] = useState<{
     sourceIdentity: string
     activeTab: number
     candidateId: number | null
     content: string
-    requestGeneration: number
     code: ContinuationAdoptErrorCode
   } | null>(null)
   const adoptRequestGenerationRef = useRef(0)
@@ -92,7 +88,6 @@ export function ContinuationResultsStage({
     streamDebug,
     streamError,
     isDone,
-    isQuotaExhausted,
     isStreamMode,
     isFallbackMode,
     isLegacyMode,
@@ -166,22 +161,28 @@ export function ContinuationResultsStage({
       }))
   }, [activeTab, driftWarnings, handleDismissTerm, whitelist])
 
-  useEffect(() => {
-    adoptRequestGenerationRef.current += 1
+  const resultsKey = [semanticSourceIdentity, isFallbackMode, isStreamMode, isLegacyMode, isReloadMode, variants.length].join(':')
+  const [previous, setPrevious] = useState({ resultsKey, isActive })
+  if (previous.resultsKey !== resultsKey || previous.isActive !== isActive) {
+    setPrevious({ resultsKey, isActive })
     setAdoptError(null)
-    setActiveTab(0)
-  }, [isFallbackMode, isLegacyMode, isReloadMode, isStreamMode, semanticSourceIdentity, variants.length])
-
-  useEffect(() => {
-    if (!isActive) setAdoptError(null)
-  }, [isActive])
+    if (previous.resultsKey !== resultsKey) setActiveTab(0)
+  }
+  useLayoutEffect(() => {
+    adoptRequestGenerationRef.current += 1
+  }, [resultsKey])
 
   const currentVariant = isStreamMode && !isFallbackMode ? variants[activeTab] : undefined
   const currentLegacyVersion = isFallbackMode
     ? fallbackVersions[activeTab]
     : (isLegacyMode ? nonStreamVersions[activeTab] : undefined)
-  const currentContent = currentVariant?.content ?? currentLegacyVersion?.content ?? ''
   const currentCandidateId = currentVariant?.continuationId ?? currentLegacyVersion?.id ?? null
+  const allDone = isLegacyMode || isFallbackMode || isDone
+  const draft = useCandidateDraft({ novelId, candidateId: currentCandidateId,
+    original: currentVariant?.content ?? currentLegacyVersion?.content ?? '', initial: currentLegacyVersion,
+    enabled: isActive && allDone,
+  })
+  const currentContent = draft.content
   const currentCandidateIdentity = `${semanticSourceIdentity}:${activeTab}:${currentCandidateId ?? 'pending'}`
   const currentCandidateIdentityRef = useRef(currentCandidateIdentity)
   useLayoutEffect(() => {
@@ -196,7 +197,6 @@ export function ContinuationResultsStage({
   )
     ? adoptError.code
     : null
-  const allDone = isLegacyMode || isFallbackMode || isDone
   const tabCount = isStreamMode && !isFallbackMode ? variants.length : (isFallbackMode ? fallbackVersions.length : nonStreamVersions.length)
 
   const debug = resolveResultsDebug({
@@ -287,7 +287,6 @@ export function ContinuationResultsStage({
             activeTab,
             candidateId: currentCandidateId,
             content: currentContent,
-            requestGeneration,
             code: isMarkdownChapterBodyInvalidError(error) ? error.code : 'chapter_adopt_failed',
           })
         },
@@ -326,18 +325,6 @@ export function ContinuationResultsStage({
       'text/plain;charset=utf-8',
     )
   }, [fallbackVersions, isFallbackMode, isStreamMode, nonStreamVersions, t, variants])
-
-  const handleFeedbackSubmit = useCallback(async (answers: Parameters<typeof api.submitFeedback>[0]) => {
-    setFeedbackSubmitting(true)
-    try {
-      await api.submitFeedback(answers)
-      await refreshQuota()
-      setShowFeedbackForm(false)
-      retryStream()
-    } finally {
-      setFeedbackSubmitting(false)
-    }
-  }, [refreshQuota, retryStream])
 
   const proseWarnings = useMemo(() => {
     const targetVersion = activeTab + 1
@@ -387,19 +374,10 @@ export function ContinuationResultsStage({
 
   if (streamError) {
     return (
-      <ContinuationResultsStreamErrorState
+      <ContinuationResultsReloadErrorState
         error={streamError}
-        isQuotaExhausted={isQuotaExhausted}
-        feedbackAlreadySubmitted={Boolean(user?.feedback_submitted)}
-        showFeedbackForm={showFeedbackForm}
-        feedbackSubmitting={feedbackSubmitting}
-        onOpenFeedback={() => setShowFeedbackForm(true)}
-        onCloseFeedback={() => setShowFeedbackForm(false)}
-        onSubmitFeedback={handleFeedbackSubmit}
         onRetry={retryStream}
-        onBackToWrite={() => leaveResults(`/novel/${novelId}?stage=write`)}
-        onReturnToWorkspace={() => leaveResults(`/novel/${novelId}`)}
-        onGoToSettings={() => navigate('/settings')}
+        onBack={() => leaveResults(`/novel/${novelId}?stage=write`)}
         t={t}
       />
     )
@@ -415,9 +393,17 @@ export function ContinuationResultsStage({
         isDone={isDone}
         currentContent={currentContent}
         allDone={allDone}
-        createPending={createChapter.isPending}
+        adoptEdited={draft.edited}
+        createPending={createChapter.isPending || draft.busy}
         adoptErrorCode={adoptErrorCode}
-        onAdopt={handleAdopt}
+        onAdopt={() => {
+          if (draft.busy) return
+          if (!draft.ready) { handleAdopt(); return }
+          const identity = currentCandidateIdentity
+          void draft.flush().then(() => {
+            if (currentCandidateIdentityRef.current === identity && sourceSessionRef.current.isActive) handleAdopt()
+          }).catch(() => undefined)
+        }}
         onBackToWrite={() => leaveResults(`/novel/${novelId}?stage=write`)}
         onExportAll={handleExportAll}
         assistOpen={assistOpen}
@@ -440,17 +426,34 @@ export function ContinuationResultsStage({
         t={t}
       />
 
-      <ContinuationResultsPane
+      {draft.ready && <div className="flex flex-wrap items-center gap-2 border-b border-border/50 pb-3">
+        {(['original', 'current'] as const).map((view) => <NwButton key={view} variant={draft.view === view ? 'accentOutline' : 'ghost'}
+          className="rounded-lg px-3 py-1.5 text-xs" disabled={draft.busy} onClick={() => draft.setView(view)}>
+          {t(view === 'original' ? 'review.original' : 'review.current')}</NwButton>)}
+        <NwButton variant="glass" className="rounded-lg px-3 py-1.5 text-xs" disabled={draft.busy}
+          onClick={() => draft.setView('edit')}>{t('review.edit')}</NwButton>
+        {draft.view === 'edit' && <NwButton variant="accentOutline" className="rounded-lg px-3 py-1.5 text-xs"
+          disabled={draft.busy} onClick={() => void draft.flush().then(() => draft.setView('current')).catch(() => undefined)}>
+          {t(draft.saving ? 'review.saving' : 'review.save')}</NwButton>}
+        <NwButton variant="glass" className="ml-auto rounded-lg px-3 py-1.5 text-xs" disabled={draft.busy}
+          title={t('review.openHint')} onClick={draft.openReview}>{t('review.candidate')}</NwButton>
+      </div>}
+      {draft.error && <p role="alert" className="text-xs text-destructive">{draft.error}</p>}
+      {draft.edited && <p className="text-xs text-muted-foreground">{t(draft.unsaved ? 'review.unsaved' : 'review.saved')}</p>}
+
+      {draft.view === 'edit' && draft.ready ? <textarea aria-label={t('review.current')} data-testid="candidate-draft-editor"
+        value={currentContent} onChange={(event) => draft.change(event.target.value)} readOnly={draft.busy}
+        className="min-h-0 flex-1 w-full resize-none bg-transparent px-4 py-4 text-[15px] leading-[2] outline-none nw-scrollbar-thin" /> : <ContinuationResultsPane
         contentFormat={contentFormat}
         isStreamMode={isStreamMode}
         isFallbackMode={isFallbackMode}
-        currentVariant={currentVariant}
-        currentLegacyVersion={currentLegacyVersion}
+        currentVariant={currentVariant ? { ...currentVariant, content: draft.view === 'original' ? draft.original : currentContent } : undefined}
+        currentLegacyVersion={currentLegacyVersion ? { ...currentLegacyVersion, content: draft.view === 'original' ? draft.original : currentContent } : undefined}
         driftAnnotations={driftAnnotations}
         proseWarnings={proseWarnings}
         onRetryStream={retryStream}
         t={t}
-      />
+      />}
 
       {summary ? (
         <button

@@ -1,10 +1,9 @@
 import { test, expect, type APIRequestContext } from '@playwright/test'
-import { authHeaders, blockExternalNoise, createApiSession, ensureProductAccess } from '../fixtures/api-helpers'
+import { authHeaders, blockExternalNoise, getSessionToken } from '../fixtures/api-helpers'
 import { waitForInitialNovelReady } from '../fixtures/novel-ready'
 
 const API = process.env.E2E_API_ORIGIN ?? 'http://localhost:8000'
 const RUN = Math.random().toString(36).slice(2, 6)
-const AUTH_SCOPE = 'worldpack-import'
 
 let novelId: number
 let sessionToken = ''
@@ -16,7 +15,7 @@ async function apiDelete(request: APIRequestContext, path: string) {
 }
 
 test.beforeAll(async ({ request }) => {
-  sessionToken = (await createApiSession(request, { scope: AUTH_SCOPE })).accessToken
+  sessionToken = await getSessionToken(request)
 
   const upload = await request.post(`${API}/api/novels/upload`, {
     headers: authHeaders(sessionToken),
@@ -28,8 +27,6 @@ test.beforeAll(async ({ request }) => {
         mimeType: 'text/plain',
         buffer: Buffer.from('第一章 世界包导入测试\n内容\n', 'utf-8'),
       },
-      consent_acknowledged: 'true',
-      consent_version: '2026-03-06',
     },
   })
   expect(upload.ok()).toBeTruthy()
@@ -43,18 +40,18 @@ test.afterAll(async ({ request }) => {
 
 test.beforeEach(async ({ page }) => {
   await blockExternalNoise(page)
-  await ensureProductAccess(page, { scope: AUTH_SCOPE })
+  await page.goto('/library')
 })
 
-test('import worldpack from onboarding dialog populates world model', async ({ page }) => {
+test('import worldpack from Studio populates world model', async ({ page }) => {
   test.slow()
   test.setTimeout(180_000)
 
   await page.goto(`/novel/${novelId}`)
-  await waitForInitialNovelReady(page, novelId, { requireOnboarding: true })
+  await waitForInitialNovelReady(page)
 
   // Open the world generation / import dialog.
-  await page.getByTestId('world-onboarding-generate').click()
+  await page.getByTestId('world-build-generate').click()
   await expect(page.getByTestId('world-gen-dialog')).toBeVisible()
 
   const entityName = `测试角色_${RUN}`
@@ -107,8 +104,8 @@ test('import worldpack from onboarding dialog populates world model', async ({ p
     buffer: Buffer.from(JSON.stringify(worldpack), 'utf-8'),
   })
 
-  // On success we navigate to /world/:id.
-  await expect(page).toHaveURL(new RegExp(`/world/${novelId}$`), { timeout: 30_000 })
+  await page.getByTestId('studio-world-entry-handoff-action').click()
+  await expect(page).toHaveURL(url => url.pathname === `/world/${novelId}`, { timeout: 30_000 })
 
   // Default tab is systems — verify the imported system appears.
   await expect(page.getByTestId('system-search')).toBeVisible({ timeout: 15_000 })

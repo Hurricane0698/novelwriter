@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 """Lightweight locale snippet system for inline format strings.
 
@@ -50,8 +50,6 @@ class SnippetKey(str, Enum):
     ALIAS_SEPARATOR = "alias_separator"
 
     # World generation chunk directives
-    WORLDGEN_CHUNK_DIRECTIVE_MULTI = "worldgen_chunk_directive_multi"
-    WORLDGEN_CHUNK_DIRECTIVE_SINGLE = "worldgen_chunk_directive_single"
 
 
 # ---------------------------------------------------------------------------
@@ -106,13 +104,6 @@ _ZH: dict[SnippetKey, str] = {
     SnippetKey.DESC_SEPARATOR: "：",
     SnippetKey.ALIAS_SEPARATOR: "、",
     SnippetKey.USER_INSTRUCTION_HEADER: "【用户续写指令】",
-    SnippetKey.WORLDGEN_CHUNK_DIRECTIVE_MULTI: (
-        "你当前只处理第{chunk_index}/{chunk_count}段设定文本。请尽量覆盖这一段中明确、稳定、可复用的设定。"
-        "即使与其他段重复也没关系，系统稍后会自动去重整合；不要因为担心重复而把内容压缩得过少。"
-    ),
-    SnippetKey.WORLDGEN_CHUNK_DIRECTIVE_SINGLE: (
-        "请尽量完整覆盖文本中明确、稳定、可复用的设定，不要过度压缩条目数量。"
-    ),
 }
 
 register_snippets("zh", _ZH)
@@ -151,16 +142,6 @@ _EN: dict[SnippetKey, str] = {
     SnippetKey.DESC_SEPARATOR: ": ",
     SnippetKey.ALIAS_SEPARATOR: ", ",
     SnippetKey.USER_INSTRUCTION_HEADER: "【User Instruction】",
-    SnippetKey.WORLDGEN_CHUNK_DIRECTIVE_MULTI: (
-        "You are processing chunk {chunk_index}/{chunk_count} of the world-building text. "
-        "Extract as many clear, stable, reusable details as possible from this chunk. "
-        "Overlap with other chunks is fine — the system will de-duplicate later. "
-        "Do not compress content to avoid repetition."
-    ),
-    SnippetKey.WORLDGEN_CHUNK_DIRECTIVE_SINGLE: (
-        "Extract as many clear, stable, reusable details as possible. "
-        "Do not over-compress the number of entries."
-    ),
 }
 
 register_snippets("en", _EN)
@@ -198,15 +179,6 @@ _JA: dict[SnippetKey, str] = {
     SnippetKey.DESC_SEPARATOR: "：",
     SnippetKey.ALIAS_SEPARATOR: "、",
     SnippetKey.USER_INSTRUCTION_HEADER: "【ユーザー指示】",
-    SnippetKey.WORLDGEN_CHUNK_DIRECTIVE_MULTI: (
-        "現在、世界観設定テキストの第{chunk_index}/{chunk_count}段を処理しています。"
-        "この段にある明確で安定した再利用可能な設定をできるだけ網羅してください。"
-        "他の段と重複しても問題ありません。システムが後で自動的に統合します。"
-    ),
-    SnippetKey.WORLDGEN_CHUNK_DIRECTIVE_SINGLE: (
-        "テキスト中の明確で安定した再利用可能な設定をできるだけ網羅してください。"
-        "エントリ数を過度に圧縮しないでください。"
-    ),
 }
 
 register_snippets("ja", _JA)
@@ -244,15 +216,6 @@ _KO: dict[SnippetKey, str] = {
     SnippetKey.DESC_SEPARATOR: "：",
     SnippetKey.ALIAS_SEPARATOR: ", ",
     SnippetKey.USER_INSTRUCTION_HEADER: "【사용자 지시】",
-    SnippetKey.WORLDGEN_CHUNK_DIRECTIVE_MULTI: (
-        "현재 세계관 설정 텍스트의 {chunk_index}/{chunk_count}번째 단락을 처리하고 있습니다. "
-        "이 단락에서 명확하고 안정적이며 재사용 가능한 설정을 최대한 추출해 주세요. "
-        "다른 단락과 중복되어도 괜찮습니다. 시스템이 나중에 자동으로 통합합니다."
-    ),
-    SnippetKey.WORLDGEN_CHUNK_DIRECTIVE_SINGLE: (
-        "텍스트에서 명확하고 안정적이며 재사용 가능한 설정을 최대한 추출해 주세요. "
-        "항목 수를 과도하게 압축하지 마세요."
-    ),
 }
 
 register_snippets("ko", _KO)

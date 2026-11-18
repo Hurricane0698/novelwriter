@@ -60,6 +60,7 @@ export function ChapterEditor({
   warningTerms,
   previewAnnotations,
   contentFormat,
+  readOnly = false,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
   value: string
@@ -75,6 +76,7 @@ export function ChapterEditor({
   warningTerms?: { code: string; term: string }[]
   previewAnnotations?: TextAnnotation[]
   contentFormat: NovelContentFormat
+  readOnly?: boolean
 }) {
   const { t } = useUiLocale()
   const wordCount = useMemo(() => value.replace(/\s/g, '').length, [value])
@@ -119,6 +121,7 @@ export function ChapterEditor({
       <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--nw-glass-border)]">
         <NwButton
           onClick={onUndo}
+          disabled={readOnly}
           variant="ghost"
           className="w-8 h-8 rounded-md"
           title={t('editor.undo')}
@@ -127,6 +130,7 @@ export function ChapterEditor({
         </NwButton>
         <NwButton
           onClick={onRedo}
+          disabled={readOnly}
           variant="ghost"
           className="w-8 h-8 rounded-md"
           title={t('editor.redo')}
@@ -181,6 +185,7 @@ export function ChapterEditor({
           data-testid="chapter-editor-textarea"
           ref={textareaRef}
           value={value}
+          readOnly={readOnly}
           onChange={(e) => onChange(e.target.value)}
           onSelect={onSelectionChange}
           onClick={onSelectionChange}
@@ -225,6 +230,7 @@ export function ChapterEditor({
         <div className="flex items-center gap-2">
           <NwButton
             onClick={onCancel}
+            disabled={readOnly}
             variant="glass"
             className="rounded-lg px-3 py-1.5 text-sm"
           >
@@ -232,6 +238,7 @@ export function ChapterEditor({
           </NwButton>
           <NwButton
             onClick={onSave}
+            disabled={readOnly}
             variant="accent"
             className="rounded-lg px-3 py-1.5 text-sm font-semibold shadow-[0_0_18px_hsl(var(--accent)/0.25)]"
           >

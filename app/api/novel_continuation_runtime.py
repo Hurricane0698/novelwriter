@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 from __future__ import annotations
 
@@ -15,11 +15,6 @@ from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
-from app.core.auth import (
-    QuotaScope,
-    ensure_ai_available,
-    reconcile_abandoned_quota_reservations,
-)
 from app.core.continuation_postcheck import postcheck_continuation
 from app.core.continuation_runs import (
     CONTINUATION_RUN_STATUS_COMPLETED,
@@ -35,7 +30,6 @@ from app.core.continuation_runs import (
     normalize_continuation_client_request_id,
     record_continuation_run_result,
 )
-from app.core.events import record_event
 from app.core.generator import continue_novel, continue_novel_stream
 from app.core.llm_semaphore import acquire_llm_slot, release_llm_slot
 from app.core.llm_config import ResolvedLlmConfig
@@ -254,20 +248,6 @@ def _raise_if_continuation_run_still_running(
     )
 
 
-def _maybe_prepare_continuation_quota(
-    *,
-    db: Session,
-    current_user: User,
-    billing_source: str,
-) -> None:
-    ensure_ai_available(db, billing_source=billing_source)
-    if reconcile_abandoned_quota_reservations(db, user_id=current_user.id) > 0:
-        try:
-            db.refresh(current_user)
-        except Exception:
-            pass
-
-
 def _continuation_run_error_from_http_exception(exc: HTTPException) -> tuple[str, str]:
     if isinstance(exc.detail, dict):
         code = str(exc.detail.get("code") or "continuation_request_failed")
@@ -373,14 +353,8 @@ async def _prepare_runtime_context(
     req: ContinueRequest,
     current_user: User,
     resolution: _ContinuationRunResolution,
-    billing_source: str,
 ) -> _ContinuationContext:
     try:
-        _maybe_prepare_continuation_quota(
-            db=db,
-            current_user=current_user,
-            billing_source=billing_source,
-        )
         return await run_in_threadpool(
             _prepare_continuation_context,
             db,
@@ -405,13 +379,6 @@ async def _prepare_runtime_context(
             error_message=str(exc),
         )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-def _normalize_delivery_mode(request: Request) -> str:
-    delivery_mode = (request.headers.get("x-novwr-delivery-mode") or "").strip().lower()
-    if delivery_mode == "stream-fallback":
-        return "stream_fallback"
-    return "sync"
 
 
 def _stream_replay_response(stored_response: ContinueResponse) -> StreamingResponse:
@@ -489,17 +456,12 @@ async def handle_continue_request(
         req=req,
         current_user=current_user,
         resolution=run_resolution,
-        billing_source=llm_config.billing_source_hint,
     )
 
-    quota = QuotaScope(db, current_user.id, count=int(req.num_versions or 1))
     slot_acquired = False
-    quota_reserved = False
     try:
         await acquire_llm_slot()
         slot_acquired = True
-        quota.reserve()
-        quota_reserved = True
         continuations = await continue_novel(
             db=db,
             novel_id=novel_id,
@@ -516,7 +478,6 @@ async def handle_continue_request(
             temperature=req.temperature,
             user_id=current_user.id,
         )
-        quota.charge(len(continuations or []))
     except ValueError as exc:
         _fail_claimed_run(
             db,
@@ -544,21 +505,8 @@ async def handle_continue_request(
         )
         raise HTTPException(status_code=500, detail="Continuation generation failed")
     finally:
-        if quota_reserved:
-            quota.finalize()
         if slot_acquired:
             release_llm_slot()
-
-    record_event(
-        db,
-        current_user.id,
-        "generation",
-        novel_id=novel_id,
-        meta={
-            "variants": len(continuations),
-            "delivery_mode": _normalize_delivery_mode(request),
-        },
-    )
 
     warning_update = _build_advisory_continuation_warning_update(
         writer_ctx=ctx.writer_ctx,
@@ -617,23 +565,18 @@ async def handle_continue_stream_request(
         req=req,
         current_user=current_user,
         resolution=run_resolution,
-        billing_source=llm_config.billing_source_hint,
     )
 
     request_id = getattr(request.state, "request_id", None)
-    quota = QuotaScope(db, current_user.id, count=int(req.num_versions or 1))
     slot_acquired = False
 
     async def event_generator():
         nonlocal slot_acquired
-        quota_reserved = False
         try:
             from types import SimpleNamespace
 
             await acquire_llm_slot()
             slot_acquired = True
-            quota.reserve()
-            quota_reserved = True
 
             contents_by_variant: dict[int, str] = {}
             total_variants: int | None = None
@@ -662,7 +605,6 @@ async def handle_continue_stream_request(
                         total_variants = int(req.num_versions)
 
                 if event.get("type") == "variant_done":
-                    quota.charge(1)
                     try:
                         variant = int(event.get("variant"))
                         contents_by_variant[variant] = str(event.get("content") or "")
@@ -736,16 +678,6 @@ async def handle_continue_stream_request(
                 error_code="continuation_stream_interrupted",
                 error_message="Continuation stream ended before completing",
             )
-            if quota_reserved:
-                quota.finalize()
-            if quota.charged > 0:
-                record_event(
-                    db,
-                    current_user.id,
-                    "generation",
-                    novel_id=novel_id,
-                    meta={"variants": quota.charged, "stream": True, "delivery_mode": "stream"},
-                )
             if slot_acquired:
                 release_llm_slot()
 

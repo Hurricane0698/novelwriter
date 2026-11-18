@@ -21,9 +21,7 @@ from app.core.llm_api_key import (
 from app.core.llm_endpoint import OpenAIBaseUrlError, normalize_openai_base_url
 
 
-BillingSource = Literal["hosted", "selfhost"]
 LlmConfigSource = Literal[
-    "hosted_settings",
     "selfhost_settings",
     "selfhost_request",
     "desktop_store",
@@ -32,7 +30,6 @@ LlmConfigSource = Literal[
 LLM_CONFIG_MISSING_CODE = "llm_config_missing"
 LLM_CONFIG_INCOMPLETE_CODE = "llm_config_incomplete"
 LLM_CONFIG_BASE_URL_INVALID_CODE = "llm_base_url_invalid"
-LLM_CONFIG_HOSTED_BYOK_DISABLED_CODE = "hosted_byok_disabled"
 LLM_CONFIG_DESKTOP_OVERRIDE_DISABLED_CODE = "desktop_llm_override_disabled"
 LLM_CONFIG_DESKTOP_ONLY_CODE = "desktop_llm_config_desktop_only"
 
@@ -77,7 +74,6 @@ class ResolvedLlmConfig:
     base_url: str
     api_key: str = field(repr=False)
     model: str
-    billing_source_hint: BillingSource
     source: LlmConfigSource
 
 
@@ -94,7 +90,6 @@ def validate_llm_api_key(value: object) -> str:
 def normalize_llm_config_values(
     values: LlmConfigValues,
     *,
-    billing_source_hint: BillingSource,
     source: LlmConfigSource,
 ) -> ResolvedLlmConfig:
     raw_base_url = str(values.base_url or "")
@@ -126,7 +121,6 @@ def normalize_llm_config_values(
         base_url=base_url,
         api_key=api_key,
         model=model,
-        billing_source_hint=billing_source_hint,
         source=source,
     )
 
@@ -174,7 +168,6 @@ def _desktop_config(
             api_key=stored.api_key,
             model=stored.model,
         ),
-        billing_source_hint="selfhost",
         source="desktop_store",
     )
 
@@ -188,22 +181,6 @@ def resolve_llm_config(
     resolved_settings = settings or get_settings()
     override = request_override or LlmConfigValues()
     runtime_mode = resolved_settings.runtime_mode
-
-    if runtime_mode == "hosted":
-        if override.has_any_value():
-            raise LlmConfigError(
-                code=LLM_CONFIG_HOSTED_BYOK_DISABLED_CODE,
-                message="Hosted beta uses platform-managed AI credentials only.",
-            )
-        return normalize_llm_config_values(
-            LlmConfigValues(
-                base_url=resolved_settings.hosted_llm_base_url,
-                api_key=resolved_settings.hosted_llm_api_key,
-                model=resolved_settings.hosted_llm_model,
-            ),
-            billing_source_hint="hosted",
-            source="hosted_settings",
-        )
 
     if runtime_mode == "desktop":
         if override.has_any_value():
@@ -221,7 +198,6 @@ def resolve_llm_config(
             )
         return normalize_llm_config_values(
             override,
-            billing_source_hint="selfhost",
             source="selfhost_request",
         )
     return normalize_llm_config_values(
@@ -230,7 +206,6 @@ def resolve_llm_config(
             api_key=resolved_settings.openai_api_key,
             model=resolved_settings.openai_model,
         ),
-        billing_source_hint="selfhost",
         source="selfhost_settings",
     )
 
@@ -244,7 +219,6 @@ def save_desktop_llm_config(
 ) -> ResolvedLlmConfig:
     config = normalize_llm_config_values(
         LlmConfigValues(base_url=base_url, api_key=api_key, model=model),
-        billing_source_hint="selfhost",
         source="desktop_store",
     )
     try:

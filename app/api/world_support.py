@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 from __future__ import annotations
 
@@ -94,10 +94,6 @@ async def run_world_operation_async(operation: Callable[..., object], /, *args, 
         raise translate_world_operation_error(exc)
 
 
-def request_payload(body: Any, *, exclude_none: bool = False) -> dict[str, Any]:
-    return body.model_dump(exclude_none=exclude_none)
-
-
 def apply_ilike_search(query: Any, raw_query: str | None, *columns: Any):
     needle = (raw_query or "").strip()
     if not needle:
@@ -112,36 +108,6 @@ def apply_exact_filters(query: Any, *filters: tuple[Any, Any]):
             continue
         query = query.filter(column == value)
     return query
-
-
-def run_user_payload_operation(
-    operation: Callable[..., _T],
-    novel_id: int,
-    *args,
-    body: Any,
-    current_user_id: int,
-    db: Session,
-    exclude_none: bool = False,
-) -> _T:
-    return run_world_operation(
-        operation,
-        novel_id,
-        *args,
-        request_payload(body, exclude_none=exclude_none),
-        user_id=current_user_id,
-        db=db,
-    )
-
-
-def run_user_batch_operation(
-    operation: Callable[..., int],
-    novel_id: int,
-    ids: list[int],
-    *,
-    current_user_id: int,
-    db: Session,
-) -> int:
-    return run_world_operation(operation, novel_id, ids, user_id=current_user_id, db=db)
 
 
 def get_novel(novel_id: int, db: Session) -> Novel:
@@ -212,9 +178,6 @@ __all__ = [
     "get_novel",
     "get_system",
     "parse_visibility_filter",
-    "request_payload",
-    "run_user_batch_operation",
-    "run_user_payload_operation",
     "run_world_operation",
     "run_world_operation_async",
     "serialize_bootstrap_job",

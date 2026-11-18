@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 """Build the landing title font from Google Fonts' NotoSerifSC[wght].ttf.
 
 uv --no-config run --no-project --with fonttools --with brotli web/scripts/subset-display-font.py /path/to/NotoSerifSC.ttf

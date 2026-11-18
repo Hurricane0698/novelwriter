@@ -125,7 +125,7 @@ def client(db, monkeypatch):
 
     test_app.dependency_overrides[get_db] = override_get_db
 
-    from app.core.auth import get_current_user_or_default, check_generation_quota
+    from app.core.auth import get_current_user_or_default
     from app.models import User
 
     fake_user = User(
@@ -133,7 +133,6 @@ def client(db, monkeypatch):
         generation_quota=999, feedback_submitted=False,
     )
     test_app.dependency_overrides[get_current_user_or_default] = lambda: fake_user
-    test_app.dependency_overrides[check_generation_quota] = lambda: fake_user
 
     captured: dict[str, object] = {}
 
@@ -355,7 +354,6 @@ class TestContinueEndpoint:
         assert "无缝衔接原文风格" in prompts[0]
         assert prompts[0].rstrip().endswith("请续写第3章：")
 
-
     def test_user_prompt_is_part_of_relevance_signal(self, client, novel, world):
         c, captured = client
 
@@ -436,7 +434,6 @@ class TestContinueStreamEndpoint:
             base_url="https://user.example.com/v1",
             api_key="user-key",
             model="user-model",
-            billing_source_hint="selfhost",
             source="selfhost_request",
         )
         assert captured.get("stream_kwargs", {}).get("llm_config") == expected

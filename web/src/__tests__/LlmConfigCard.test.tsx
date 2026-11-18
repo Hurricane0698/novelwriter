@@ -353,15 +353,6 @@ describe('LlmConfigCard desktop persistence', () => {
     expect(screen.queryByTestId('llm-config-retry')).toBeNull()
   })
 
-  it('does not call the desktop config API in hosted mode', () => {
-    vi.stubEnv('VITE_DEPLOY_MODE', 'hosted')
-    renderCard()
-
-    expect(screen.getByText('当前 hosted beta 只使用平台托管的 AI 凭证', { exact: false })).toBeVisible()
-    expect(api.getLlmConfig).not.toHaveBeenCalled()
-    expect(api.updateLlmConfig).not.toHaveBeenCalled()
-    expect(api.clearLlmConfig).not.toHaveBeenCalled()
-  })
 })
 
 describe('LlmConfigCard selfhost transport validation', () => {

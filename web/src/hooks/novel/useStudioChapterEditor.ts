@@ -61,6 +61,7 @@ export function useStudioChapterEditor({
     schedule: scheduleAutoSave,
     saveNow: saveNowAutoSave,
     cancel: cancelAutoSave,
+    flush: flushPendingSaves,
   } = useDebouncedAutoSave<string>({
     delayMs: AUTO_SAVE_DELAY,
     save: async (content) => {
@@ -150,5 +151,6 @@ export function useStudioChapterEditor({
     editMode, setEditMode, editorContent, editorSaveErrorCode, autoSaveStatus,
     handleEditorChange, handleSave, handleCancelEdit, saveCurrentEditorNow,
     resetEditor, toggleEdit,
+    flushPendingSaves,
   }
 }

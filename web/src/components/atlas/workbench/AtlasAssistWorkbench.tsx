@@ -365,7 +365,6 @@ export function AtlasAssistWorkbench({
         <BootstrapPanel
           novelId={novelId}
           variant="sidebar"
-          analyticsSource="atlas_assist_workbench"
           onLifecycleChange={handleBootstrapLifecycleChange}
           onTriggerStart={handleBootstrapTriggerStart}
           onTriggerError={handleBootstrapTriggerError}
@@ -473,7 +472,6 @@ export function AtlasAssistWorkbench({
         novelId={novelId}
         open={genOpen}
         onOpenChange={setGenOpen}
-        analyticsSource="atlas_assist_workbench"
         onGenerateSuccess={handleGenerateSuccess}
         onImportSuccess={handleImportSuccess}
         navigateOnGenerateSuccess={false}

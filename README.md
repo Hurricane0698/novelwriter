@@ -7,16 +7,16 @@
 **为长篇小说续写而做的世界模型引擎**
 
 <p>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3-blue?style=flat-square" alt="License" /></a>
-  <a href="https://github.com/Hurricane0698/novelwriter/releases/download/v0.6.0/NovWr_0.6.0_x64-setup.exe"><img src="https://img.shields.io/badge/download-Windows-0078D4?style=flat-square" alt="下载 Windows 桌面版" /></a>
-  <a href="https://github.com/Hurricane0698/novelwriter/releases/download/v0.6.0/NovWr_0.6.0_aarch64.dmg"><img src="https://img.shields.io/badge/download-macOS%20Apple%20Silicon-222222?style=flat-square&logo=apple&logoColor=white" alt="下载 macOS 桌面版" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License" /></a>
+  <a href="https://github.com/Hurricane0698/novelwriter/releases/download/v0.7.0/NovWr_0.7.0_x64-setup.exe"><img src="https://img.shields.io/badge/download-Windows-0078D4?style=flat-square" alt="下载 Windows 桌面版" /></a>
+  <a href="https://github.com/Hurricane0698/novelwriter/releases/download/v0.7.0/NovWr_0.7.0_aarch64.dmg"><img src="https://img.shields.io/badge/download-macOS%20Apple%20Silicon-222222?style=flat-square&logo=apple&logoColor=white" alt="下载 macOS 桌面版" /></a>
   <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" /></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/frontend-React%2019-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19" /></a>
 </p>
 
 </div>
 
-NovelWriter（NovWr）是一个面向长篇小说创作与续写的本地写作工具，提供 Windows、macOS 桌面版和 Docker 自部署方式。它不做"一键生成百万字"，而是解决长篇创作里真正难的问题：**几十万字之后，设定还立得住**。
+NovelWriter（NovWr）是一个非商业化的开源写作项目，提供 Windows、macOS 桌面版和 Docker 自部署方式。它帮助长篇小说作者在续写时核对人物、关系和世界设定。
 
 做法是把设定从散落的备忘录变成一个结构化的世界模型——实体、关系、体系——每次续写时只把当前章节真正需要的设定注入给模型。写什么、采不采纳，始终由作者决定。
 
@@ -41,12 +41,12 @@ NovelWriter（NovWr）是一个面向长篇小说创作与续写的本地写作�
 
 下载后直接安装，无需命令行、Python、Rust 或 Docker。
 
-| 系统 | 下载 v0.6.0 | 安装方式 |
+| 系统 | 下载 v0.7.0 | 安装方式 |
 | --- | --- | --- |
-| Windows 10（2004+）/ 11，x64 | [下载 Windows 安装包](https://github.com/Hurricane0698/novelwriter/releases/download/v0.6.0/NovWr_0.6.0_x64-setup.exe) | 双击安装，当前用户安装无需管理员权限 |
-| macOS 14+，Apple Silicon（M 系列） | [下载 macOS DMG](https://github.com/Hurricane0698/novelwriter/releases/download/v0.6.0/NovWr_0.6.0_aarch64.dmg) | 打开 DMG，将 NovWr 拖入「应用程序」 |
+| Windows 10（2004+）/ 11，x64 | [下载 Windows 安装包](https://github.com/Hurricane0698/novelwriter/releases/download/v0.7.0/NovWr_0.7.0_x64-setup.exe) | 双击安装，当前用户安装无需管理员权限 |
+| macOS 14+，Apple Silicon（M 系列） | [下载 macOS DMG](https://github.com/Hurricane0698/novelwriter/releases/download/v0.7.0/NovWr_0.7.0_aarch64.dmg) | 打开 DMG，将 NovWr 拖入「应用程序」 |
 
-打开 NovWr，即可导入或编辑小说；使用 AI 功能前，在「设置 → AI 模型配置」填写 OpenAI 兼容接口并测试连接。
+打开 NovWr，在作品库选择「新建作品」即可写第一章，也可以用「导入书稿」打开 TXT 或 Markdown。Markdown 可以用 `# 章节名` 分章，分卷书稿用 `# 卷名` 和 `## 章节名`。需要 AI 续写时，在「设置 → AI 模型配置」填写 OpenAI 兼容接口并测试连接。
 
 当前安装包尚未完成 Windows 代码签名 / Apple 公证，首次运行可能出现系统安全提示。提示处理、数据位置和覆盖升级步骤见 [桌面版安装指南](docs/desktop-install.md)。全部安装包和更新说明见 [Releases](https://github.com/Hurricane0698/novelwriter/releases/latest)。
 
@@ -64,7 +64,7 @@ curl -fsSL https://raw.githubusercontent.com/Hurricane0698/novelwriter/main/inst
 
 脚本会安装 `uv` 与 `novwr` CLI，初始化 `~/.novwr`，并拉起官方镜像。常用命令：`novwr init` / `run` / `doctor` / `upgrade` / `uninstall`。
 
-**Docker Compose（手动）**
+**Docker Compose v2.24+（手动）**
 
 ```bash
 git clone https://github.com/Hurricane0698/novelwriter.git
@@ -79,17 +79,15 @@ docker compose up -d   # 访问 http://localhost:8000
 - Compose 同时启动 Web 服务与后台 worker（导入、索引、自动提取由 worker 处理）
 - 首次启动自动创建管理员账号，并内置《西游记》示例项目
 - 需要一个 OpenAI 接口兼容的 LLM API Key；设置页有「测试连接」做连通性与 JSON Mode 预检
-- 官方镜像：`ghcr.io/hurricane0698/novelwriter:latest`
+- 官方镜像（Linux amd64）可固定为 `ghcr.io/hurricane0698/novelwriter:v0.7.0`。默认的 `latest` 跟随最新稳定版，一键安装用户可运行 `novwr upgrade` 更新。
 
 ## 核心概念
 
-**世界模型（World Model）** — 实体、关系、体系的结构化知识库。可以从已有正文或设定集自动提取（提取结果以草稿形式等待你审核），也可以手工维护。续写时按当前章节的相关性精准注入，而不是把全书硬塞进上下文。
+**世界模型** 记录后文要用的事实，例如谁保管钥匙、谁知道一个秘密、哪条承诺尚未兑现。续写根据最近的正文和作者指令选取已确认设定。场景提到某人的关系时，可以带出另一端的人物。体系默认在场景相关时使用，也可以在 Atlas 中指定每次续写使用或隐藏。
 
-**Studio 与 Atlas** — 两个工作台，同一部小说。Studio 是日常写作现场：读写章节、发起多版本续写、对比与采纳草稿。Atlas 是设定治理中心：审阅实体关系、维护体系规则、处理提取草稿。
+**Studio 与 Atlas** 分别用于写作和维护设定。导入的章节一旦可读，就能开始编辑。全书索引和设定提取在后台进行。续写候选只有在作者采纳后才成为章节。
 
-**Novel Copilot（只读）** — 基于全书检索的研究助手，遵循 Find → Open → Read 的只读流程：翻阅、归纳、给出建议卡片。它不能直接修改任何数据；所有变更都经过你的确认。
-
-其余值得知道的设计决策：续写候选、提取结果都是草稿，不确认不落库；检索基于自建的窗口索引（无向量数据库依赖）；BYOK——接入任何 OpenAI 兼容接口的模型。
+**写作助手** 可以检索前文、核对草稿。章节上的「本章改变了什么？」会保存正文并提出有原文依据的设定变化。作者可以逐条比较原值、建议值和出处，再决定是否采纳。
 
 ## 配置
 
@@ -99,11 +97,9 @@ Selfhost 常用环境变量（完整清单见 [`.env.example`](.env.example)）�
 |---|---|
 | `OPENAI_API_KEY` | LLM API 密钥（启用 AI 时必填） |
 | `OPENAI_BASE_URL` / `OPENAI_MODEL` | 兼容网关地址与默认模型 |
-| `JWT_SECRET_KEY` | JWT 签名密钥（生产必填） |
+| `JWT_SECRET_KEY` | JWT 签名密钥（用于本地会话） |
 | `DATABASE_URL` | 数据库连接；默认 SQLite |
 | `MAX_CONTEXT_CHAPTERS` / `DEFAULT_CONTINUATION_TOKENS` | 续写上下文与长度上限 |
-
-Hosted 部署（多用户、邀请码、配额）使用 `DEPLOY_MODE=hosted` 及 `HOSTED_*` 系列变量，详见 `.env.example`。
 
 ## 本地开发
 
@@ -142,7 +138,7 @@ npm run dev
 
 ## 开源协议
 
-[AGPLv3](LICENSE)
+项目代码采用 [MIT 许可证](LICENSE)。随包字体和第三方依赖使用各自的许可证。
 
 ## 友情链接
 

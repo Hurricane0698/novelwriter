@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 """Application orchestration for text-to-world generation."""
 
@@ -8,14 +8,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from typing import Awaitable, Callable
+from typing import Callable
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.ai_client import LLMUnavailableError, StructuredOutputParseError
-from app.core.events import ensure_project_start_event, record_event
 from app.core.world.crud import load_novel
 from app.core.world.gen import generate_world_drafts
 from app.core.world.generation_runs import (
@@ -24,17 +23,11 @@ from app.core.world.generation_runs import (
     fail_world_generation_run,
 )
 from app.core.world.use_case_errors import WorldUseCaseError, detail_error_from_http_exception
-from app.core.auth import (
-    ensure_ai_available, open_quota_reservation, charge_quota_reservation,
-    finalize_quota_reservation,
-)
 from app.core.llm_semaphore import acquire_llm_slot, release_llm_slot
 from app.core.llm_config import ResolvedLlmConfig
 from app.schemas import WorldGenerateResponse
 
 logger = logging.getLogger(__name__)
-_world_generate_locks: dict[int, asyncio.Lock] = {}
-_world_generate_locks_guard = asyncio.Lock()
 
 
 def _world_generation_error_from_http_exception(exc: HTTPException) -> tuple[str, str]:
@@ -53,11 +46,6 @@ def _world_generation_failure(
     claim_token: str,
     extra: dict | None = None,
 ) -> Exception:
-    """Mark the durable run failed and translate `exc` into the use-case error.
-
-    Single failure path so the refund/fail/raise invariant cannot drift between
-    exception classes. Returns the exception the caller must raise.
-    """
     if isinstance(exc, HTTPException):
         error_code, error_message = _world_generation_error_from_http_exception(exc)
         fail_world_generation_run(
@@ -101,92 +89,42 @@ async def generate_world_from_text(
     user_id: int,
     llm_config: ResolvedLlmConfig,
     request_id: str | None = None,
-    generate_world_drafts_fn: Callable[..., Awaitable[WorldGenerateResponse]] | None = None,
-    acquire_llm_slot_fn: Callable[[], Awaitable[None]] | None = None,
-    release_llm_slot_fn: Callable[[], None] | None = None,
-    record_event_fn: Callable[..., None] | None = None,
 ) -> WorldGenerateResponse:
-    generation_runner = generate_world_drafts_fn or generate_world_drafts
-    acquire_slot = acquire_llm_slot_fn or acquire_llm_slot
-    release_slot = release_llm_slot_fn or release_llm_slot
-    record_generate_event = record_event_fn or record_event
-
     claim_token = secrets.token_hex(16)
     with session_factory() as db:
         load_novel(novel_id, db)
-        run_claim = claim_world_generation_run(
+        run_id = claim_world_generation_run(
             db, user_id=user_id, novel_id=novel_id, claim_token=claim_token,
         )
-        if not run_claim.owner:
+        if run_id is None:
             raise WorldUseCaseError(
                 code="world_generate_duplicate_request",
                 message="World generation already running for this novel", status_code=409,
             )
-        try:
-            ensure_ai_available(db, billing_source=llm_config.billing_source_hint)
-        except HTTPException as exc:
-            raise _world_generation_failure(
-                exc, db=db, run_id=run_claim.run_id, claim_token=claim_token,
-            ) from exc
-
-    # Only values and the factory cross waits; no auth, quota or generation
-    # session retains a checked-out connection while a model/lock is pending.
     extra = {"request_id": request_id, "novel_id": novel_id, "user_id": user_id}
     slot_acquired = False
-    reservation_id = None
     try:
-        lock = await _get_world_generate_lock(novel_id)
-        async with lock:
-            await acquire_slot()
-            slot_acquired = True
-            with session_factory() as db:
-                reservation_id = open_quota_reservation(db, user_id, count=1)
-            result = await generation_runner(
-                session_factory=session_factory, novel_id=novel_id, text=text,
-                llm_config=llm_config, user_id=user_id,
-            )
-            with session_factory() as db:
-                charge_quota_reservation(db, reservation_id, n=1)
-                complete_world_generation_run(db, run_id=run_claim.run_id, claim_token=claim_token)
-                ensure_project_start_event(
-                    db, user_id=user_id, novel_id=novel_id, start_mode="setting_import",
-                    meta={"entry_action": "world_generate"},
-                )
-                record_generate_event(
-                    db, user_id, "world_generate", novel_id=novel_id,
-                    meta={
-                        "entities_created": result.entities_created,
-                        "relationships_created": result.relationships_created,
-                        "systems_created": result.systems_created,
-                        "warnings_count": len(result.warnings),
-                    },
-                )
-            return result
+        await acquire_llm_slot()
+        slot_acquired = True
+        result = await generate_world_drafts(
+            session_factory=session_factory, novel_id=novel_id, text=text,
+            llm_config=llm_config, user_id=user_id,
+        )
+        with session_factory() as db:
+            complete_world_generation_run(db, run_id=run_id, claim_token=claim_token)
+        return result
     except asyncio.CancelledError:
         with session_factory() as db:
             fail_world_generation_run(
-                db, run_id=run_claim.run_id, claim_token=claim_token,
+                db, run_id=run_id, claim_token=claim_token,
                 error_code="world_generate_cancelled", error_message="World generation cancelled",
             )
         raise
     except Exception as exc:
         with session_factory() as db:
             raise _world_generation_failure(
-                exc, db=db, run_id=run_claim.run_id, claim_token=claim_token, extra=extra,
+                exc, db=db, run_id=run_id, claim_token=claim_token, extra=extra,
             ) from exc
     finally:
-        try:
-            with session_factory() as db:
-                finalize_quota_reservation(db, reservation_id)
-        finally:
-            if slot_acquired:
-                release_slot()
-
-
-async def _get_world_generate_lock(novel_id: int) -> asyncio.Lock:
-    async with _world_generate_locks_guard:
-        lock = _world_generate_locks.get(novel_id)
-        if lock is None:
-            lock = asyncio.Lock()
-            _world_generate_locks[novel_id] = lock
-        return lock
+        if slot_acquired:
+            release_llm_slot()

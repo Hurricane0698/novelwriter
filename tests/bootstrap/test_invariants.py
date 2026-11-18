@@ -256,7 +256,6 @@ def test_bi02_entity_edit_switches_origin_to_manual(world_api, db, user):
         entity_id=entity.id,
         body=WorldEntityUpdate(description="用户补充说明"),
         db=db,
-        current_user=user,
     )
     db.refresh(entity)
 
@@ -312,7 +311,6 @@ def test_bi02_relationship_edit_switches_origin_to_manual(world_api, db, user):
         relationship_id=relationship.id,
         body=WorldRelationshipUpdate(label="夫妻"),
         db=db,
-        current_user=user,
     )
     db.refresh(relationship)
 
@@ -347,7 +345,6 @@ def test_bi02_attribute_edit_switches_entity_origin_to_manual(world_api, db, use
         entity_id=entity.id,
         body=WorldAttributeCreate(key="身份", surface="深渊魔主"),
         db=db,
-        current_user=user,
     )
     db.refresh(entity)
 

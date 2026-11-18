@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 """Shared support objects for split copilot runtime tests."""
 
@@ -15,7 +15,6 @@ TEST_LLM_CONFIG = ResolvedLlmConfig(
     base_url="https://example.com/v1",
     api_key="test-key",
     model="test-model",
-    billing_source_hint="selfhost",
     source="selfhost_settings",
 )
 

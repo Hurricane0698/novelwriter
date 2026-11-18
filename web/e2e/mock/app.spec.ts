@@ -24,15 +24,10 @@ test.describe('Local access', () => {
   test('product routes remain available without an authenticated session', async ({ page }) => {
     await mockAllApiRoutes(page)
     await mockAuthRoutes(page, { authenticated: false })
-    await page.addInitScript(() => {
-      localStorage.setItem('novwr_world_onboarding_dismissed_1_2026-01-01T00:00:00Z', '1')
-    })
 
     await page.goto('/novel/1')
     await expect(page).toHaveURL('/novel/1')
-    await expect(page.getByTestId('studio-workspace-toolbar').getByText(NOVELS[0].title)).toBeVisible()
-    await expect(page.getByRole('button', { name: /第\s*1\s*章/ })).toBeVisible()
-    await expect(page.getByText(CHAPTERS[0].content)).toBeVisible()
+    await expect(page.getByText(CHAPTERS[0].content, { exact: true })).toBeVisible()
   })
 })
 
@@ -44,7 +39,8 @@ test.describe('Library', () => {
     await page.goto('/library')
 
     await expect(page.getByText('我的作品库')).toBeVisible()
-    await expect(page.getByText('还没有作品。上传 .txt / .md 文件即可导入并开始续写。')).toBeVisible()
+    await expect(page.getByRole('button', { name: '新建作品' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: '导入书稿' })).toBeEnabled()
   })
 
   test('shows error state on API failure', async ({ page }) => {

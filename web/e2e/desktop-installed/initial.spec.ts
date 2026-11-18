@@ -40,7 +40,7 @@ test('first installed launch imports a novel and verifies encrypted LLM config',
   const novelId = Number(match?.[1])
   expect(Number.isInteger(novelId) && novelId > 0).toBe(true)
 
-  await waitForInitialNovelReady(page, novelId, { readyTimeoutMs: INSTALLED_STORM_TIMEOUT_MS })
+  await waitForInitialNovelReady(page, INSTALLED_STORM_TIMEOUT_MS)
   await expect(
     page.getByTestId('studio-rail-chapters').getByRole('button', { name: /第\s*1\s*章/ }),
   ).toBeVisible({ timeout: INSTALLED_STORM_TIMEOUT_MS })

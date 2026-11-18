@@ -1,9 +1,8 @@
 import { test, expect, type APIRequestContext } from '@playwright/test'
-import { authHeaders, blockExternalNoise, createApiSession, ensureProductAccess } from '../fixtures/api-helpers'
+import { authHeaders, blockExternalNoise, getSessionToken } from '../fixtures/api-helpers'
 
 const API = process.env.E2E_API_ORIGIN ?? 'http://localhost:8000'
 const RUN = Math.random().toString(36).slice(2, 6)
-const AUTH_SCOPE = 'world-model'
 
 let novelId: number
 let sessionToken = ''
@@ -45,7 +44,7 @@ async function cleanupWorldModelData(request: APIRequestContext, novelId: number
 }
 
 test.beforeAll(async ({ request }) => {
-  sessionToken = (await createApiSession(request, { scope: AUTH_SCOPE })).accessToken
+  sessionToken = await getSessionToken(request)
 
   const res = await request.post(`${API}/api/novels/upload`, {
     headers: authHeaders(sessionToken),
@@ -53,8 +52,6 @@ test.beforeAll(async ({ request }) => {
       title: 'E2E测试小说',
       author: 'test',
       file: { name: 'test.txt', mimeType: 'text/plain', buffer: Buffer.from('第一章 测试\n内容') },
-      consent_acknowledged: 'true',
-      consent_version: '2026-03-06',
     },
   })
   expect(res.ok()).toBeTruthy()
@@ -71,7 +68,7 @@ test.afterAll(async ({ request }) => {
 
 test.beforeEach(async ({ page }) => {
   await blockExternalNoise(page)
-  await ensureProductAccess(page, { scope: AUTH_SCOPE })
+  await page.goto('/library')
 })
 
 // ---------------------------------------------------------------------------

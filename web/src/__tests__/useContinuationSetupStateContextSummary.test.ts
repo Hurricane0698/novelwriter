@@ -1,4 +1,5 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { createQueryClientWrapper } from '@/__tests__/support/queryClient'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockNavigate = vi.fn()
@@ -21,12 +22,11 @@ const summaryRows = [{
 }]
 
 vi.mock('react-router-dom', () => ({ useNavigate: () => mockNavigate }))
-vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: null }) }))
 vi.mock('@/contexts/UiLocaleContext', () => ({
   useUiLocale: () => ({ locale: 'zh', t: (key: string) => key }),
 }))
 vi.mock('@/services/api', () => ({
-  api: { updatePreferences: vi.fn().mockResolvedValue(undefined) },
+  api: { getProfile: vi.fn().mockResolvedValue({ preferences: null }), updatePreferences: vi.fn().mockResolvedValue(undefined) },
   ApiError: class ApiError extends Error {},
 }))
 vi.mock('@/hooks/novel/useNovelContextSummaries', () => ({
@@ -46,13 +46,14 @@ vi.mock('@/hooks/novel/useNovelContextSummaries', () => ({
   }),
 }))
 
+import { api } from '@/services/api'
 import { useContinuationSetupState } from '@/hooks/novel/useContinuationSetupState'
 
 describe('useContinuationSetupState context summary integration', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('passes only selected confirmed summary ids and keeps the context cap', () => {
-    const { result } = renderHook(() => useContinuationSetupState(7, 12))
+    const { result } = renderHook(() => useContinuationSetupState(7, 12), { wrapper: createQueryClientWrapper() })
     act(() => {
       result.current.setContextChapters('999')
       result.current.setSelectedContextSummaryIds([9])
@@ -70,9 +71,19 @@ describe('useContinuationSetupState context summary integration', () => {
     })
   })
 
+  it('keeps local edits when saved defaults finish loading', async () => {
+    let resolveProfile!: (profile: Awaited<ReturnType<typeof api.getProfile>>) => void
+    vi.mocked(api.getProfile).mockReturnValueOnce(new Promise(resolve => { resolveProfile = resolve }))
+    const { result } = renderHook(() => useContinuationSetupState(7, 12), { wrapper: createQueryClientWrapper() })
+    act(() => result.current.setTemperature('1.2'))
+    resolveProfile({ preferences: { num_versions: 2, temperature: 0.5 } })
+    await waitFor(() => expect(result.current.numVersions).toBe('2'))
+    expect(result.current.temperature).toBe('1.2')
+  })
+
   it('opens a generated draft for review without selecting it', async () => {
     mockCreate.mockResolvedValue({ ...summaryRows[0], id: 10, review_status: 'draft' })
-    const { result } = renderHook(() => useContinuationSetupState(7, 12))
+    const { result } = renderHook(() => useContinuationSetupState(7, 12), { wrapper: createQueryClientWrapper() })
     act(() => result.current.setContextSummaryRange('1-10'))
     await act(async () => result.current.handleCreateContextSummary())
     expect(result.current.reviewContextSummary).toBeNull()
@@ -80,7 +91,7 @@ describe('useContinuationSetupState context summary integration', () => {
   })
 
   it('validates an invalid range before generation', async () => {
-    const { result } = renderHook(() => useContinuationSetupState(7, 12))
+    const { result } = renderHook(() => useContinuationSetupState(7, 12), { wrapper: createQueryClientWrapper() })
     act(() => result.current.setContextSummaryRange('20-1'))
     await act(async () => result.current.handleCreateContextSummary())
     expect(mockCreate).not.toHaveBeenCalled()

@@ -4,7 +4,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import app.core.indexing.lifecycle as indexing_lifecycle_module
-from app.core.auth import hash_password
 from app.core.indexing import NovelIndex, run_next_window_index_rebuild_job
 from app.core.seed_demo import (
     DEMO_TITLE,
@@ -36,7 +35,7 @@ def _fresh_db():
 
 
 def _make_user(db, username="test_seed_user"):
-    user = User(username=username, hashed_password=hash_password("x"), is_active=True)
+    user = User(username=username, hashed_password="!", is_active=True)
     db.add(user)
     db.commit()
     db.refresh(user)

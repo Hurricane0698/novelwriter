@@ -139,37 +139,19 @@ export function resolveRequestFailureMessage(
     t: ContinuationResultsT
     getLlmApiErrorMessage: (error: StatusError, locale: UiLocale) => string | null
   },
-): { message: string; isQuotaExhausted: boolean } {
+): string {
   const { locale, t, getLlmApiErrorMessage } = args
-  if (isStatusError(resolvedError) && resolvedError.status === 429) {
-    return {
-      isQuotaExhausted: true,
-      message: t('continuation.results.quotaExhausted'),
-    }
-  }
   if (isStatusError(resolvedError)) {
     const llmMessage = getLlmApiErrorMessage(resolvedError, locale)
     if (llmMessage) {
-      return {
-        isQuotaExhausted: false,
-        message: llmMessage,
-      }
+      return llmMessage
     }
     if (resolvedError.status === 503) {
-      return {
-        isQuotaExhausted: false,
-        message: t('continuation.results.serviceBusy'),
-      }
+      return t('continuation.results.serviceBusy')
     }
-    return {
-      isQuotaExhausted: false,
-      message: t('continuation.results.requestFailed', { status: resolvedError.status }),
-    }
+    return t('continuation.results.requestFailed', { status: resolvedError.status })
   }
-  return {
-    isQuotaExhausted: false,
-    message: resolvedError instanceof Error ? resolvedError.message : 'Stream failed',
-  }
+  return resolvedError instanceof Error ? resolvedError.message : 'Stream failed'
 }
 
 function isStatusError(resolvedError: unknown): resolvedError is StatusError {

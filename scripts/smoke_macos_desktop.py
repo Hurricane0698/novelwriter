@@ -55,6 +55,7 @@ def eventually(check, *, timeout=45, description):
 
 def require_free_port():
     with socket.socket() as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind(("127.0.0.1", 8000))
 
 
@@ -84,8 +85,8 @@ def survivors(pids):
 def upload_novel(api):
     boundary = "novwr-" + uuid.uuid4().hex
     fields = {
-        "title": "NovWr Mac App Smoke", "consent_acknowledged": "true",
-        "consent_version": "2026-03-06", "language": "zh",
+        "title": "NovWr Mac App Smoke",
+        "language": "zh",
     }
     pieces = [
         f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'

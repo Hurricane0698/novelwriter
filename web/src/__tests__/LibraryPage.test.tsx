@@ -30,16 +30,6 @@ vi.mock('@/components/library/WorkCard', () => ({
   WorkCard: () => <div>work-card</div>,
 }))
 
-vi.mock('@/components/library/EmptyState', () => ({
-  EmptyState: ({ onCreate }: { onCreate: () => void }) => (
-    <button type="button" onClick={onCreate}>empty-create</button>
-  ),
-}))
-
-vi.mock('@/lib/worldOnboardingStorage', () => ({
-  clearWorldOnboardingDismissed: vi.fn(),
-}))
-
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -64,17 +54,16 @@ describe('LibraryPage', () => {
     document.documentElement.lang = 'zh-CN'
   })
 
-  it('uploads immediately without a library-side consent step', async () => {
+  it('imports a text manuscript under its filename', async () => {
     renderPage()
     expect(await screen.findByTestId('library-create-novel')).toBeEnabled()
-    expect(screen.queryByText('上传前先确认权利边界')).not.toBeInTheDocument()
 
     const input = screen.getByTestId('library-file-input') as HTMLInputElement
     const file = new File(['hello'], 'test.txt', { type: 'text/plain' })
     await userEvent.upload(input, file)
 
     await waitFor(() => {
-      expect(uploadNovel).toHaveBeenCalledWith(file, 'test', '', { sourceSurface: 'unknown' })
+      expect(uploadNovel).toHaveBeenCalledWith(file, 'test')
     })
   })
 
@@ -87,7 +76,7 @@ describe('LibraryPage', () => {
     await userEvent.upload(input, file)
 
     await waitFor(() => {
-      expect(uploadNovel).toHaveBeenCalledWith(file, 'markdown-book', '', { sourceSurface: 'unknown' })
+      expect(uploadNovel).toHaveBeenCalledWith(file, 'markdown-book')
     })
   })
 

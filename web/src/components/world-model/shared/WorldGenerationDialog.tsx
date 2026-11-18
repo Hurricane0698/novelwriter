@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeE
 import { useLocation, useNavigate } from 'react-router-dom'
 import '@/lib/uiMessagePacks/novel'
 import { getLlmApiErrorMessage } from '@/lib/llmErrorMessages'
-import { trackHostedAnalyticsEvent } from '@/lib/hostedAnalytics'
 import { ApiError } from '@/services/api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -52,7 +51,6 @@ export function WorldGenerationDialog({
   novelId,
   open,
   onOpenChange,
-  analyticsSource = 'unknown',
   onGenerateSuccess,
   navigateOnGenerateSuccess = true,
   onImportSuccess,
@@ -61,7 +59,6 @@ export function WorldGenerationDialog({
   novelId: number
   open: boolean
   onOpenChange: (open: boolean) => void
-  analyticsSource?: string
   onGenerateSuccess?: (response: WorldGenerateResponse) => void
   navigateOnGenerateSuccess?: boolean
   onImportSuccess?: (response: WorldpackImportResponse) => void
@@ -74,7 +71,6 @@ export function WorldGenerationDialog({
   const modalRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const trackedOpenRef = useRef(false)
 
   const [text, setText] = useState('')
   const [genError, setGenError] = useState<string | null>(null)
@@ -116,21 +112,6 @@ export function WorldGenerationDialog({
     return () => document.removeEventListener('keydown', handler)
   }, [open, closeDialog])
 
-  useEffect(() => {
-    if (!open) {
-      trackedOpenRef.current = false
-      return
-    }
-    if (trackedOpenRef.current) return
-    trackedOpenRef.current = true
-    void trackHostedAnalyticsEvent('world_generate_open', {
-      novelId,
-      meta: {
-        source_surface: analyticsSource,
-      },
-    })
-  }, [analyticsSource, novelId, open])
-
   const trimmed = text.trim()
   const nonWhitespaceLen = trimmed.replace(/\s/g, '').length
   const tooShort = nonWhitespaceLen > 0 && nonWhitespaceLen < MIN_LEN
@@ -141,13 +122,6 @@ export function WorldGenerationDialog({
     if (!canSubmit) return
     const session = sessionRef.current
     setGenError(null)
-    void trackHostedAnalyticsEvent('world_generate_submit', {
-      novelId,
-      meta: {
-        source_surface: analyticsSource,
-        text_length: trimmed.length,
-      },
-    })
     generate.mutate(
       { text: trimmed },
       {
@@ -160,14 +134,6 @@ export function WorldGenerationDialog({
           }
         },
         onError: (err) => {
-          void trackHostedAnalyticsEvent('world_generate_failed', {
-            novelId,
-            meta: {
-              source_surface: analyticsSource,
-              status: err instanceof ApiError ? err.status : null,
-              error_code: err instanceof ApiError ? err.code ?? null : 'client_error',
-            },
-          })
           if (session !== sessionRef.current) return
           if (err instanceof ApiError) {
             const llmMessage = getLlmApiErrorMessage(err, locale)
@@ -203,22 +169,9 @@ export function WorldGenerationDialog({
       const parsed = JSON.parse(await file.text()) as unknown
       if (session !== sessionRef.current) return
       if (!isWorldpackV1(parsed)) {
-        void trackHostedAnalyticsEvent('worldpack_import_failed', {
-          novelId,
-          meta: {
-            source_surface: analyticsSource,
-            error_code: 'worldpack_file_unsupported',
-          },
-        })
         setImportError(t('worldModel.worldpack.fileUnsupported'))
         return
       }
-      void trackHostedAnalyticsEvent('worldpack_import_submit', {
-        novelId,
-        meta: {
-          source_surface: analyticsSource,
-        },
-      })
       importWorldpack.mutate(parsed, {
         onSuccess: (response) => {
           if (session !== sessionRef.current) return
@@ -228,26 +181,12 @@ export function WorldGenerationDialog({
             navigate(`/world/${novelId}`)
           }
         },
-        onError: (err) => {
-          void trackHostedAnalyticsEvent('worldpack_import_failed', {
-            novelId,
-            meta: {
-              source_surface: analyticsSource,
-              error_code: err instanceof ApiError ? err.code ?? null : 'worldpack_import_failed',
-            },
-          })
+        onError: () => {
           if (session === sessionRef.current) setImportError(t('worldModel.worldpack.failed'))
         },
       })
     } catch (err) {
       console.error(err)
-      void trackHostedAnalyticsEvent('worldpack_import_failed', {
-        novelId,
-        meta: {
-          source_surface: analyticsSource,
-          error_code: 'worldpack_file_unreadable',
-        },
-      })
       if (session === sessionRef.current) setImportError(t('worldModel.worldpack.fileUnreadable'))
     } finally {
       e.target.value = ''

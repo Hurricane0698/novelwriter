@@ -39,6 +39,7 @@ function renderRuns(strict = false) {
   return renderHook(({ sessions }: { sessions: NovelCopilotSession[] }) => {
     const state = useNovelCopilotRunsState(sessions)
     return useNovelCopilotRuns({
+      getLocalSession: (id) => sessions.find(s => s.sessionId === id),
       ...state, sessions, focusedSessionId: sessions[0]?.sessionId ?? null, resolveBackendSessionId,
     })
   }, {

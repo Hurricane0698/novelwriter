@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.ai_client import AIClient, LLMUnavailableError
-from app.core.auth import QuotaScope, ensure_ai_available, get_current_user_or_default
+from app.core.auth import get_current_user_or_default
 from app.core.context_summaries import (
     context_summary_source_fingerprint,
     inspect_context_summary_staleness,
@@ -215,15 +215,10 @@ async def _generate_and_persist(
         source=source,
     )
 
-    ensure_ai_available(db, billing_source=llm_config.billing_source_hint)
-    quota = QuotaScope(db, current_user.id, count=1)
     slot_acquired = False
-    quota_reserved = False
     try:
         await acquire_llm_slot()
         slot_acquired = True
-        quota.reserve()
-        quota_reserved = True
         content = await AIClient().generate(
             prompt,
             llm_config=llm_config,
@@ -262,8 +257,6 @@ async def _generate_and_persist(
             row.source_fingerprint = source_fingerprint
             row.review_status = "draft"
 
-        db.flush()
-        quota.charge(1)
         db.commit()
         db.refresh(row)
         return row
@@ -291,8 +284,6 @@ async def _generate_and_persist(
             ),
         ) from exc
     finally:
-        if quota_reserved:
-            quota.finalize()
         if slot_acquired:
             release_llm_slot()
 
@@ -301,9 +292,8 @@ async def _generate_and_persist(
 def list_context_summaries(
     novel_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel = novel_support.get_novel(db, novel_id)
     rows = (
         db.query(NovelContextSummary)
         .filter(NovelContextSummary.novel_id == novel_id)
@@ -328,7 +318,7 @@ async def create_context_summary(
     current_user: User = Depends(get_current_user_or_default),
     llm_config: ResolvedLlmConfig = Depends(get_llm_config),
 ):
-    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel = novel_support.get_novel(db, novel_id)
     locale = resolve_prompt_locale(novel_language=novel.language)
     row = await _generate_and_persist(
         db=db,
@@ -350,9 +340,8 @@ def update_context_summary(
     summary_id: int,
     req: NovelContextSummaryUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel = novel_support.get_novel(db, novel_id)
     row = _get_summary(db, novel_id=novel_id, summary_id=summary_id)
     stale = _is_stale(db, row, novel.language)
     if req.review_status == "confirmed" and stale:
@@ -382,7 +371,7 @@ async def regenerate_context_summary(
     current_user: User = Depends(get_current_user_or_default),
     llm_config: ResolvedLlmConfig = Depends(get_llm_config),
 ):
-    novel = novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel = novel_support.get_novel(db, novel_id)
     row = _get_summary(db, novel_id=novel_id, summary_id=summary_id)
     locale = resolve_prompt_locale(novel_language=novel.language)
     row = await _generate_and_persist(
@@ -404,9 +393,8 @@ def delete_context_summary(
     novel_id: int,
     summary_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_or_default),
 ):
-    novel_support.get_accessible_novel(db, novel_id, current_user)
+    novel_support.get_novel(db, novel_id)
     row = _get_summary(db, novel_id=novel_id, summary_id=summary_id)
     db.delete(row)
     try:

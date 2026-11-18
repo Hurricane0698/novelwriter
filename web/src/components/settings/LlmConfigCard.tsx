@@ -139,17 +139,6 @@ function formatLlmProbeResult(response: LlmProbeResponse, locale: UiLocale): Res
     }
 }
 
-function HostedLlmConfigCard() {
-    const { t } = useUiLocale()
-    return (
-        <div className="rounded-2xl border border-[var(--nw-glass-border)] bg-[var(--nw-glass-bg)] backdrop-blur-xl p-6">
-            <div className="rounded-2xl border border-[var(--nw-glass-border)] bg-white/5 px-4 py-3.5 text-sm leading-6 text-muted-foreground">
-                {t('llm.notice.hosted')}
-            </div>
-        </div>
-    )
-}
-
 function SelfhostLlmConfigCard() {
     const { locale, t } = useUiLocale()
     const initialConfig = getSelfhostLlmConfig()
@@ -443,8 +432,6 @@ function DesktopLlmConfigCard() {
 
 export function LlmConfigCard() {
     switch (getRuntimeMode()) {
-        case 'hosted':
-            return <HostedLlmConfigCard />
         case 'selfhost':
             return <SelfhostLlmConfigCard />
         case 'desktop':

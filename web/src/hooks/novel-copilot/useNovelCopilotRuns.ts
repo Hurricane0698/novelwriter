@@ -47,6 +47,7 @@ export function useNovelCopilotRunsState(sessions: NovelCopilotSession[]): Novel
 // ---------------------------------------------------------------------------
 
 interface UseNovelCopilotRunsParams {
+  getLocalSession: (id: string) => NovelCopilotSession | undefined
   sessions: NovelCopilotSession[]
   focusedSessionId: string | null
   runsBySessionId: Record<string, CopilotRun[]>
@@ -75,6 +76,7 @@ export interface NovelCopilotRunControllerState {
   retryInterruptedRun: (sessionId: string, runId: string) => Promise<boolean>
   applySuggestions: (sessionId: string, runId: string, suggestionIds: string[]) => Promise<boolean>
   dismissSuggestions: (sessionId: string, runId: string, suggestionIds: string[]) => Promise<void>
+  refreshRun: (sessionId: string, runId: string) => Promise<void>
 }
 
 const POLL_INTERVAL_MS = 1500
@@ -99,23 +101,6 @@ function getPollFailureMessage(error: unknown, message: (key: string) => string)
     return message('copilot.errors.pollRunNotFound')
   }
   return message('copilot.errors.connectionInterrupted')
-}
-
-function readApiErrorDetailMessage(detail: unknown): string | null {
-  if (typeof detail === 'string') return detail
-  if (!detail || typeof detail !== 'object') return null
-  const message = (detail as { message?: unknown }).message
-  return typeof message === 'string' ? message : null
-}
-
-function isQuotaExhaustedApiError(error: ApiError) {
-  if (error.code === 'generation_quota_exhausted' || error.code === 'generation_quota_insufficient') {
-    return true
-  }
-  if (error.status !== 429) return false
-
-  const detailMessage = `${readApiErrorDetailMessage(error.detail) ?? ''} ${typeof error.detail === 'string' ? error.detail : ''}`.toLowerCase()
-  return detailMessage.includes('quota') || detailMessage.includes('额度')
 }
 
 function appendSessionRun(
@@ -208,7 +193,7 @@ function invalidateWorldQueriesForAppliedSuggestions(
 }
 
 export function useNovelCopilotRuns({
-  sessions,
+  sessions, getLocalSession,
   focusedSessionId,
   runsBySessionId,
   setRunsBySessionId,
@@ -291,9 +276,6 @@ export function useNovelCopilotRuns({
         case 'resume_run_not_resumable':
           return t('copilot.errors.resumeRunNotResumable')
         default: {
-          if (isQuotaExhaustedApiError(error)) {
-            return t('copilot.errors.quotaExhausted')
-          }
           const llmMessage = getLlmApiErrorMessage(error)
           if (llmMessage) return llmMessage
           if (error.status === 429) return t('copilot.errors.requestBusy')
@@ -451,7 +433,7 @@ export function useNovelCopilotRuns({
 
   const submitPrompt = useCallback(
     async (sessionId: string, prompt: string, _scope: CopilotScope, _context?: CopilotContextData, quickAction?: string) => {
-      const session = sessionsByIdRef.current.get(sessionId)
+      const session = getLocalSession(sessionId)
       if (!session) return false
 
       const sessionRuns = runsBySessionId[sessionId] ?? []
@@ -476,6 +458,15 @@ export function useNovelCopilotRuns({
       try {
         const backendSessionId = await resolveBackendSessionId(sessionId)
         if (!sessionsByIdRef.current.has(sessionId)) return false
+
+        if (_context?.text_target) {
+          // Refresh the capture for each explicit action, without changing session identity.
+          await copilotApi.openSession(session.novelId, {
+            mode: session.prefill.mode, scope: session.prefill.scope,
+            context: _context, interaction_locale: session.interactionLocale,
+            display_title: session.displayTitle,
+          })
+        }
 
         const resp = await copilotApi.createRun(session.novelId, backendSessionId, {
           prompt,
@@ -507,7 +498,7 @@ export function useNovelCopilotRuns({
         return false
       }
     },
-    [runsBySessionId, setRunsBySessionId, resolveBackendSessionId, startPolling, getRunCreateFailureMessage, t],
+    [runsBySessionId, setRunsBySessionId, resolveBackendSessionId, startPolling, getRunCreateFailureMessage, getLocalSession, t],
   )
 
   const retryInterruptedRun = useCallback(async (sessionId: string, runId: string) => {
@@ -631,5 +622,13 @@ export function useNovelCopilotRuns({
     retryInterruptedRun,
     applySuggestions,
     dismissSuggestions,
+    refreshRun: async (sessionId, runId) => {
+      const session = sessionsByIdRef.current.get(sessionId)
+      if (!session?.backendSessionId) return
+      const run = await copilotApi.pollRun(session.novelId, session.backendSessionId, runId)
+      if (sessionsByIdRef.current.has(sessionId)) {
+        setRunsBySessionId((prev) => replaceSessionRun(prev, sessionId, runId, run))
+      }
+    },
   }
 }

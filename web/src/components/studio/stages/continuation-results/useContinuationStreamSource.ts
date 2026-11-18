@@ -35,7 +35,6 @@ interface UseContinuationStreamSourceResult {
   streamDebug: ContinueDebugSummary | null
   streamError: string | null
   isDone: boolean
-  isQuotaExhausted: boolean
   isStreamMode: boolean
   isFallbackMode: boolean
   retryStream: () => void
@@ -53,7 +52,6 @@ export function useContinuationStreamSource({
   const [variants, setVariants] = useState<VariantState[]>([])
   const [isDone, setIsDone] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
-  const [isQuotaExhausted, setIsQuotaExhausted] = useState(false)
   const [streamDebug, setStreamDebug] = useState<ContinueDebugSummary | null>(null)
   const [streamAttempt, setStreamAttempt] = useState(0)
 
@@ -87,7 +85,6 @@ export function useContinuationStreamSource({
         setFallbackNotice,
         setFallbackResponse,
         setIsDone,
-        setIsQuotaExhausted,
         setStreamDebug,
         setStreamError,
         setVariants,
@@ -144,8 +141,7 @@ export function useContinuationStreamSource({
             error instanceof ApiError ? getLlmApiErrorMessage(error, activeLocale) : null
           ),
         })
-        setIsQuotaExhausted(failure.isQuotaExhausted)
-        setStreamError(failure.message)
+        setStreamError(failure)
       }
     }
 
@@ -173,7 +169,6 @@ export function useContinuationStreamSource({
     streamDebug,
     streamError,
     isDone,
-    isQuotaExhausted,
     isStreamMode: streamCtx != null,
     isFallbackMode: (fallbackResponse?.continuations.length ?? 0) > 0,
     retryStream: () => setStreamAttempt((value) => value + 1),

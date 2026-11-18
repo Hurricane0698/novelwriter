@@ -18,7 +18,7 @@ class _Answer(BaseModel):
 
 _CONFIG = ResolvedLlmConfig(
     base_url="https://provider.invalid/v1", api_key="synthetic-key", model="test-model",
-    billing_source_hint="selfhost", source="selfhost_settings",
+    source="selfhost_settings",
 )
 
 
@@ -49,7 +49,6 @@ async def test_generation_closes_real_sdk_client(monkeypatch, method, outcome):
         return client
 
     monkeypatch.setattr("app.core.ai_client.AsyncOpenAI", make_client)
-    monkeypatch.setattr("app.core.ai_client.ensure_ai_available_fresh_session", lambda **kwargs: None)
 
     async def generate():
         client = AIClient()
@@ -105,7 +104,6 @@ async def test_stream_closes_response_body_after_partial_output(monkeypatch, out
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200, stream=body))),
     )
     monkeypatch.setattr("app.core.ai_client.AsyncOpenAI", lambda **kwargs: client)
-    monkeypatch.setattr("app.core.ai_client.ensure_ai_available_fresh_session", lambda **kwargs: None)
     stream = AIClient().generate_stream("prompt", llm_config=_CONFIG)
     try:
         assert await anext(stream) == "first"

@@ -1,17 +1,14 @@
+import os
 from typing import Any, Literal, Type, TypeVar
 from dataclasses import dataclass, field
 from contextlib import asynccontextmanager
 import json
 import logging
-from openai import AsyncOpenAI
+from openai import DEFAULT_MAX_RETRIES, AsyncOpenAI
 from pydantic import BaseModel
 from app.config import get_settings
 from app.core.desktop_http_client import desktop_http_client_kwargs
 from app.core.llm_config import ResolvedLlmConfig
-from app.core.safety_fuses import (
-    ensure_ai_available_fresh_session,
-    token_usage_recording_disabled,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -57,15 +54,10 @@ class ToolLLMResponse:
     completion_tokens: int = 0
 
 # Estimated cost per 1M tokens (input, output) in USD.
-#
-# Hosted operators can override these via env when using Vertex/OpenAI-compatible
-# gateways so the budget hard-stop tracks their actual provider pricing.
 _COST_TABLE = {
     "gemini-3.0-flash": (0.5, 3),
 }
 _DEFAULT_COST = (0.5, 3)
-_BILLING_SOURCE_HOSTED = "hosted"
-_BILLING_SOURCE_SELFHOST = "selfhost"
 _PROVIDER_REQUEST_FAILED_MESSAGE = "LLM provider request failed"
 _TOOL_CALL_UNSUPPORTED_MESSAGE = "LLM provider does not support tool calling"
 
@@ -81,10 +73,9 @@ def _estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> fl
 
 
 def _record_usage(model: str, prompt_tokens: int, completion_tokens: int,
-                  endpoint: str = "", node_name: str | None = None, user_id: int | None = None,
-                  billing_source: str = _BILLING_SOURCE_SELFHOST) -> None:
+                  endpoint: str = "", node_name: str | None = None, user_id: int | None = None) -> None:
     """Persist token usage to DB. Non-blocking — failures are logged, never raised."""
-    if token_usage_recording_disabled():
+    if os.getenv("DISABLE_TOKEN_USAGE_RECORDING", "").lower() in {"1", "true", "yes", "on"}:
         return
 
     try:
@@ -98,7 +89,6 @@ def _record_usage(model: str, prompt_tokens: int, completion_tokens: int,
             completion_tokens=completion_tokens,
             total_tokens=total,
             cost_estimate=_estimate_cost(model, prompt_tokens, completion_tokens),
-            billing_source=billing_source,
             endpoint=endpoint,
             node_name=node_name,
         )
@@ -180,11 +170,12 @@ def _log_provider_failure(
     logger.warning(_PROVIDER_REQUEST_FAILED_MESSAGE, extra=metadata)
 
 
-def _create_openai_client(llm_config: ResolvedLlmConfig) -> AsyncOpenAI:
+def _create_openai_client(llm_config: ResolvedLlmConfig, *, max_retries: int = DEFAULT_MAX_RETRIES) -> AsyncOpenAI:
     try:
         return AsyncOpenAI(
             base_url=llm_config.base_url,
             api_key=llm_config.api_key,
+            max_retries=max_retries,
             **desktop_http_client_kwargs(get_settings().runtime_mode),
         )
     except Exception:
@@ -201,8 +192,8 @@ async def _close_provider_resource(resource: Any, *, operation: str) -> None:
 
 
 @asynccontextmanager
-async def _openai_client(llm_config: ResolvedLlmConfig):
-    client = _create_openai_client(llm_config)
+async def _openai_client(llm_config: ResolvedLlmConfig, *, max_retries: int = DEFAULT_MAX_RETRIES):
+    client = _create_openai_client(llm_config, max_retries=max_retries)
     try:
         yield client
     finally:
@@ -222,6 +213,11 @@ async def _create_completion(
     raise LLMUnavailableError(_PROVIDER_REQUEST_FAILED_MESSAGE) from None
 
 
+def structured_system_prompt(system_prompt: str, response_model: Type[T]) -> str:
+    schema = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
+    return f"{system_prompt}\n\nReturn JSON matching this schema:\n{schema}"
+
+
 class AIClient:
     """
     OpenAI-compatible client that consumes an already-resolved runtime config.
@@ -238,8 +234,6 @@ class AIClient:
         role: AgentRole = "default",
         user_id: int | None = None,
     ) -> str:
-        usage_billing_source = llm_config.billing_source_hint
-        ensure_ai_available_fresh_session(billing_source=usage_billing_source)
         async with _openai_client(llm_config) as client:
             response = await _create_completion(
                 client,
@@ -256,8 +250,7 @@ class AIClient:
             )
         if response.usage:
             _record_usage(llm_config.model, response.usage.prompt_tokens,
-                          response.usage.completion_tokens, node_name=role, user_id=user_id,
-                          billing_source=usage_billing_source)
+                          response.usage.completion_tokens, node_name=role, user_id=user_id)
         finish_reason = getattr(response.choices[0], "finish_reason", None)
         if finish_reason == "length":
             logger.warning(
@@ -280,8 +273,6 @@ class AIClient:
         user_id: int | None = None,
     ):
         """Yield content chunks from streaming LLM response."""
-        usage_billing_source = llm_config.billing_source_hint
-        ensure_ai_available_fresh_session(billing_source=usage_billing_source)
         async with _openai_client(llm_config) as client:
             request_kwargs = {
                 "model": llm_config.model,
@@ -352,7 +343,6 @@ class AIClient:
                     completion_tokens,
                     node_name=role,
                     user_id=user_id,
-                    billing_source=usage_billing_source,
                 )
             if finish_reason == "length":
                 logger.warning(
@@ -378,8 +368,6 @@ class AIClient:
 
         Raises ToolCallUnsupportedError if the provider rejects the tools parameter.
         """
-        usage_billing_source = llm_config.billing_source_hint
-        ensure_ai_available_fresh_session(billing_source=usage_billing_source)
 
         request_kwargs: dict[str, Any] = {
             "model": llm_config.model,
@@ -416,7 +404,6 @@ class AIClient:
                 response.usage.completion_tokens,
                 node_name=role,
                 user_id=user_id,
-                billing_source=usage_billing_source,
             )
 
         choice = response.choices[0] if response.choices else None
@@ -465,18 +452,11 @@ class AIClient:
             StructuredOutputParseError: If structured output cannot be parsed after retries
             LLMUnavailableError: If the LLM request fails after retries
         """
-        usage_billing_source = llm_config.billing_source_hint
-        ensure_ai_available_fresh_session(billing_source=usage_billing_source)
 
-        schema_json = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
-        structured_system = (
-            f"{system_prompt}\n\n"
-            f"You MUST respond with valid JSON matching this schema:\n{schema_json}"
-        )
-
+        structured_system = structured_system_prompt(system_prompt, response_model)
         saw_response = False
 
-        async with _openai_client(llm_config) as client:
+        async with _openai_client(llm_config, max_retries=0) as client:
             for attempt in range(max_retries):
                 try:
                     response = await client.chat.completions.create(
@@ -505,7 +485,6 @@ class AIClient:
                         response.usage.completion_tokens,
                         node_name=role,
                         user_id=user_id,
-                        billing_source=usage_billing_source,
                     )
                 raw = response.choices[0].message.content or ""
                 finish_reason = response.choices[0].finish_reason

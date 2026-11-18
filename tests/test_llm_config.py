@@ -9,9 +9,7 @@ from app.core.llm_config import (
     LLM_CONFIG_API_KEY_INVALID_CODE,
     LLM_CONFIG_BASE_URL_INVALID_CODE,
     LLM_CONFIG_DESKTOP_OVERRIDE_DISABLED_CODE,
-    LLM_CONFIG_HOSTED_BYOK_DISABLED_CODE,
     LLM_CONFIG_INCOMPLETE_CODE,
-    LLM_CONFIG_MISSING_CODE,
     LlmConfigError,
     LlmConfigValues,
     ResolvedLlmConfig,
@@ -40,42 +38,6 @@ def _desktop_store(tmp_path) -> DesktopLlmConfigStore:
         )
     )
     return store
-
-
-def test_hosted_uses_only_hosted_settings_without_generic_fallback():
-    settings = Settings(
-        deploy_mode="hosted",
-        hosted_llm_base_url="",
-        hosted_llm_api_key="",
-        hosted_llm_model="",
-        openai_base_url="https://generic.example/v1",
-        openai_api_key="generic-key",
-        openai_model="generic-model",
-        _env_file=None,
-    )
-
-    with pytest.raises(LlmConfigError) as exc_info:
-        resolve_llm_config(settings=settings)
-
-    assert exc_info.value.code == LLM_CONFIG_MISSING_CODE
-
-
-def test_hosted_rejects_even_explicit_empty_override_headers():
-    settings = Settings(
-        deploy_mode="hosted",
-        hosted_llm_base_url="https://hosted.example/v1",
-        hosted_llm_api_key="hosted-key",
-        hosted_llm_model="hosted-model",
-        _env_file=None,
-    )
-
-    with pytest.raises(LlmConfigError) as exc_info:
-        resolve_llm_config(
-            settings=settings,
-            request_override=LlmConfigValues(provided=True),
-        )
-
-    assert exc_info.value.code == LLM_CONFIG_HOSTED_BYOK_DISABLED_CODE
 
 
 def test_selfhost_requires_complete_explicit_override_including_empty_headers():
@@ -116,7 +78,6 @@ def test_selfhost_complete_request_override_is_normalized():
         base_url="https://request.example/v1",
         api_key="request-key",
         model="request-model",
-        billing_source_hint="selfhost",
         source="selfhost_request",
     )
 
@@ -240,7 +201,6 @@ def test_resolved_config_repr_never_contains_secret():
         base_url="https://example/v1",
         api_key="never-print-this",
         model="model",
-        billing_source_hint="selfhost",
         source="selfhost_settings",
     )
 

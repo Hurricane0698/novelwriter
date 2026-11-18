@@ -1,0 +1,55 @@
+name: Publish self-host Docker image
+
+on:
+  push:
+    tags: ['v*']
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  version:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version-file: pyproject.toml
+      - name: Build and test the tagged image
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:$GITHUB_REF_NAME"
+          docker build --tag "$image" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.version=${GITHUB_REF_NAME#v}" \
+            --label org.opencontainers.image.licenses=MIT .
+          version=$(docker run --rm --entrypoint python "$image" -c 'from app.version import APP_VERSION; print(APP_VERSION)')
+          test "v$version" = "$GITHUB_REF_NAME"
+          ./scripts/selfhost_smoke.sh "$image"
+      - name: Push the tested image to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "ghcr.io/${GITHUB_REPOSITORY,,}:$GITHUB_REF_NAME"
+
+  latest:
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    runs-on: ubuntu-24.04
+    concurrency: ghcr-latest
+    steps:
+      - name: Point latest at the published stable image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [[ "$RELEASE_TAG" == "$latest" ]]; then
+            image="ghcr.io/${GITHUB_REPOSITORY,,}"
+            printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+            docker buildx imagetools create --prefer-index=false --tag "$image:latest" "$image:$RELEASE_TAG"
+          fi

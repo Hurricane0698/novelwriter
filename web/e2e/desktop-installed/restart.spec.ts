@@ -28,7 +28,7 @@ test('overwrite install preserves and reuses encrypted LLM config', async ({ pag
   await assertDesktopLlmConfigRestored(page)
   await testDesktopLlmConnection(page)
   await page.goto(`${INSTALLED_ORIGIN}/novel/${state.novelId}`)
-  await waitForInitialNovelReady(page, state.novelId, { dismissOnboarding: true })
+  await waitForInitialNovelReady(page)
   await expect(page.getByText(INSTALLED_EDITED_CHAPTER_CONTENT, { exact: true })).toBeVisible()
   failureGuard.assertClean()
 })

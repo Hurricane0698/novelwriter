@@ -16,13 +16,48 @@ export type CopilotContextStage =
   | 'relationship'
   | 'system'
   | 'review'
-export type CopilotTargetTab = 'entities' | 'relationships' | 'systems' | 'review'
+export type CopilotTargetTab = 'entities' | 'relationships' | 'systems' | 'review' | 'chapter'
 export type CopilotReviewKind = 'entities' | 'relationships' | 'systems'
 const DEFAULT_COPILOT_INTERACTION_LOCALE = DEFAULT_UI_LOCALE
 
 interface CopilotUiContextData {
   surface?: CopilotContextSurface
   stage?: CopilotContextStage
+  text_target?: CopilotTextTarget
+}
+
+export interface CopilotTextTarget {
+  kind: 'chapter' | 'continuation'
+  id: number
+  chapter_number?: number
+  content_hash?: string
+  label?: string
+  start?: number
+  end?: number
+}
+
+export interface TextChange {
+  content: string
+  content_hash: string
+  before_content: string
+  updated_at?: string | null
+}
+
+// An editor owns its save queue. Copilot may write only through that editor.
+export interface TextTargetBinding {
+  prepare: () => Promise<CopilotTextTarget>
+  write: (operation: () => Promise<TextChange>) => Promise<TextChange>
+  restore: (content: string, expectedHash: string) => Promise<TextChange>
+  withSavedText: (operation: () => Promise<void>) => Promise<void>
+}
+
+export interface TextReviewMetadata {
+  action: 'review_text' | 'propose_world_updates'
+  target: CopilotTextTarget
+  coverage: string
+  estimated_input_tokens?: number
+  stale?: boolean
+  closed?: boolean
 }
 
 export type CopilotWholeBookContext = CopilotUiContextData & {
@@ -116,7 +151,7 @@ export interface CopilotEvidence {
 }
 
 export interface CopilotSuggestionTarget {
-  resource: 'entity' | 'relationship' | 'system'
+  resource: 'entity' | 'relationship' | 'system' | 'chapter' | 'continuation'
   resource_id: number | null
   label: string
   tab: CopilotTargetTab
@@ -142,6 +177,7 @@ export interface CopilotSuggestionPreview {
 }
 
 export type CopilotSuggestionApplyAction =
+  | { type: 'replace_text'; data: { start: number; end: number; before: string; after: string } }
   | {
       type: 'create_entity'
       data: Record<string, unknown>
@@ -198,6 +234,7 @@ export interface CopilotRun {
   evidence: CopilotEvidence[]
   suggestions: CopilotSuggestion[]
   error?: string | null
+  text_review?: TextReviewMetadata | null
 }
 
 export function normalizeCopilotInteractionLocale(raw: string | null | undefined) {
@@ -221,6 +258,7 @@ export function buildCopilotSessionSignature(
     scope: prefill.scope,
     entity_id: context?.entity_id ?? null,
     tab: context?.tab ?? null,
+    ...(prefill.context?.text_target ? { text_target: { kind: prefill.context.text_target.kind, id: prefill.context.text_target.id } } : {}),
   })
 }
 

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 
 """World generation orchestration: collect every model output, then persist drafts."""
@@ -12,7 +12,6 @@ from app.config import get_settings
 from app.core.ai_client import ai_client
 from app.core.llm_config import ResolvedLlmConfig
 from app.core.text import PromptKey, get_prompt
-from app.core.text.snippets import SnippetKey, get_snippet
 from app.language import resolve_prompt_locale
 from app.schemas import WorldGenerateResponse, WorldGenerateWarning
 from .generation_normalization import _merge_worldgen_outputs
@@ -64,19 +63,9 @@ def _build_world_generation_prompt(
     chunk_count: int,
     prompt_locale: str,
 ) -> str:
-    if chunk_count > 1:
-        chunk_directive = get_snippet(
-            SnippetKey.WORLDGEN_CHUNK_DIRECTIVE_MULTI,
-            prompt_locale,
-        ).format(chunk_index=chunk_index, chunk_count=chunk_count)
-    else:
-        chunk_directive = get_snippet(
-            SnippetKey.WORLDGEN_CHUNK_DIRECTIVE_SINGLE,
-            prompt_locale,
-        )
     return get_prompt(PromptKey.WORLD_GEN, locale=prompt_locale).format(
         text=text.strip(),
-        chunk_directive=chunk_directive,
+        chunk_directive=f"({chunk_index}/{chunk_count})" if chunk_count > 1 else "",
     )
 
 
@@ -99,7 +88,7 @@ async def generate_world_drafts(
 
     settings = get_settings()
     with session_factory() as db:
-        snapshot = generation_snapshot(db, novel_id, user_id)
+        snapshot = generation_snapshot(db, novel_id)
     prompt_locale = resolve_prompt_locale(
         novel_language=snapshot.language
     )
@@ -135,7 +124,7 @@ async def generate_world_drafts(
         extracted = _merge_worldgen_outputs(extracted_parts, warnings=warnings)
 
     with session_factory() as db:
-        check_generation_snapshot(db, novel_id, user_id, snapshot)
+        check_generation_snapshot(db, novel_id, snapshot)
         return persist_world_drafts(
             db=db, novel_id=novel_id, extracted=extracted, warnings=warnings
         )

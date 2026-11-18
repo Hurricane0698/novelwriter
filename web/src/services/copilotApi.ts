@@ -16,6 +16,9 @@ import type {
   CopilotSuggestionTarget,
   CopilotTargetTab,
   CopilotTraceStep,
+  CopilotTextTarget,
+  TextChange,
+  TextReviewMetadata,
 } from '@/types/copilot'
 import { llmHeaders, request, requestParsed } from './apiClient'
 
@@ -74,14 +77,15 @@ function expectEnumValue<T extends string>(
 const COPILOT_CONTEXT_STAGES = ['chapter', 'write', 'results', 'entity', 'relationship', 'system', 'review'] as const
 const COPILOT_RUN_STATUSES = ['idle', 'queued', 'running', 'completed', 'error', 'interrupted'] as const
 const COPILOT_SUGGESTION_STATUSES = ['pending', 'applied', 'dismissed'] as const
-const COPILOT_TARGET_TABS = ['entities', 'relationships', 'systems', 'review'] as const
+const COPILOT_TARGET_TABS = ['entities', 'relationships', 'systems', 'review', 'chapter'] as const
 const COPILOT_REVIEW_KINDS = ['entities', 'relationships', 'systems'] as const
-const COPILOT_SUGGESTION_RESOURCES = ['entity', 'relationship', 'system'] as const
+const COPILOT_SUGGESTION_RESOURCES = ['entity', 'relationship', 'system', 'chapter', 'continuation'] as const
 const COPILOT_CONTEXT_TABS = ['entities', 'relationships', 'review', 'systems'] as const
 const COPILOT_CONTEXT_SURFACES = ['studio', 'atlas'] as const
 const COPILOT_MODES = ['research', 'current_entity', 'draft_cleanup'] as const
 const COPILOT_SCOPES = ['whole_book', 'current_entity', 'current_tab'] as const
 const COPILOT_APPLY_TYPES = [
+  'replace_text',
   'create_entity',
   'update_entity',
   'create_relationship',
@@ -107,6 +111,7 @@ function parseCopilotContextData(value: unknown): CopilotContextData | null {
     : expectEnumValue(rawStage, COPILOT_CONTEXT_STAGES, 'copilot context.stage')
   return {
     entity_id: entityId ?? undefined,
+    ...(body.text_target ? { text_target: parseTextTarget(body.text_target) } : {}),
     tab: tab as CopilotContextTab | undefined,
     surface: surface as CopilotContextSurface | undefined,
     stage: stage as CopilotContextStage | undefined,
@@ -199,6 +204,13 @@ function parseCopilotSuggestionApplyAction(value: unknown): CopilotSuggestionApp
   const data = expectRecord(body.data ?? {}, 'copilot suggestion apply action.data')
 
   switch (type) {
+    case 'replace_text':
+      return { type, data: {
+        start: readOptionalNumber(data.start, 'text start') ?? invalidResponseShape('text start'),
+        end: readOptionalNumber(data.end, 'text end') ?? invalidResponseShape('text end'),
+        before: expectString(data.before, 'text before'),
+        after: expectString(data.after, 'text after'),
+      } }
     case 'create_entity':
     case 'create_relationship':
     case 'create_system':
@@ -254,6 +266,32 @@ function parseCopilotSessionResponse(value: unknown): CopilotSessionResponse {
   }
 }
 
+function parseTextTarget(value: unknown): CopilotTextTarget {
+  const body = expectRecord(value, 'text target')
+  return {
+    kind: expectEnumValue(body.kind, ['chapter', 'continuation'] as const, 'text target.kind'),
+    id: readOptionalNumber(body.id, 'text target.id') ?? invalidResponseShape('text target.id'),
+    chapter_number: readOptionalNumber(body.chapter_number, 'chapter number') ?? undefined,
+    content_hash: readOptionalString(body.content_hash) ?? undefined,
+    label: readOptionalString(body.label) ?? undefined,
+    start: readOptionalNumber(body.start, 'text start') ?? undefined,
+    end: readOptionalNumber(body.end, 'text end') ?? undefined,
+  }
+}
+
+function parseTextReview(value: unknown): TextReviewMetadata | null {
+  if (value == null) return null
+  const body = expectRecord(value, 'text review')
+  return {
+    action: expectEnumValue(body.action, ['review_text', 'propose_world_updates'] as const, 'text review.action'),
+    target: parseTextTarget(body.target),
+    coverage: expectString(body.coverage, 'text review.coverage'),
+    estimated_input_tokens: readOptionalNumber(body.estimated_input_tokens, 'text review tokens') ?? undefined,
+    stale: body.stale === true,
+    closed: body.closed === true,
+  }
+}
+
 function parseCopilotRunResponse(value: unknown): CopilotRunResponse {
   const body = expectRecord(value, 'copilot run response')
   return {
@@ -265,6 +303,7 @@ function parseCopilotRunResponse(value: unknown): CopilotRunResponse {
     evidence: expectArray(body.evidence ?? [], 'copilot run response.evidence').map(parseCopilotEvidence),
     suggestions: expectArray(body.suggestions ?? [], 'copilot run response.suggestions').map(parseCopilotSuggestion),
     error: readOptionalString(body.error) ?? null,
+    text_review: parseTextReview(body.text_review),
   }
 }
 
@@ -295,6 +334,7 @@ export interface CopilotSessionOpenRequest {
     tab?: CopilotContextTab
     surface?: CopilotContextSurface
     stage?: CopilotContextStage
+    text_target?: CopilotTextTarget
   } | null
   interaction_locale?: string
   display_title?: string
@@ -325,6 +365,11 @@ export interface CopilotApplyResponse {
 }
 
 export const copilotApi = {
+  applyText: (novelId: number, sessionId: string, runId: string, suggestionIds: string[], expectedHash: string) =>
+    request<TextChange>(`/api/novels/${novelId}/world/copilot/sessions/${sessionId}/runs/${runId}/apply-text`, {
+      method: 'POST',
+      body: JSON.stringify({ suggestion_ids: suggestionIds, expected_content_hash: expectedHash }),
+    }),
   openSession: (novelId: number, data: CopilotSessionOpenRequest) =>
     requestParsed(`/api/novels/${novelId}/world/copilot/sessions`, parseCopilotSessionResponse, {
       method: 'POST',
@@ -336,7 +381,7 @@ export const copilotApi = {
       method: 'POST',
       headers: llmHeaders(),
       body: JSON.stringify(data),
-    }),
+    }, data.quick_action_id === 'review_text' || data.quick_action_id === 'propose_world_updates' ? 0 : 2),
 
   pollRun: (novelId: number, sessionId: string, runId: string, signal?: AbortSignal) =>
     requestParsed(`/api/novels/${novelId}/world/copilot/sessions/${sessionId}/runs/${runId}`, parseCopilotRunResponse, { signal }),

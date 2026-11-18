@@ -1,4 +1,5 @@
 import { GripVertical } from 'lucide-react'
+import { WorldSourceRefs } from '@/components/world-model/shared/WorldSourceRefs'
 import { useUiLocale } from '@/contexts/UiLocaleContext'
 import { cn } from '@/lib/utils'
 import { InlineEdit } from '@/components/world-model/shared/InlineEdit'
@@ -56,6 +57,7 @@ export function AttributeRow({ novelId, entityId, attribute, dragListeners }: {
           className="text-sm text-foreground"
           placeholder={LABELS.PH_VALUE}
         />
+        <WorldSourceRefs novelId={novelId} sources={attribute.source_refs} />
       </div>
 
       <div className="min-w-0 border-l border-border/40 bg-[hsl(var(--color-mystery)/0.035)] px-3 py-3">

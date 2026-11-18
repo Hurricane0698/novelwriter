@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 """Text rendering helpers for continuation prompts and world context surfaces."""
 
@@ -81,7 +81,7 @@ def append_user_instruction_for_relevance(
 
 
 def extract_narrative_constraints(writer_ctx: Mapping[str, Any]) -> str:
-    """Extract constraints from active systems into a standalone prompt section."""
+    """Extract constraints from the selected systems into a standalone prompt section."""
 
     systems = writer_ctx.get("systems") or []
     rules: list[str] = []
@@ -195,6 +195,7 @@ def format_world_context_for_prompt(
     writer_ctx: Mapping[str, Any],
     *,
     locale: str | None = None,
+    entity_names: Mapping[int, str] | None = None,
 ) -> str:
     """Render assemble_writer_context() output into an LLM-friendly text block."""
 
@@ -205,13 +206,7 @@ def format_world_context_for_prompt(
     desc_sep = get_snippet(SnippetKey.DESC_SEPARATOR, locale)
     alias_sep = get_snippet(SnippetKey.ALIAS_SEPARATOR, locale)
 
-    id_to_name: dict[int, str] = {}
-    for entity in entities:
-        try:
-            id_to_name[int(entity.get("id"))] = str(entity.get("name") or "").strip()
-        except Exception:
-            continue
-
+    id_to_name = {int(e["id"]): e["name"] for e in entities} if entity_names is None else entity_names
     lines: list[str] = []
 
     if systems:

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 """Copilot run execution helpers.
 
@@ -17,7 +17,8 @@ from typing import Any, Awaitable, Callable
 
 from sqlalchemy.orm import Session, load_only
 
-from app.core.ai_client import ToolCallUnsupportedError
+from app.core.ai_client import StructuredOutputParseError, ToolCallUnsupportedError
+from app.core.copilot.messages import CopilotTextKey, get_copilot_text
 from app.core.llm_config import ResolvedLlmConfig
 from app.core.copilot.prompt_contract import PromptBuild
 from app.core.copilot.prompting import (
@@ -29,7 +30,6 @@ from app.core.copilot.prompting import (
 from app.core.copilot.run_state import (
     call_copilot_llm,
     claim_run_for_execution,
-    copilot_run_failed_message,
     ensure_run_lease,
     fail_run,
     parse_llm_response,
@@ -48,6 +48,7 @@ from app.core.copilot.workspace import (
     load_run_workspace,
 )
 from app.models import CopilotRun, Novel
+from app.core.copilot.text_review_evidence import TEXT_REVIEW_ACTIONS, TextReviewWork
 
 logger = logging.getLogger(__name__)
 
@@ -283,7 +284,7 @@ def _prepare_run(
     run_id: str,
     novel_id: int,
     worker_id: str,
-) -> PreparedRun | None:
+) -> PreparedRun | TextReviewWork | None:
     check_sync_cancelled()
     db = db_factory()
     try:
@@ -303,6 +304,10 @@ def _prepare_run(
         if not novel:
             fail_run(db, run, "novel_not_found", "Novel not found", worker_id=worker_id)
             return
+
+        if run.quick_action_id in TEXT_REVIEW_ACTIONS:
+            from app.core.copilot.text_review import prepare_run
+            return prepare_run(db, run, novel)
 
         run_context = canonicalize_session_context(
             run.context_json
@@ -417,7 +422,7 @@ def _complete_run(
 
 
 def _persist_execution_failure(
-    db_factory: Callable[[], Session], *, run_id: str, worker_id: str
+    db_factory: Callable[[], Session], *, run_id: str, worker_id: str, message_key: CopilotTextKey
 ) -> None:
     check_sync_cancelled()
     db = db_factory()
@@ -429,7 +434,7 @@ def _persist_execution_failure(
                 db,
                 run,
                 "run_execution_error",
-                copilot_run_failed_message(resolve_run_interaction_locale(run)),
+                get_copilot_text(message_key, locale=resolve_run_interaction_locale(run)),
                 worker_id=worker_id,
             )
     finally:
@@ -458,6 +463,11 @@ async def execute_copilot_run(
             worker_id=worker_id,
         )
         if prepared is None:
+            return
+        if isinstance(prepared, TextReviewWork):
+            from app.core.copilot.text_review import execute_review
+            await execute_review(prepared, db_factory=SessionLocal, run_id=run_id,
+                worker_id=worker_id, llm_config=llm_config, user_id=user_id)
             return
         (
             parsed,
@@ -498,12 +508,14 @@ async def execute_copilot_run(
         )
     except hooks.lease_lost_error_type:
         return
-    except Exception:
+    except Exception as exc:
         logger.exception("Copilot run %s failed", run_id)
         try:
             await run_sync(
                 _persist_execution_failure,
                 SessionLocal,
+                message_key=(CopilotTextKey.INVALID_MODEL_OUTPUT
+                             if isinstance(exc, StructuredOutputParseError) else CopilotTextKey.RUN_FAILED),
                 run_id=run_id,
                 worker_id=worker_id,
             )

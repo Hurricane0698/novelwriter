@@ -94,6 +94,22 @@ class StateProtoIndex:
         self._segment_text_cache[segment_id] = text
         return text
 
+    def through_chapter(self, chapter_number: int) -> "StateProtoIndex":
+        """A request-local view: exclude future claims before scoring or opening."""
+        segments = [item for item in self.segments if item.chapter_number <= chapter_number]
+        segment_ids = {item.segment_id for item in segments}
+        chapter_ids = {item.chapter_id for item in segments}
+        return StateProtoIndex(
+            language=self.language,
+            targets=self.targets,
+            segments=segments,
+            mention_postings=[item for item in self.mention_postings if item.segment_id in segment_ids],
+            claim_atoms=[item for item in self.claim_atoms if item.segment_id in segment_ids],
+            coverage_reps=[item for item in self.coverage_reps if item.segment_id in segment_ids],
+            chapter_texts={key: value for key, value in self.chapter_texts.items() if key in chapter_ids},
+            chapter_text_resolver=self.chapter_text_resolver,
+        )
+
     def to_msgpack(self) -> bytes:
         grouped_segments: dict[int, list[Segment]] = defaultdict(list)
         grouped_mentions: dict[int, list[MentionPosting]] = defaultdict(list)
@@ -580,12 +596,12 @@ class StateProtoIndex:
             text=trimmed,
             prev_segment_handle=(
                 self._segment_handle(segment.prev_segment_id)
-                if segment.prev_segment_id is not None
+                if segment.prev_segment_id in self._segments_by_id
                 else None
             ),
             next_segment_handle=(
                 self._segment_handle(segment.next_segment_id)
-                if segment.next_segment_id is not None
+                if segment.next_segment_id in self._segments_by_id
                 else None
             ),
             chapter_handle=None,

@@ -1,12 +1,3 @@
-"""
-Tests for Context Assembly — visibility injection rules.
-
-Validates that writer and consistency checker receive the correct
-subset of world model data per world-model-schema.md spec.
-
-These tests target the context_assembly module's output, not the LLM.
-"""
-
 import pytest
 from sqlalchemy import create_engine, StaticPool
 from sqlalchemy.orm import sessionmaker
@@ -178,17 +169,15 @@ class TestWriterContext:
         assert mystery["surface"] == "偶尔爆发银色光芒"
         assert "truth" not in mystery or mystery.get("truth") is None
 
-    def test_reference_attribute_injected_when_entity_directly_involved(self, db, populated_world):
-        """Reference attributes injected when entity is directly mentioned in chapter."""
+    def test_reference_attribute_follows_the_scene(self, db, populated_world):
         from app.core.context_assembly import assemble_writer_context
 
-        # Chapter directly about 云澈 → reference attribute "性格" should be included
-        ctx = assemble_writer_context(db, populated_world["novel"].id, chapter_text="云澈独自面对强敌，咬牙坚持")
+        def attributes(scene):
+            ctx = assemble_writer_context(db, populated_world["novel"].id, scene)
+            return _find_entity_attrs(ctx, "云澈")
 
-        yunche_attrs = _find_entity_attrs(ctx, "云澈")
-        xingge = _find_attr(yunche_attrs, "性格")
-        assert xingge is not None
-        assert xingge["surface"] == "坚韧不拔"
+        assert _find_attr(attributes("云澈赶往渡口。"), "性格") is None
+        assert _find_attr(attributes("师父说起云澈的性格。"), "性格")["surface"] == "坚韧不拔"
 
     def test_reference_attribute_not_injected_when_entity_not_involved(self, db, populated_world):
         """Reference attributes NOT injected when entity is not directly mentioned."""
@@ -460,172 +449,57 @@ class TestWriterContext:
         assert ctx["entities"] == []
         assert "帝国" in ctx["debug"]["ambiguous_keywords_disabled"]
 
-    def test_budget_truncation_order_relationships_then_attributes_then_entities(self, db, novel):
-        """Budget truncation drops reference relationships first, then reference attributes, then tail entities."""
-        from copy import deepcopy
+def test_scene_cues_resolve_one_visible_relationship_and_relevant_rules(db, novel):
+    from app.core.context_assembly import assemble_writer_context
+    from app.core.continuation_text import format_world_context_for_prompt, extract_narrative_constraints
+    from app.models import WorldEntity, WorldRelationship, WorldSystem
 
-        from app.core.context_assembly import (
-            _estimate_writer_context_tokens,
-            apply_writer_context_budget,
-            assemble_writer_context,
-        )
-        from app.models import WorldEntity, WorldEntityAttribute, WorldRelationship, WorldSystem
+    hero, lender, rival = [WorldEntity(novel_id=novel.id, name=name, entity_type="Character",
+                                       status="confirmed") for name in ("林秋", "沈梨", "罗青")]
+    lender.description = "海边的童年"
+    db.add_all([hero, lender, rival])
+    db.flush()
+    db.add_all([
+        WorldRelationship(novel_id=novel.id, source_id=hero.id, target_id=lender.id,
+                          label="恩人", description="欠她救命之恩", status="confirmed"),
+        WorldSystem(novel_id=novel.id, name="城规", display_type="list", status="confirmed",
+                    constraints=["铸币必须经议会许可"], data={"items": [
+                        {"label": "渡口", "description": "入夜停航"},
+                        {"label": "禁地", "description": "暗门", "visibility": "hidden"}]}),
+    ])
+    db.commit()
 
-        a = WorldEntity(novel_id=novel.id, name="甲", entity_type="Character", status="confirmed")
-        b = WorldEntity(novel_id=novel.id, name="乙", entity_type="Character", status="confirmed")
-        c = WorldEntity(novel_id=novel.id, name="丙", entity_type="Character", status="confirmed")
-        db.add_all([a, b, c])
-        db.commit()
-        db.refresh(a)
-        db.refresh(b)
-        db.refresh(c)
+    def material(text):
+        ctx = assemble_writer_context(db, novel.id, text)
+        return format_world_context_for_prompt(ctx) + extract_narrative_constraints(ctx)
 
-        long_text = "很长的参考信息" * 100
-        db.add_all(
-            [
-                WorldEntityAttribute(entity_id=a.id, key="active", surface="ok", visibility="active"),
-                WorldEntityAttribute(entity_id=a.id, key="ref", surface=long_text, visibility="reference"),
-                WorldEntityAttribute(entity_id=b.id, key="active", surface="ok", visibility="active"),
-                WorldEntityAttribute(entity_id=b.id, key="ref", surface=long_text, visibility="reference"),
-                WorldEntityAttribute(entity_id=c.id, key="active", surface="ok", visibility="active"),
-                WorldEntityAttribute(entity_id=c.id, key="ref", surface=long_text, visibility="reference"),
-            ]
-        )
+    scene = material("林秋认出恩人的笔迹，决定替她走这一趟。")
+    assert "沈梨" in scene and "欠她救命之恩" in scene
+    assert "海边的童年" not in scene and "城规" not in scene
+    crossing = material("林秋赶往渡口，又想起了禁地。")
+    assert "入夜停航" in crossing and "暗门" not in crossing and "铸币" not in crossing
+    assert "铸币必须经议会许可" in material("他们打算私下铸币。")
 
-        db.add_all(
-            [
-                WorldRelationship(
-                    novel_id=novel.id,
-                    source_id=a.id,
-                    target_id=b.id,
-                    label="盟友",
-                    description="ok",
-                    visibility="active",
-                    status="confirmed",
-                ),
-                WorldRelationship(
-                    novel_id=novel.id,
-                    source_id=a.id,
-                    target_id=b.id,
-                    label="传闻",
-                    description=long_text,
-                    visibility="reference",
-                    status="confirmed",
-                ),
-                WorldRelationship(
-                    novel_id=novel.id,
-                    source_id=b.id,
-                    target_id=c.id,
-                    label="传闻",
-                    description=long_text,
-                    visibility="reference",
-                    status="confirmed",
-                ),
-            ]
-        )
-
-        sys_active = WorldSystem(
-            novel_id=novel.id,
-            name="体系",
-            display_type="list",
-            description="small",
-            status="confirmed",
-            visibility="active",
-            data={"items": [{"label": "ok"}]},
-        )
-        db.add(sys_active)
-        db.commit()
-
-        # Mention counts: 甲(3), 乙(2), 丙(1) so entity order is deterministic.
-        full_ctx = assemble_writer_context(db, novel.id, chapter_text="甲甲甲 乙乙 丙")
-        full_est = _estimate_writer_context_tokens(full_ctx)
-        assert full_est > 0
-
-        # Budget that requires dropping reference relationships, but keeps reference attributes.
-        drop_rels = deepcopy(full_ctx)
-        drop_rels["relationships"] = [r for r in drop_rels["relationships"] if r["visibility"] != "reference"]
-        est_drop_rels = _estimate_writer_context_tokens(drop_rels)
-        assert est_drop_rels < full_est
-
-        ctx_rel_only = apply_writer_context_budget(full_ctx, max_estimated_tokens=est_drop_rels)
-        assert all(r["visibility"] != "reference" for r in ctx_rel_only["relationships"])
-        assert any(
-            a_["visibility"] == "reference"
-            for e_ in ctx_rel_only["entities"]
-            for a_ in e_["attributes"]
-        )
-
-        # Budget that requires dropping reference attributes too, but keeps all entities.
-        drop_attrs = deepcopy(drop_rels)
-        for e_ in drop_attrs["entities"]:
-            e_["attributes"] = [a_ for a_ in e_["attributes"] if a_["visibility"] != "reference"]
-        est_drop_attrs = _estimate_writer_context_tokens(drop_attrs)
-
-        ctx_no_ref_attrs = apply_writer_context_budget(full_ctx, max_estimated_tokens=est_drop_attrs)
-        assert len(ctx_no_ref_attrs["entities"]) == len(full_ctx["entities"])
-        assert all(r["visibility"] != "reference" for r in ctx_no_ref_attrs["relationships"])
-        assert all(
-            a_["visibility"] != "reference"
-            for e_ in ctx_no_ref_attrs["entities"]
-            for a_ in e_["attributes"]
-        )
-
-        # Budget that requires dropping tail entities (after dropping ref rels + attrs).
-        drop_one = deepcopy(drop_attrs)
-        dropped = drop_one["entities"].pop()
-        dropped_id = dropped["id"]
-        drop_one["relationships"] = [
-            r
-            for r in drop_one["relationships"]
-            if r["source_id"] != dropped_id and r["target_id"] != dropped_id
-        ]
-        est_drop_one = _estimate_writer_context_tokens(drop_one)
-
-        ctx_drop_one = apply_writer_context_budget(full_ctx, max_estimated_tokens=est_drop_one)
-        assert len(ctx_drop_one["entities"]) == len(full_ctx["entities"]) - 1
-        injected_names = [e_["name"] for e_ in ctx_drop_one["entities"]]
-        assert "丙" not in injected_names
+    db.add(WorldRelationship(novel_id=novel.id, source_id=hero.id, target_id=rival.id,
+                             label="恩人", status="confirmed"))
+    db.commit()
+    ambiguous = material("林秋认出恩人的笔迹。")
+    assert "沈梨" not in ambiguous and "罗青" not in ambiguous
 
 
-def test_budget_prunes_large_world_without_repeated_full_text_scans():
-    from app.core.context_assembly import apply_writer_context_budget
+def test_oversized_system_leaves_room_for_scene_and_rules(db, populated_world):
+    from app.core.context_assembly import assemble_writer_context, apply_writer_context_budget
+    from app.core.continuation_text import format_world_context_for_prompt, extract_narrative_constraints
 
-    class CountedText(str):
-        visits = 0
+    ctx = assemble_writer_context(db, populated_world["novel"].id, "云澈和楚月仙准备突破")
+    ctx["systems"][0]["data"] = {"nodes": [{"label": "前朝掌故" * 500}]}
+    trimmed = apply_writer_context_budget(ctx, max_chars=300, locale="zh")
+    material = format_world_context_for_prompt(trimmed, locale="zh") + extract_narrative_constraints(trimmed)
+    assert len(material) <= 300
+    assert "云澈" in material and "师徒" in material and "突破需要天材地宝" in material
+    assert "前朝掌故" not in material
+    assert "前朝掌故" in ctx["systems"][0]["data"]["nodes"][0]["label"]
 
-        def __str__(self):
-            type(self).visits += 1
-            return super().__str__()
-
-        def __deepcopy__(self, memo):
-            return self  # Immutable; count text estimation, not fixture copying.
-
-    size = 512
-    context = {
-        "entities": [
-            {"id": i, "description": CountedText("x" * 10)}
-            for i in range(1, size + 1)
-        ],
-        "relationships": [
-            {"source_id": i, "target_id": i + 1, "label": CountedText("r")}
-            for i in range(1, size)
-        ],
-    }
-    result = apply_writer_context_budget(context, max_estimated_tokens=21)
-
-    assert [entity["id"] for entity in result["entities"]] == [1, 2]
-    assert result["relationships"] == context["relationships"][:1]
-    assert len(context["entities"]) == size
-    assert len(context["relationships"]) == size - 1
-    # Growing the world may add a constant amount of estimation per item,
-    # but removing each tail entity must not rescan every remaining item.
-    assert CountedText.visits <= 6 * (size + size - 1)
-
-
-
-# ===========================================================================
-# Helpers
-# ===========================================================================
 
 def _find_entity_attrs(ctx, entity_name):
     """Find attributes for a named entity in context output."""

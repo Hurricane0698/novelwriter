@@ -39,22 +39,13 @@ _SELFHOST_CONFIG = ResolvedLlmConfig(
     base_url="https://api.openai.com/v1",
     api_key="sk-test",
     model="gpt-4o",
-    billing_source_hint="selfhost",
     source="selfhost_settings",
-)
-_HOSTED_CONFIG = ResolvedLlmConfig(
-    base_url="https://hosted.example/v1",
-    api_key="hosted-key",
-    model="hosted-model",
-    billing_source_hint="hosted",
-    source="hosted_settings",
 )
 _PROVIDER_SECRET = "sk-ai-client-redaction-7f6b9d2c"
 _SECRET_CONFIG = ResolvedLlmConfig(
     base_url="https://provider.example/v1",
     api_key=_PROVIDER_SECRET,
     model="provider-model",
-    billing_source_hint="selfhost",
     source="selfhost_settings",
 )
 
@@ -111,29 +102,6 @@ def test_estimate_cost_preserves_default_input_pricing_when_only_output_override
 
 
 @pytest.mark.asyncio
-@patch("app.core.ai_client.ensure_ai_available_fresh_session")
-@patch("app.core.ai_client.AsyncOpenAI")
-async def test_generate_uses_resolved_billing_source_for_ai_gate(
-    MockOpenAI, mock_ai_gate
-):
-    mock_response = MagicMock()
-    mock_response.usage = None
-    mock_response.choices = [MagicMock(message=MagicMock(content="Generated text"))]
-    mock_client_instance = MagicMock(close=AsyncMock())
-    mock_client_instance.chat.completions.create = AsyncMock(return_value=mock_response)
-    MockOpenAI.return_value = mock_client_instance
-
-    c = AIClient()
-    result = await c.generate(
-        "Write something",
-        llm_config=_HOSTED_CONFIG,
-    )
-
-    assert result == "Generated text"
-    mock_ai_gate.assert_called_once_with(billing_source="hosted")
-
-
-@pytest.mark.asyncio
 @patch("app.core.ai_client.get_settings")
 @patch("app.core.ai_client.AsyncOpenAI")
 async def test_generate_openai(MockOpenAI, mock_settings):
@@ -154,35 +122,6 @@ async def test_generate_openai(MockOpenAI, mock_settings):
     result = await c.generate("Write something", llm_config=_SELFHOST_CONFIG)
     assert result == "Generated text"
     mock_client_instance.chat.completions.create.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-@patch("app.core.ai_client.ensure_ai_available_fresh_session")
-@patch("app.core.ai_client.AsyncOpenAI")
-async def test_generate_stream_uses_resolved_billing_source_for_ai_gate(
-    MockOpenAI, mock_ai_gate
-):
-    chunk = MagicMock()
-    chunk.usage = None
-    chunk.choices = [MagicMock(delta=MagicMock(content="A"))]
-
-    async def fake_stream():
-        yield chunk
-
-    mock_client_instance = MagicMock(close=AsyncMock())
-    mock_client_instance.chat.completions.create = AsyncMock(return_value=_MockStream(fake_stream()))
-    MockOpenAI.return_value = mock_client_instance
-
-    c = AIClient()
-    out = []
-    async for token in c.generate_stream(
-        "Write something",
-        llm_config=_HOSTED_CONFIG,
-    ):
-        out.append(token)
-
-    assert "".join(out) == "A"
-    mock_ai_gate.assert_called_once_with(billing_source="hosted")
 
 
 @pytest.mark.asyncio
@@ -235,7 +174,6 @@ async def test_generate_stream_records_usage_when_available(MockOpenAI, mock_set
         20,
         node_name="default",
         user_id=None,
-        billing_source="selfhost",
     )
 
 
@@ -373,8 +311,7 @@ async def test_generate_stream_sanitizes_iteration_provider_error(MockOpenAI, ca
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reply_kind", ["tool_call", "empty"])
-@patch("app.core.ai_client.ensure_ai_available_fresh_session")
-async def test_forced_tool_wrap_up_rejects_missing_final_answer(_gate, monkeypatch, reply_kind):
+async def test_forced_tool_wrap_up_rejects_missing_final_answer(monkeypatch, reply_kind):
     import httpx
     from openai import AsyncOpenAI as RealOpenAI
 
@@ -406,35 +343,6 @@ async def test_forced_tool_wrap_up_rejects_missing_final_answer(_gate, monkeypat
             tools=[{"type": "function", "function": {"name": "find", "parameters": {"type": "object"}}}],
             tool_choice="none", llm_config=_SELFHOST_CONFIG,
         )
-
-
-@pytest.mark.asyncio
-@patch("app.core.ai_client.ensure_ai_available_fresh_session")
-@patch("app.core.ai_client.AsyncOpenAI")
-async def test_generate_structured_uses_resolved_billing_source_for_ai_gate(
-    MockOpenAI, mock_ai_gate
-):
-    class ExampleModel(BaseModel):
-        ok: bool
-
-    mock_response = MagicMock()
-    mock_response.usage = None
-    mock_response.choices = [
-        MagicMock(message=MagicMock(content=json.dumps({"ok": True})), finish_reason="stop")
-    ]
-    mock_client_instance = MagicMock(close=AsyncMock())
-    mock_client_instance.chat.completions.create = AsyncMock(return_value=mock_response)
-    MockOpenAI.return_value = mock_client_instance
-
-    c = AIClient()
-    result = await c.generate_structured(
-        "Write something",
-        ExampleModel,
-        llm_config=_HOSTED_CONFIG,
-    )
-
-    assert result.ok is True
-    mock_ai_gate.assert_called_once_with(billing_source="hosted")
 
 
 @pytest.mark.asyncio

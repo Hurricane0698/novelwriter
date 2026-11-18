@@ -1,15 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Isaac.X.Ω.Yuan
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: MIT
 
 from __future__ import annotations
 
 import logging
-import re
-from typing import Any
 
 import sqlalchemy as sa
 from fastapi import HTTPException
-from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.core.ingest import inspect_novel_readiness
@@ -19,7 +16,7 @@ from app.core.indexing.lifecycle import (
 )
 from app.core.seed_demo import is_seeded_demo_novel
 from app.database import DATA_DIR
-from app.models import Novel, User
+from app.models import Novel
 from app.schemas import (
     DerivedAssetJobStatus,
     NovelIngestJobResponse,
@@ -35,90 +32,54 @@ from app.schemas import (
     WindowIndexReadinessStatus,
     WindowIndexStateResponse,
 )
-from app.config import get_settings
 
 UPLOAD_DIR = DATA_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger(__name__)
-UPLOAD_CONSENT_VERSION = "2026-03-06"
 STREAMING_RESPONSE_HEADERS = {
     "Cache-Control": "no-store",
     "X-Accel-Buffering": "no",
     "X-Content-Type-Options": "nosniff",
 }
 
-_SAFE_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Some pre-migration databases still contain character arcs or plot threads.
+_LEGACY_NOVEL_TABLES = (
+    (("character_arcs", "novel_id"), ("character_epochs", "arc_id"), ("character_moments", "epoch_id")),
+    (("plot_arcs", "novel_id"), ("plot_threads", "arc_id"), ("plot_beats", "thread_id")),
+    (("narrative_facts", "novel_id"),),
+    (("narrative_styles", "novel_id"),),
+    (("narrative_events", "novel_id"),),
+)
 
 
-def safe_delete_where(
-    db: Session,
-    *,
-    table: str,
-    where_sql: str,
-    params: dict[str, Any],
-    allow_missing_column: bool = False,
-) -> None:
-    """Best-effort delete helper for optional/legacy tables."""
-    if not _SAFE_SQL_IDENTIFIER_RE.match(table):
-        raise ValueError(f"Unsafe table name: {table!r}")
-
-    try:
-        with db.begin_nested():
-            db.execute(sa.text(f"DELETE FROM {table} WHERE {where_sql}"), params)
-    except DBAPIError as exc:
-        msg = str(getattr(exc, "orig", exc)).lower()
-
-        if "no such table" in msg:
-            logger.debug("Skipping delete from missing table %s", table)
-            return
-        if allow_missing_column and "no such column" in msg:
-            logger.debug("Skipping delete from %s due to missing column", table)
-            return
-
-        if "does not exist" in msg and ("relation" in msg or "table" in msg):
-            logger.debug("Skipping delete from missing table %s", table)
-            return
-        if allow_missing_column and "does not exist" in msg and "column" in msg:
-            logger.debug("Skipping delete from %s due to missing column", table)
-            return
-
-        if "doesn't exist" in msg and "table" in msg:
-            logger.debug("Skipping delete from missing table %s", table)
-            return
-        if allow_missing_column and "unknown column" in msg:
-            logger.debug("Skipping delete from %s due to missing column", table)
-            return
-
-        raise
+def delete_legacy_novel_rows(db: Session, novel_id: int) -> None:
+    connection = db.connection()
+    tables = set(sa.inspect(connection).get_table_names())
+    for path in _LEGACY_NOVEL_TABLES:
+        deletes = []
+        parent_ids = None
+        for name, foreign_key in path:
+            if name not in tables:
+                break
+            table = sa.Table(name, sa.MetaData(), autoload_with=connection, resolve_fks=False)
+            if foreign_key not in table.c:
+                break
+            column = table.c[foreign_key]
+            condition = column == novel_id if parent_ids is None else column.in_(parent_ids)
+            deletes.append(table.delete().where(condition))
+            if "id" not in table.c:
+                break
+            parent_ids = sa.select(table.c.id).where(condition)
+        for statement in reversed(deletes):
+            db.execute(statement)
 
 
-def user_novels(db: Session, user: User):
-    q = db.query(Novel)
-    settings = get_settings()
-    if settings.deploy_mode == "selfhost":
-        return q
-    return q.filter(Novel.owner_id == user.id)
-
-
-def verify_novel_access(novel: Novel | None, user: User) -> Novel:
-    if not novel:
-        raise HTTPException(status_code=404, detail="Novel not found")
-    settings = get_settings()
-    if settings.deploy_mode == "hosted" and novel.owner_id != user.id:
+def get_novel(db: Session, novel_id: int) -> Novel:
+    novel = db.get(Novel, novel_id)
+    if novel is None:
         raise HTTPException(status_code=404, detail="Novel not found")
     return novel
-
-
-def get_accessible_novel(db: Session, novel_id: int, user: User) -> Novel:
-    novel = db.query(Novel).filter(Novel.id == novel_id).first()
-    return verify_novel_access(novel, user)
-
-
-def fetch_novel_with_presence(db: Session, novel_id: int, user: User) -> tuple[Novel, bool]:
-    """Report payload presence from metadata without transferring its bytes."""
-    novel = get_accessible_novel(db, novel_id, user)
-    return novel, novel.window_index_payload_size is not None
 
 
 def _coerce_int(value: object) -> int | None:
