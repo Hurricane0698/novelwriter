@@ -69,7 +69,7 @@ jobs:
 
   frontend-e2e-mock:
     name: Frontend (e2e mock)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       VITE_DEPLOY_MODE: selfhost
     defaults:
@@ -112,7 +112,7 @@ jobs:
     name: Frontend (e2e integration)
     # PR gate + post-merge signal on main.
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       SCNGS_DATA_DIR: /tmp/scngs_data
       E2E_SKIP_LLM: "1"
